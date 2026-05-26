@@ -230,6 +230,18 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 	if request == nil {
 		return nil, errors.New("request is nil")
 	}
+	if info.ChannelType == constant.ChannelTypePoeOpenAI {
+		one := 1
+		request.N = &one
+		if request.ReasoningEffort != "" {
+			extraBody, err := mergeReasoningEffortToExtraBody(request.ExtraBody, request.ReasoningEffort)
+			if err != nil {
+				return nil, err
+			}
+			request.ExtraBody = extraBody
+			request.ReasoningEffort = ""
+		}
+	}
 	if info.ChannelType != constant.ChannelTypeOpenAI && info.ChannelType != constant.ChannelTypeAzure {
 		request.StreamOptions = nil
 	}
@@ -594,10 +606,49 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommo
 		}
 		request.Model = originModel
 	}
+
 	if info != nil && request.Reasoning != nil && request.Reasoning.Effort != "" {
 		info.ReasoningEffort = request.Reasoning.Effort
 	}
+
+	if info != nil && info.ChannelType == constant.ChannelTypePoeOpenAI {
+		requestMap := make(map[string]any)
+		requestBytes, err := common.Marshal(request)
+		if err != nil {
+			return nil, fmt.Errorf("error marshalling responses request: %w", err)
+		}
+		if err = common.Unmarshal(requestBytes, &requestMap); err != nil {
+			return nil, fmt.Errorf("error unmarshalling responses request: %w", err)
+		}
+		requestMap["n"] = 1
+		if request.Reasoning != nil && request.Reasoning.Effort != "" {
+			extraBody := map[string]any{}
+			if existingExtraBody, ok := requestMap["extra_body"].(map[string]any); ok {
+				extraBody = existingExtraBody
+			}
+			extraBody["reasoning_effort"] = request.Reasoning.Effort
+			requestMap["extra_body"] = extraBody
+			delete(requestMap, "reasoning")
+		}
+		return requestMap, nil
+	}
+
 	return request, nil
+}
+
+func mergeReasoningEffortToExtraBody(extraBody json.RawMessage, reasoningEffort string) (json.RawMessage, error) {
+	extraBodyMap := make(map[string]any)
+	if len(extraBody) > 0 {
+		if err := common.Unmarshal(extraBody, &extraBodyMap); err != nil {
+			return nil, fmt.Errorf("error unmarshalling extra_body: %w", err)
+		}
+	}
+	extraBodyMap["reasoning_effort"] = reasoningEffort
+	mergedExtraBody, err := common.Marshal(extraBodyMap)
+	if err != nil {
+		return nil, fmt.Errorf("error marshalling extra_body: %w", err)
+	}
+	return mergedExtraBody, nil
 }
 
 func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, requestBody io.Reader) (any, error) {

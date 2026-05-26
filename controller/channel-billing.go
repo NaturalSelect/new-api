@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -119,6 +120,11 @@ type OpenRouterCreditResponse struct {
 		TotalCredits float64 `json:"total_credits"`
 		TotalUsage   float64 `json:"total_usage"`
 	} `json:"data"`
+}
+
+type PoeBalanceResponse struct {
+	CurrentPointBalance int64  `json:"current_point_balance"`
+	TotalBalanceUSD     string `json:"total_balance_usd"`
 }
 
 // GetAuthHeader get auth header
@@ -356,6 +362,25 @@ func updateChannelMoonshotBalance(channel *model.Channel) (float64, error) {
 	return availableBalanceUsd, nil
 }
 
+func updateChannelPoeOpenAIBalance(channel *model.Channel) (float64, error) {
+	url := strings.TrimSuffix(channel.GetBaseURL(), "/") + "/usage/current_balance"
+	body, err := GetResponseBody("GET", url, channel, GetAuthHeader(channel.Key))
+	if err != nil {
+		return 0, err
+	}
+	response := PoeBalanceResponse{}
+	err = json.Unmarshal(body, &response)
+	if err != nil {
+		return 0, err
+	}
+	balance, err := strconv.ParseFloat(response.TotalBalanceUSD, 64)
+	if err != nil {
+		return 0, err
+	}
+	channel.UpdateBalance(balance)
+	return balance, nil
+}
+
 func updateChannelBalance(channel *model.Channel) (float64, error) {
 	baseURL := constant.ChannelBaseURLs[channel.Type]
 	if channel.GetBaseURL() == "" {
@@ -386,6 +411,8 @@ func updateChannelBalance(channel *model.Channel) (float64, error) {
 		return updateChannelOpenRouterBalance(channel)
 	case constant.ChannelTypeMoonshot:
 		return updateChannelMoonshotBalance(channel)
+	case constant.ChannelTypePoeOpenAI:
+		return updateChannelPoeOpenAIBalance(channel)
 	default:
 		return 0, errors.New("尚未实现")
 	}

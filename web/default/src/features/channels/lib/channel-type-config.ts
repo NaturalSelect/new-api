@@ -134,6 +134,17 @@ export const CHANNEL_TYPE_CONFIGS: Record<number, ChannelTypeConfig> = {
       baseUrl: 'Default: https://api.replicate.com',
     },
   },
+  58: {
+    id: 58,
+    name: CHANNEL_TYPES[58],
+    icon: 'openai',
+    defaultBaseUrl: 'https://api.poe.com/v1',
+    hints: {
+      baseUrl: 'Default: https://api.poe.com/v1',
+      key: 'Format: Bearer API key',
+      models: 'Use Poe OpenAI-compatible model IDs',
+    },
+  },
 }
 
 /**

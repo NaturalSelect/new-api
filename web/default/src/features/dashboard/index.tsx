@@ -16,21 +16,26 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState, useCallback, useMemo, lazy, Suspense } from 'react'
+import { useState, useCallback, useMemo, lazy, Suspense, useEffect } from 'react'
+
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/auth-store'
 import { ROLE } from '@/lib/roles'
+import { computeTimeRange } from '@/lib/time'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { SectionPageLayout } from '@/components/layout'
 import { FadeIn } from '@/components/page-transition'
 import { ModelsChartPreferences } from './components/models/models-chart-preferences'
 import { ModelsFilter } from './components/models/models-filter-dialog'
+import { getTokenDistribution } from './api'
 import { OverviewDashboard } from './components/overview/overview-dashboard'
 import { DEFAULT_TIME_GRANULARITY } from './constants'
 import {
   buildDefaultDashboardFilters,
+  buildQueryParams,
+  getDefaultDays,
   getSavedChartPreferences,
   saveChartPreferences,
 } from './lib'
@@ -43,6 +48,7 @@ import {
   type DashboardChartPreferences,
   type DashboardFilters,
   type QuotaDataItem,
+  type TokenDistributionDataItem,
 } from './types'
 
 const route = getRouteApi('/_authenticated/dashboard/$section')
@@ -152,11 +158,17 @@ export function Dashboard() {
 
   const [modelData, setModelData] = useState<QuotaDataItem[]>([])
   const [dataLoading, setDataLoading] = useState(false)
+  const [tokenDistributionData, setTokenDistributionData] = useState<
+    TokenDistributionDataItem[]
+  >([])
+  const [tokenDistributionLoading, setTokenDistributionLoading] = useState(false)
   const [chartPreferences, setChartPreferences] =
     useState<DashboardChartPreferences>(() => getSavedChartPreferences())
   const [modelFilters, setModelFilters] = useState<DashboardFilters>(() =>
     buildDefaultDashboardFilters(getSavedChartPreferences())
   )
+  const isAdmin = Boolean(userRole && userRole >= ROLE.ADMIN)
+  const meta = SECTION_META[activeSection] ?? SECTION_META.overview
 
   const handleFilterChange = useCallback((filters: DashboardFilters) => {
     setModelFilters(filters)
@@ -183,8 +195,36 @@ export function Dashboard() {
     []
   )
 
-  const meta = SECTION_META[activeSection] ?? SECTION_META.overview
-  const isAdmin = Boolean(userRole && userRole >= ROLE.ADMIN)
+  useEffect(() => {
+    if (activeSection !== 'models') return
+    const abortController = new AbortController()
+    setTokenDistributionLoading(true)
+    const timeRange = computeTimeRange(
+      getDefaultDays(modelFilters.time_granularity),
+      modelFilters.start_timestamp,
+      modelFilters.end_timestamp
+    )
+    const params = buildQueryParams(timeRange, modelFilters)
+    getTokenDistribution(params, isAdmin)
+      .then((res) => {
+        if (abortController.signal.aborted) return
+        setTokenDistributionData(res?.data || [])
+      })
+      .catch(() => {
+        if (abortController.signal.aborted) return
+        setTokenDistributionData([])
+      })
+      .finally(() => {
+        if (!abortController.signal.aborted) {
+          setTokenDistributionLoading(false)
+        }
+      })
+
+    return () => {
+      abortController.abort()
+    }
+  }, [activeSection, modelFilters, isAdmin])
+
   const visibleSections = useMemo(
     () =>
       DASHBOARD_SECTION_IDS.filter(
@@ -266,8 +306,10 @@ export function Dashboard() {
               <FadeIn delay={0.1}>
                 <Suspense fallback={<ModelChartsFallback />}>
                   <LazyConsumptionDistributionChart
-                    data={modelData}
-                    loading={dataLoading}
+                    quotaData={modelData}
+                    tokenData={tokenDistributionData}
+                    loading={dataLoading || tokenDistributionLoading}
+                    mode={chartPreferences.consumptionDistributionMode}
                     defaultChartType={
                       chartPreferences.consumptionDistributionChart
                     }

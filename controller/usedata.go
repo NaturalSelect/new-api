@@ -66,3 +66,43 @@ func GetUserQuotaDates(c *gin.Context) {
 	})
 	return
 }
+
+func GetTokenDistribution(c *gin.Context) {
+	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
+	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
+	timeGranularity := c.Query("default_time")
+	if timeGranularity == "" {
+		timeGranularity = c.Query("time_granularity")
+	}
+	username := c.Query("username")
+	dates, err := model.GetTokenDistribution(startTimestamp, endTimestamp, timeGranularity, username)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    dates,
+	})
+}
+
+func GetSelfTokenDistribution(c *gin.Context) {
+	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
+	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
+	timeGranularity := c.Query("default_time")
+	if timeGranularity == "" {
+		timeGranularity = c.Query("time_granularity")
+	}
+	username := c.GetString("username")
+	dates, err := model.GetTokenDistribution(startTimestamp, endTimestamp, timeGranularity, username)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    dates,
+	})
+}

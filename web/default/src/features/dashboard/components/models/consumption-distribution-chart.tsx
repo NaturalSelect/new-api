@@ -27,12 +27,15 @@ import { useThemeCustomization } from '@/context/theme-customization-provider'
 import { useTheme } from '@/context/theme-provider'
 import {
   CONSUMPTION_DISTRIBUTION_CHART_OPTIONS,
+  CONSUMPTION_DISTRIBUTION_MODE_OPTIONS,
   DEFAULT_TIME_GRANULARITY,
 } from '@/features/dashboard/constants'
-import { processChartData } from '@/features/dashboard/lib'
+import { processChartData, processTokenDistributionChartData } from '@/features/dashboard/lib'
 import type {
   ConsumptionDistributionChartType,
+  ConsumptionDistributionMode,
   QuotaDataItem,
+  TokenDistributionDataItem,
 } from '@/features/dashboard/types'
 
 let themeManagerPromise: Promise<
@@ -40,10 +43,12 @@ let themeManagerPromise: Promise<
 > | null = null
 
 interface ConsumptionDistributionChartProps {
-  data: QuotaDataItem[]
+  quotaData: QuotaDataItem[]
+  tokenData: TokenDistributionDataItem[]
   loading?: boolean
   timeGranularity?: TimeGranularity
   defaultChartType?: ConsumptionDistributionChartType
+  mode?: ConsumptionDistributionMode
 }
 
 const CHART_TYPE_ICONS: Record<
@@ -68,6 +73,9 @@ export function ConsumptionDistributionChart(
     props.defaultChartType ?? 'bar'
   )
   const [themeReady, setThemeReady] = useState(false)
+  const [mode, setMode] = useState<ConsumptionDistributionMode>(
+    props.mode ?? 'quota'
+  )
   const themeManagerRef = useRef<
     (typeof import('@visactor/vchart'))['ThemeManager'] | null
   >(null)
@@ -76,6 +84,10 @@ export function ConsumptionDistributionChart(
   useEffect(() => {
     if (props.defaultChartType) setChartType(props.defaultChartType)
   }, [props.defaultChartType])
+
+  useEffect(() => {
+    if (props.mode) setMode(props.mode)
+  }, [props.mode])
 
   useEffect(() => {
     const updateTheme = async () => {
@@ -96,17 +108,17 @@ export function ConsumptionDistributionChart(
     updateTheme()
   }, [resolvedTheme])
 
-  const chartData = useMemo(
+  const quotaChartData = useMemo(
     () =>
       processChartData(
-        props.loading ? [] : props.data,
+        props.loading ? [] : props.quotaData,
         timeGranularity,
         t,
         customization.preset,
         chartRadius
       ),
     [
-      props.data,
+      props.quotaData,
       props.loading,
       timeGranularity,
       t,
@@ -114,13 +126,27 @@ export function ConsumptionDistributionChart(
       chartRadius,
     ]
   )
-  const spec = chartType === 'bar' ? chartData.spec_line : chartData.spec_area
+
+  const tokenChartData = useMemo(
+    () =>
+      processTokenDistributionChartData(
+        props.loading ? [] : props.tokenData,
+        timeGranularity,
+        t,
+        customization.preset
+      ),
+    [props.tokenData, props.loading, timeGranularity, t, customization.preset]
+  )
+
+  const activeChartData = mode === 'token' ? tokenChartData : quotaChartData
+  const spec = chartType === 'bar' ? activeChartData.spec_line : activeChartData.spec_area
   const specType = typeof spec?.type === 'string' ? spec.type : chartType
   const chartKey = [
     chartType,
     specType,
     props.loading ? 'loading' : 'ready',
-    props.data.length,
+    props.quotaData.length,
+    props.tokenData.length,
     resolvedTheme,
     customization.preset,
   ].join('-')
@@ -130,31 +156,55 @@ export function ConsumptionDistributionChart(
       <div className='flex w-full flex-col gap-1.5 border-b px-3 py-2 sm:gap-3 sm:px-5 sm:py-3 lg:flex-row lg:items-center lg:justify-between'>
         <div className='flex items-center gap-2'>
           <WalletCards className='text-muted-foreground/60 size-4' />
-          <div className='text-sm font-semibold'>{t('Quota Distribution')}</div>
+          <div className='text-sm font-semibold'>
+            {mode === 'token' ? t('Token Distribution') : t('Quota Distribution')}
+          </div>
           <span className='text-muted-foreground text-xs'>
-            {t('Total:')} {chartData.totalQuotaDisplay}
+            {t('Total:')}{' '}
+            {mode === 'token'
+              ? tokenChartData.totalTokensDisplay
+              : quotaChartData.totalQuotaDisplay}
           </span>
         </div>
 
-        <div className='bg-muted/60 inline-flex h-7 w-full overflow-x-auto rounded-lg border p-0.5 sm:h-8 sm:w-auto'>
-          {CONSUMPTION_DISTRIBUTION_CHART_OPTIONS.map((item) => {
-            const Icon = CHART_TYPE_ICONS[item.value]
-            return (
+        <div className='flex w-full flex-col gap-1 sm:w-auto sm:flex-row'>
+          <div className='bg-muted/60 inline-flex h-7 w-full overflow-x-auto rounded-lg border p-0.5 sm:h-8 sm:w-auto'>
+            {CONSUMPTION_DISTRIBUTION_MODE_OPTIONS.map((item) => (
               <button
                 key={item.value}
                 type='button'
-                onClick={() => setChartType(item.value)}
+                onClick={() => setMode(item.value)}
                 className={`inline-flex shrink-0 items-center gap-1.5 rounded-md px-3 text-xs font-medium transition-colors ${
-                  chartType === item.value
+                  mode === item.value
                     ? 'bg-background text-foreground shadow-sm'
                     : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
-                <Icon className='size-3.5' />
                 {t(item.labelKey)}
               </button>
-            )
-          })}
+            ))}
+          </div>
+
+          <div className='bg-muted/60 inline-flex h-7 w-full overflow-x-auto rounded-lg border p-0.5 sm:h-8 sm:w-auto'>
+            {CONSUMPTION_DISTRIBUTION_CHART_OPTIONS.map((item) => {
+              const Icon = CHART_TYPE_ICONS[item.value]
+              return (
+                <button
+                  key={item.value}
+                  type='button'
+                  onClick={() => setChartType(item.value)}
+                  className={`inline-flex shrink-0 items-center gap-1.5 rounded-md px-3 text-xs font-medium transition-colors ${
+                    chartType === item.value
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <Icon className='size-3.5' />
+                  {t(item.labelKey)}
+                </button>
+              )
+            })}
+          </div>
         </div>
       </div>
 

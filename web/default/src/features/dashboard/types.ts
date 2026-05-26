@@ -62,10 +62,13 @@ export interface DashboardFilters {
 
 export type ConsumptionDistributionChartType = 'bar' | 'area'
 
+export type ConsumptionDistributionMode = 'quota' | 'token'
+
 export type ModelAnalyticsChartTab = 'trend' | 'proportion' | 'top'
 
 export interface DashboardChartPreferences {
   consumptionDistributionChart: ConsumptionDistributionChartType
+  consumptionDistributionMode: ConsumptionDistributionMode
   modelAnalyticsChart: ModelAnalyticsChartTab
   defaultTimeRangeDays: number
   defaultTimeGranularity: TimeGranularity
@@ -110,6 +113,22 @@ export interface ProcessedChartData {
 export interface ProcessedUserChartData {
   spec_user_rank: VChartSpec
   spec_user_trend: VChartSpec
+}
+
+export interface TokenDistributionDataItem {
+  created_at: number
+  model_name: string
+  input_tokens: number
+  output_tokens: number
+  cache_read_tokens: number
+  cache_write_tokens: number
+  count: number
+}
+
+export interface ProcessedTokenDistributionChartData {
+  spec_line: VChartSpec
+  spec_area: VChartSpec
+  totalTokensDisplay: string
 }
 
 // ============================================================================

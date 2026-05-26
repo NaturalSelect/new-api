@@ -41,6 +41,7 @@ import {
 } from '@/components/ui/select'
 import {
   CONSUMPTION_DISTRIBUTION_CHART_OPTIONS,
+  CONSUMPTION_DISTRIBUTION_MODE_OPTIONS,
   MODEL_ANALYTICS_CHART_OPTIONS,
   TIME_GRANULARITY_OPTIONS,
   TIME_RANGE_PRESETS,
@@ -149,6 +150,40 @@ export function ModelsChartPreferences(props: ModelsChartPreferencesProps) {
                   {TIME_GRANULARITY_OPTIONS.map((option) => (
                     <SelectItem key={option.value} value={option.value}>
                       {t(option.label)}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className='grid gap-2'>
+            <Label htmlFor='consumption-distribution-mode'>
+              {t('Default consumption mode')}
+            </Label>
+            <Select
+              items={[
+                ...CONSUMPTION_DISTRIBUTION_MODE_OPTIONS.map((option) => ({
+                  value: option.value,
+                  label: t(option.labelKey),
+                })),
+              ]}
+              value={draft.consumptionDistributionMode}
+              onValueChange={(value) =>
+                setDraft((prev) => ({
+                  ...prev,
+                  consumptionDistributionMode: value as 'quota' | 'token',
+                }))
+              }
+            >
+              <SelectTrigger id='consumption-distribution-mode'>
+                <SelectValue placeholder={t('Select default mode')} />
+              </SelectTrigger>
+              <SelectContent alignItemWithTrigger={false}>
+                <SelectGroup>
+                  {CONSUMPTION_DISTRIBUTION_MODE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {t(option.labelKey)}
                     </SelectItem>
                   ))}
                 </SelectGroup>

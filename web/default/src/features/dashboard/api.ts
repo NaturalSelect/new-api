@@ -17,7 +17,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
-import type { QuotaDataItem, UptimeGroupResult } from './types'
+import type {
+  QuotaDataItem,
+  TokenDistributionDataItem,
+  UptimeGroupResult,
+} from './types'
+
 
 // ============================================================================
 // Dashboard APIs
@@ -43,6 +48,25 @@ export async function getUserQuotaDates(
     endpoint,
     { params }
   )
+  return res.data
+}
+
+export async function getTokenDistribution(
+  params: {
+    start_timestamp: number
+    end_timestamp: number
+    default_time?: string
+    username?: string
+  },
+  isAdmin = false
+) {
+  const endpoint = isAdmin
+    ? '/api/data/token-distribution'
+    : '/api/data/token-distribution/self'
+  const res = await api.get<{
+    success: boolean
+    data: TokenDistributionDataItem[]
+  }>(endpoint, { params })
   return res.data
 }
 

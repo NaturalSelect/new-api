@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -452,6 +454,177 @@ type Stat struct {
 	Quota int `json:"quota"`
 	Rpm   int `json:"rpm"`
 	Tpm   int `json:"tpm"`
+}
+
+type TokenDistributionData struct {
+	CreatedAt        int64  `json:"created_at"`
+	ModelName        string `json:"model_name"`
+	InputTokens      int    `json:"input_tokens"`
+	OutputTokens     int    `json:"output_tokens"`
+	CacheReadTokens  int    `json:"cache_read_tokens"`
+	CacheWriteTokens int    `json:"cache_write_tokens"`
+	Count            int    `json:"count"`
+}
+
+type tokenDistributionLogRecord struct {
+	CreatedAt        int64  `json:"created_at"`
+	ModelName        string `json:"model_name"`
+	PromptTokens     int    `json:"prompt_tokens"`
+	CompletionTokens int    `json:"completion_tokens"`
+	Other            string `json:"other"`
+}
+
+func toIntFromAny(value interface{}) int {
+	switch v := value.(type) {
+	case int:
+		return v
+	case int8:
+		return int(v)
+	case int16:
+		return int(v)
+	case int32:
+		return int(v)
+	case int64:
+		return int(v)
+	case uint:
+		return int(v)
+	case uint8:
+		return int(v)
+	case uint16:
+		return int(v)
+	case uint32:
+		return int(v)
+	case uint64:
+		return int(v)
+	case float32:
+		return int(math.Round(float64(v)))
+	case float64:
+		return int(math.Round(v))
+	default:
+		return 0
+	}
+}
+
+func getCacheWriteTokensFromOther(otherMap map[string]interface{}) int {
+	cacheWriteTokens := toIntFromAny(otherMap["cache_write_tokens"])
+	if cacheWriteTokens > 0 {
+		return cacheWriteTokens
+	}
+	cacheCreationTokens := toIntFromAny(otherMap["cache_creation_tokens"])
+	cacheCreationTokens5m := toIntFromAny(otherMap["cache_creation_tokens_5m"])
+	cacheCreationTokens1h := toIntFromAny(otherMap["cache_creation_tokens_1h"])
+	if cacheCreationTokens5m > 0 || cacheCreationTokens1h > 0 {
+		splitTotal := cacheCreationTokens5m + cacheCreationTokens1h
+		if cacheCreationTokens > splitTotal {
+			return cacheCreationTokens
+		}
+		return splitTotal
+	}
+	if cacheCreationTokens > 0 {
+		return cacheCreationTokens
+	}
+	return 0
+}
+
+func bucketTimestampByGranularity(timestamp int64, granularity string) int64 {
+	if timestamp <= 0 {
+		return 0
+	}
+	t := time.Unix(timestamp, 0).UTC()
+	switch granularity {
+	case "week":
+		weekday := int(t.Weekday())
+		if weekday == 0 {
+			weekday = 7
+		}
+		start := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, 0, -(weekday - 1))
+		return start.Unix()
+	case "day":
+		start := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+		return start.Unix()
+	default:
+		return timestamp - (timestamp % 3600)
+	}
+}
+
+func normalizeTimeGranularity(granularity string) string {
+	switch granularity {
+	case "hour", "day", "week":
+		return granularity
+	default:
+		return "hour"
+	}
+}
+
+func GetTokenDistribution(startTimestamp int64, endTimestamp int64, timeGranularity string, username string) ([]*TokenDistributionData, error) {
+	timeGranularity = normalizeTimeGranularity(timeGranularity)
+	base := LOG_DB.Table("logs").Select("created_at, model_name, prompt_tokens, completion_tokens, other").Where("type = ?", LogTypeConsume)
+	if startTimestamp != 0 {
+		base = base.Where("created_at >= ?", startTimestamp)
+	}
+	if endTimestamp != 0 {
+		base = base.Where("created_at <= ?", endTimestamp)
+	}
+	if username != "" {
+		base = base.Where("username = ?", username)
+	}
+
+	type aggregateKey struct {
+		CreatedAt int64
+		ModelName string
+	}
+	aggregates := make(map[aggregateKey]*TokenDistributionData)
+
+	const batchSize = 1000
+	for offset := 0; ; offset += batchSize {
+		var batch []tokenDistributionLogRecord
+		if err := base.Offset(offset).Limit(batchSize).Find(&batch).Error; err != nil {
+			return nil, err
+		}
+		for _, record := range batch {
+			bucket := bucketTimestampByGranularity(record.CreatedAt, timeGranularity)
+			if bucket == 0 {
+				continue
+			}
+			modelName := record.ModelName
+			if modelName == "" {
+				modelName = "Unknown"
+			}
+			key := aggregateKey{CreatedAt: bucket, ModelName: modelName}
+			item, ok := aggregates[key]
+			if !ok {
+				item = &TokenDistributionData{CreatedAt: bucket, ModelName: modelName}
+				aggregates[key] = item
+			}
+			item.InputTokens += record.PromptTokens
+			item.OutputTokens += record.CompletionTokens
+			item.Count += 1
+
+			if record.Other != "" {
+				otherMap := make(map[string]interface{})
+				if err := common.UnmarshalJsonStr(record.Other, &otherMap); err == nil {
+					item.CacheReadTokens += toIntFromAny(otherMap["cache_tokens"])
+					item.CacheWriteTokens += getCacheWriteTokensFromOther(otherMap)
+				}
+			}
+		}
+		if len(batch) < batchSize {
+			break
+		}
+	}
+
+	result := make([]*TokenDistributionData, 0, len(aggregates))
+	for _, item := range aggregates {
+		result = append(result, item)
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].CreatedAt == result[j].CreatedAt {
+			return result[i].ModelName < result[j].ModelName
+		}
+		return result[i].CreatedAt < result[j].CreatedAt
+	})
+	return result, nil
 }
 
 func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, channel int, group string) (stat Stat, err error) {

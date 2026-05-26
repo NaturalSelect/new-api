@@ -28,6 +28,7 @@ import {
 } from '@/features/dashboard/constants'
 import type {
   ConsumptionDistributionChartType,
+  ConsumptionDistributionMode,
   DashboardChartPreferences,
   DashboardFilters,
   ModelAnalyticsChartTab,
@@ -49,10 +50,10 @@ function isConsumptionDistributionChartType(
   return value === 'bar' || value === 'area'
 }
 
-function isModelAnalyticsChartTab(
+function isConsumptionDistributionMode(
   value: unknown
-): value is ModelAnalyticsChartTab {
-  return value === 'trend' || value === 'proportion' || value === 'top'
+): value is ConsumptionDistributionMode {
+  return value === 'quota' || value === 'token'
 }
 
 function isTimeRangePresetDays(value: unknown): value is number {
@@ -110,6 +111,11 @@ export function getSavedChartPreferences(): DashboardChartPreferences {
       )
         ? parsed.consumptionDistributionChart
         : fallbackPreferences.consumptionDistributionChart,
+      consumptionDistributionMode: isConsumptionDistributionMode(
+        parsed.consumptionDistributionMode
+      )
+        ? parsed.consumptionDistributionMode
+        : fallbackPreferences.consumptionDistributionMode,
       modelAnalyticsChart: isModelAnalyticsChartTab(parsed.modelAnalyticsChart)
         ? parsed.modelAnalyticsChart
         : fallbackPreferences.modelAnalyticsChart,

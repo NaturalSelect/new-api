@@ -18,6 +18,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/service"
 
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
@@ -147,19 +148,38 @@ func FetchUpstreamRatios(c *gin.Context) {
 		return
 	}
 
-	if req.Timeout <= 0 {
-		req.Timeout = defaultTimeoutSeconds
-	}
+	req.Timeout = 300
 
 	var upstreams []dto.UpstreamDTO
 
 	if len(req.Upstreams) > 0 {
+		// 收集需要从 DB 补查代理的 channel ID
+		idSet := make(map[int]string) // id -> proxy
+		var needLookup []int
+		for _, u := range req.Upstreams {
+			if u.ID > 0 && u.Proxy == "" {
+				needLookup = append(needLookup, u.ID)
+			}
+		}
+		if len(needLookup) > 0 {
+			dbChannels, err := model.GetChannelsByIds(needLookup)
+			if err != nil {
+				logger.LogWarn(c.Request.Context(), "failed to query channel proxy settings: "+err.Error())
+			} else {
+				for _, ch := range dbChannels {
+					idSet[ch.Id] = ch.GetSetting().Proxy
+				}
+			}
+		}
 		for _, u := range req.Upstreams {
 			if strings.HasPrefix(u.BaseURL, "http") {
 				if u.Endpoint == "" {
 					u.Endpoint = defaultEndpoint
 				}
 				u.BaseURL = strings.TrimRight(u.BaseURL, "/")
+				if u.ID > 0 && u.Proxy == "" {
+					u.Proxy = idSet[u.ID]
+				}
 				upstreams = append(upstreams, u)
 			}
 		}
@@ -181,6 +201,7 @@ func FetchUpstreamRatios(c *gin.Context) {
 					Name:     ch.Name,
 					BaseURL:  strings.TrimRight(base, "/"),
 					Endpoint: "",
+					Proxy:    ch.GetSetting().Proxy,
 				})
 			}
 		}
@@ -197,11 +218,11 @@ func FetchUpstreamRatios(c *gin.Context) {
 	sem := make(chan struct{}, maxConcurrentFetches)
 
 	dialer := &net.Dialer{Timeout: 10 * time.Second}
-	transport := &http.Transport{MaxIdleConns: 100, IdleConnTimeout: 90 * time.Second, TLSHandshakeTimeout: 10 * time.Second, ExpectContinueTimeout: 1 * time.Second, ResponseHeaderTimeout: 10 * time.Second}
+	sharedTransport := &http.Transport{MaxIdleConns: 100, IdleConnTimeout: 90 * time.Second, TLSHandshakeTimeout: 10 * time.Second, ExpectContinueTimeout: 1 * time.Second, ResponseHeaderTimeout: 10 * time.Second}
 	if common.TLSInsecureSkipVerify {
-		transport.TLSClientConfig = common.InsecureTLSConfig
+		sharedTransport.TLSClientConfig = common.InsecureTLSConfig
 	}
-	transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+	sharedTransport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 		host, _, err := net.SplitHostPort(addr)
 		if err != nil {
 			host = addr
@@ -215,7 +236,7 @@ func FetchUpstreamRatios(c *gin.Context) {
 		}
 		return dialer.DialContext(ctx, network, addr)
 	}
-	client := &http.Client{Transport: transport}
+	sharedClient := &http.Client{Transport: sharedTransport}
 
 	for _, chn := range upstreams {
 		wg.Add(1)
@@ -224,6 +245,20 @@ func FetchUpstreamRatios(c *gin.Context) {
 
 			sem <- struct{}{}
 			defer func() { <-sem }()
+
+			// 优先使用渠道自身的代理设置，无代理时使用带 github.io IPv4 优先逻辑的共享客户端
+			var fetchClient *http.Client
+			if chItem.Proxy != "" {
+				logger.LogWarn(c.Request.Context(), fmt.Sprintf("fetching upstream ratios via proxy for %s: %s", chItem.Name, chItem.Proxy))
+				var err error
+				fetchClient, err = service.GetHttpClientWithProxy(chItem.Proxy)
+				if err != nil {
+					logger.LogWarn(c.Request.Context(), "failed to create proxy client for "+chItem.Name+": "+err.Error())
+					fetchClient = sharedClient
+				}
+			} else {
+				fetchClient = sharedClient
+			}
 
 			isOpenRouter := chItem.Endpoint == "openrouter"
 
@@ -284,7 +319,7 @@ func FetchUpstreamRatios(c *gin.Context) {
 			var resp *http.Response
 			var lastErr error
 			for attempt := 0; attempt < 3; attempt++ {
-				resp, lastErr = client.Do(httpReq)
+				resp, lastErr = fetchClient.Do(httpReq)
 				if lastErr == nil {
 					break
 				}

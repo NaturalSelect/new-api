@@ -24,6 +24,8 @@ import type {
   QuotaDataItem,
   ProcessedChartData,
   ProcessedUserChartData,
+  ProcessedTokenDistributionChartData,
+  TokenDistributionDataItem,
 } from '@/features/dashboard/types'
 
 type TFunction = (key: string) => string
@@ -731,6 +733,234 @@ const USER_COLOR_FALLBACKS = [
   '#FF99C3',
   '#5D7092',
 ]
+
+export function processTokenDistributionChartData(
+  data: TokenDistributionDataItem[],
+  timeGranularity: TimeGranularity = 'day',
+  t?: TFunction,
+  themeKey?: string
+): ProcessedTokenDistributionChartData {
+  const tt: TFunction = t ?? ((x) => x)
+  const formatInt = (value: number) =>
+    Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(value)
+
+  if (!data || data.length === 0) {
+    return {
+      spec_line: {
+        type: 'bar',
+        data: [{ id: 'tokenBarData', values: [] }],
+        xField: 'Time',
+        yField: 'Value',
+        seriesField: 'Series',
+        stack: true,
+        legends: { visible: true, selectMode: 'single' },
+      },
+      spec_area: {
+        type: 'area',
+        data: [{ id: 'tokenAreaData', values: [] }],
+        xField: 'Time',
+        yField: 'Value',
+        seriesField: 'Series',
+        stack: false,
+        legends: { visible: true, selectMode: 'single' },
+      },
+      totalTokensDisplay: formatInt(0),
+    }
+  }
+
+  const dimensionDefs = [
+    { key: 'input_tokens', label: tt('Input') },
+    { key: 'output_tokens', label: tt('Output') },
+    { key: 'cache_read_tokens', label: tt('Cache Read') },
+    { key: 'cache_write_tokens', label: tt('Cache Write') },
+  ] as const
+
+  type ModelTokenStats = {
+    input: number
+    output: number
+    cacheRead: number
+    cacheWrite: number
+  }
+
+  const timeModelMap = new Map<string, Map<string, ModelTokenStats>>()
+  const modelTotalsMap = new Map<string, number>()
+
+  data.forEach((item) => {
+    const timestamp = Number(item.created_at)
+    const timeKey = formatChartTime(timestamp, timeGranularity)
+    const model = item.model_name || 'Unknown'
+    const input = Number(item.input_tokens) || 0
+    const output = Number(item.output_tokens) || 0
+    const cacheRead = Number(item.cache_read_tokens) || 0
+    const cacheWrite = Number(item.cache_write_tokens) || 0
+
+    if (!timeModelMap.has(timeKey)) {
+      timeModelMap.set(timeKey, new Map())
+    }
+
+    const modelMap = timeModelMap.get(timeKey)!
+    const prev = modelMap.get(model) || {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+    }
+
+    const next = {
+      input: prev.input + input,
+      output: prev.output + output,
+      cacheRead: prev.cacheRead + cacheRead,
+      cacheWrite: prev.cacheWrite + cacheWrite,
+    }
+    modelMap.set(model, next)
+
+    modelTotalsMap.set(
+      model,
+      (modelTotalsMap.get(model) || 0) + input + output + cacheRead + cacheWrite
+    )
+  })
+
+  const sortedTimes = Array.from(timeModelMap.keys()).sort()
+  const sortedModels = Array.from(modelTotalsMap.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([model]) => model)
+
+  const fillTimePoints = (times: string[]) => {
+    if (times.length >= MAX_CHART_TREND_POINTS) return times
+    const lastTime = Math.max(...data.map((item) => Number(item.created_at) || 0))
+    const intervalSec =
+      timeGranularity === 'week'
+        ? 604800
+        : timeGranularity === 'day'
+          ? 86400
+          : 3600
+    return Array.from({ length: MAX_CHART_TREND_POINTS }, (_, i) =>
+      formatChartTime(
+        lastTime - (MAX_CHART_TREND_POINTS - 1 - i) * intervalSec,
+        timeGranularity
+      )
+    )
+  }
+  const chartTimes = fillTimePoints(sortedTimes)
+
+  const values: Array<{
+    Time: string
+    Series: string
+    Value: number
+    rawValue: number
+    Model: string
+    Dimension: string
+  }> = []
+
+  chartTimes.forEach((time) => {
+    const modelMap = timeModelMap.get(time)
+    sortedModels.forEach((model) => {
+      const stats = modelMap?.get(model)
+      const modelStats = stats || { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
+      dimensionDefs.forEach((dimension) => {
+        const rawValue =
+          dimension.key === 'input_tokens'
+            ? modelStats.input
+            : dimension.key === 'output_tokens'
+              ? modelStats.output
+              : dimension.key === 'cache_read_tokens'
+                ? modelStats.cacheRead
+                : modelStats.cacheWrite
+        values.push({
+          Time: time,
+          Series: `${model} · ${dimension.label}`,
+          Value: rawValue,
+          rawValue,
+          Model: model,
+          Dimension: dimension.label,
+        })
+      })
+    })
+  })
+
+  const colorDomain = values.map((item) => item.Series)
+  const colorRange = getVChartDefaultColors(colorDomain.length, themeKey)
+  const color = {
+    type: 'ordinal',
+    domain: colorDomain,
+    range: colorRange,
+  }
+
+  const totalTokens = data.reduce((sum, item) => {
+    return (
+      sum +
+      (Number(item.input_tokens) || 0) +
+      (Number(item.output_tokens) || 0) +
+      (Number(item.cache_read_tokens) || 0) +
+      (Number(item.cache_write_tokens) || 0)
+    )
+  }, 0)
+
+  return {
+    spec_line: {
+      type: 'bar',
+      data: [{ id: 'tokenBarData', values }],
+      xField: 'Time',
+      yField: 'Value',
+      seriesField: 'Series',
+      stack: true,
+      legends: { visible: true, selectMode: 'single' },
+      color,
+      tooltip: {
+        mark: {
+          content: [
+            {
+              key: (datum: Record<string, unknown>) =>
+                `${datum?.Model as string} · ${datum?.Dimension as string}`,
+              value: (datum: Record<string, unknown>) =>
+                formatInt(Number(datum?.rawValue) || 0),
+            },
+          ],
+        },
+      },
+      background: { fill: 'transparent' },
+      animation: true,
+    },
+    spec_area: {
+      type: 'area',
+      data: [{ id: 'tokenAreaData', values }],
+      xField: 'Time',
+      yField: 'Value',
+      seriesField: 'Series',
+      stack: false,
+      legends: { visible: true, selectMode: 'single' },
+      color,
+      tooltip: {
+        mark: {
+          content: [
+            {
+              key: (datum: Record<string, unknown>) =>
+                `${datum?.Model as string} · ${datum?.Dimension as string}`,
+              value: (datum: Record<string, unknown>) =>
+                formatInt(Number(datum?.rawValue) || 0),
+            },
+          ],
+        },
+      },
+      area: {
+        style: {
+          fillOpacity: 0.08,
+          curveType: 'monotone',
+        },
+      },
+      line: {
+        style: {
+          lineWidth: 2,
+          curveType: 'monotone',
+        },
+      },
+      point: { visible: false },
+      background: { fill: 'transparent' },
+      animation: true,
+    },
+    totalTokensDisplay: formatInt(totalTokens),
+  }
+}
 
 export function processUserChartData(
   data: QuotaDataItem[],

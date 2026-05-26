@@ -316,6 +316,8 @@ func SetApiRouter(router *gin.Engine) {
 		dataRoute.GET("/", middleware.AdminAuth(), controller.GetAllQuotaDates)
 		dataRoute.GET("/users", middleware.AdminAuth(), controller.GetQuotaDatesByUser)
 		dataRoute.GET("/self", middleware.UserAuth(), controller.GetUserQuotaDates)
+		dataRoute.GET("/token-distribution", middleware.AdminAuth(), controller.GetTokenDistribution)
+		dataRoute.GET("/token-distribution/self", middleware.UserAuth(), controller.GetSelfTokenDistribution)
 
 		logRoute.Use(middleware.CORS(), middleware.CriticalRateLimit())
 		{

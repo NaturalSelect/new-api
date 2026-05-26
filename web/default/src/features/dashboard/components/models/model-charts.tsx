@@ -51,6 +51,8 @@ interface ModelChartsProps {
   data: QuotaDataItem[]
   loading?: boolean
   timeGranularity?: TimeGranularity
+  timeRange?: { start?: Date; end?: Date }
+  preferencesRevision?: number
   defaultChartTab?: ModelAnalyticsChartTab
 }
 
@@ -72,8 +74,8 @@ export function ModelCharts(props: ModelChartsProps) {
   const timeGranularity = props.timeGranularity ?? DEFAULT_TIME_GRANULARITY
 
   useEffect(() => {
-    if (props.defaultChartTab) setActiveTab(props.defaultChartTab)
-  }, [props.defaultChartTab])
+    setActiveTab(props.defaultChartTab ?? 'trend')
+  }, [props.defaultChartTab, props.preferencesRevision])
 
   useEffect(() => {
     const updateTheme = async () => {
@@ -101,7 +103,8 @@ export function ModelCharts(props: ModelChartsProps) {
         timeGranularity,
         t,
         customization.preset,
-        chartRadius
+        chartRadius,
+        props.timeRange
       ),
     [
       props.data,
@@ -110,6 +113,7 @@ export function ModelCharts(props: ModelChartsProps) {
       t,
       customization.preset,
       chartRadius,
+      props.timeRange,
     ]
   )
 
@@ -120,6 +124,10 @@ export function ModelCharts(props: ModelChartsProps) {
     specType,
     props.loading ? 'loading' : 'ready',
     props.data.length,
+    timeGranularity,
+    props.timeRange?.start?.getTime(),
+    props.timeRange?.end?.getTime(),
+    props.preferencesRevision,
     resolvedTheme,
     customization.preset,
   ].join('-')

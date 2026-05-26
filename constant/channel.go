@@ -119,7 +119,7 @@ var ChannelBaseURLs = []string{
 	"https://api.openai.com",                    //55
 	"https://api.replicate.com",                 //56
 	"https://chatgpt.com",                       //57
-	"https://api.poe.com/v1",                    //58
+	"https://api.poe.com",                       //58
 }
 
 var ChannelTypeNames = map[int]string{

@@ -20,7 +20,7 @@ import { useState } from 'react'
 import { Filter, RotateCcw, Calendar, Search } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/auth-store'
-import { getRollingDateRange, type TimeGranularity } from '@/lib/time'
+import { type TimeGranularity } from '@/lib/time'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import {
@@ -51,6 +51,7 @@ import {
 import {
   buildDefaultDashboardFilters,
   cleanFilters,
+  getDashboardDateRange,
 } from '@/features/dashboard/lib'
 import type {
   DashboardChartPreferences,
@@ -59,13 +60,11 @@ import type {
 
 interface ModelsFilterProps {
   preferences: DashboardChartPreferences
+  filters: DashboardFilters
   onFilterChange: (filters: DashboardFilters) => void
   onReset: () => void
 }
 
-/**
- * Section divider component for better visual organization
- */
 const SectionDivider = ({ label }: { label: string }) => (
   <div className='relative'>
     <div className='absolute inset-0 flex items-center'>
@@ -77,6 +76,26 @@ const SectionDivider = ({ label }: { label: string }) => (
   </div>
 )
 
+const getSelectedRange = (
+  filters: DashboardFilters,
+  fallbackDays: number
+): number | null => {
+  const start = filters.start_timestamp?.getTime()
+  const end = filters.end_timestamp?.getTime()
+  if (!start || !end) return fallbackDays
+
+  return (
+    TIME_RANGE_PRESETS.find((range) => {
+      if (range.days === 0) {
+        const { start: monthStart } = getDashboardDateRange(0)
+        return Math.abs(monthStart.getTime() - start) < 60_000
+      }
+
+      return Math.abs(end - start - range.days * 24 * 60 * 60 * 1000) < 60_000
+    })?.days ?? null
+  )
+}
+
 export function ModelsFilter(props: ModelsFilterProps) {
   const { t } = useTranslation()
   // 使用已缓存的用户数据，避免重复调用 API
@@ -84,20 +103,20 @@ export function ModelsFilter(props: ModelsFilterProps) {
   const isAdmin = user?.role && user.role >= 10
 
   const [open, setOpen] = useState(false)
-  const [filters, setFilters] = useState<DashboardFilters>(() =>
-    buildDefaultDashboardFilters(props.preferences)
-  )
-  const [selectedRange, setSelectedRange] = useState<number | null>(
-    () => props.preferences.defaultTimeRangeDays
+  const [filters, setFilters] = useState<DashboardFilters>(props.filters)
+  const [selectedRange, setSelectedRange] = useState<number | null>(() =>
+    getSelectedRange(props.filters, props.preferences.defaultTimeRangeDays)
   )
 
-  const resetFiltersFromPreferences = () => {
-    setFilters(buildDefaultDashboardFilters(props.preferences))
-    setSelectedRange(props.preferences.defaultTimeRangeDays)
+  const resetFiltersFromCurrentFilters = () => {
+    setFilters(props.filters)
+    setSelectedRange(
+      getSelectedRange(props.filters, props.preferences.defaultTimeRangeDays)
+    )
   }
 
   const handleOpenChange = (nextOpen: boolean) => {
-    if (nextOpen) resetFiltersFromPreferences()
+    if (nextOpen) resetFiltersFromCurrentFilters()
     setOpen(nextOpen)
   }
 
@@ -112,7 +131,7 @@ export function ModelsFilter(props: ModelsFilterProps) {
 
   const handleReset = () => {
     const days = props.preferences.defaultTimeRangeDays
-    const { start, end } = getRollingDateRange(days)
+    const { start, end } = getDashboardDateRange(days)
     setFilters({
       ...buildDefaultDashboardFilters(props.preferences),
       start_timestamp: start,
@@ -133,7 +152,7 @@ export function ModelsFilter(props: ModelsFilterProps) {
   }
 
   const handleQuickRange = (days: number) => {
-    const { start, end } = getRollingDateRange(days)
+    const { start, end } = getDashboardDateRange(days)
 
     setFilters((prev) => ({
       ...prev,

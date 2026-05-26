@@ -97,6 +97,17 @@ export function getRollingDateRange(
   return { start, end }
 }
 
+export function getCurrentMonthDateRange(
+  fromDate: Date = new Date()
+): { start: Date; end: Date } {
+  const end = new Date(fromDate)
+  const start = new Date(fromDate)
+  start.setDate(1)
+  start.setHours(0, 0, 0, 0)
+
+  return { start, end }
+}
+
 /**
  * Compute time range as Unix timestamps (seconds)
  * @param days Default number of days if no dates provided
@@ -125,6 +136,19 @@ export function computeTimeRange(
     return {
       start_timestamp: start,
       end_timestamp: end + 24 * 3600 - 1, // End of day
+    }
+  }
+
+  // Current natural month: from the first day 00:00 to the current end point.
+  if (days === 0 && !startDate) {
+    const end = endDate ? dateToUnixTimestamp(endDate) : now + 3600
+    const startOfMonth = endDate ? new Date(endDate) : new Date(now * 1000)
+    startOfMonth.setDate(1)
+    startOfMonth.setHours(0, 0, 0, 0)
+
+    return {
+      start_timestamp: dateToUnixTimestamp(startOfMonth),
+      end_timestamp: end,
     }
   }
 

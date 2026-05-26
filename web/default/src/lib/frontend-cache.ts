@@ -25,6 +25,8 @@ const PRESERVED_LOCAL_STORAGE_KEYS = new Set([
   'uid',
   'aff',
   'oauth:binding:result',
+  'dashboard_models_chart_preferences',
+  'data_export_default_time',
 ])
 
 export function initializeFrontendCache(): void {

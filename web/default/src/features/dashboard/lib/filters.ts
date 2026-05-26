@@ -16,11 +16,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { getRollingDateRange, type TimeGranularity } from '@/lib/time'
+import {
+  getCurrentMonthDateRange,
+  getRollingDateRange,
+  type TimeGranularity,
+} from '@/lib/time'
 import {
   DASHBOARD_CHART_PREFERENCES_STORAGE_KEY,
+  DASHBOARD_CHART_PREFERENCES_VERSION,
   DEFAULT_DASHBOARD_CHART_PREFERENCES,
-  DEFAULT_TIME_GRANULARITY,
   EMPTY_DASHBOARD_FILTERS,
   TIME_GRANULARITY_STORAGE_KEY,
   TIME_RANGE_PRESETS,
@@ -36,12 +40,6 @@ import type {
 
 function isTimeGranularity(value: unknown): value is TimeGranularity {
   return value === 'hour' || value === 'day' || value === 'week'
-}
-
-function getLegacySavedGranularity(): TimeGranularity {
-  if (typeof window === 'undefined') return DEFAULT_TIME_GRANULARITY
-  const saved = localStorage.getItem(TIME_GRANULARITY_STORAGE_KEY)
-  return isTimeGranularity(saved) ? saved : DEFAULT_TIME_GRANULARITY
 }
 
 function isConsumptionDistributionChartType(
@@ -76,6 +74,10 @@ export function cleanFilters<T extends Record<string, unknown>>(
   return cleaned
 }
 
+export function getDashboardDateRange(days: number): { start: Date; end: Date } {
+  return days === 0 ? getCurrentMonthDateRange() : getRollingDateRange(days)
+}
+
 export function getSavedGranularity(
   override?: TimeGranularity
 ): TimeGranularity {
@@ -95,17 +97,23 @@ export function saveGranularity(granularity: TimeGranularity): void {
 export function getSavedChartPreferences(): DashboardChartPreferences {
   if (typeof window === 'undefined') return DEFAULT_DASHBOARD_CHART_PREFERENCES
 
-  const fallbackPreferences = {
-    ...DEFAULT_DASHBOARD_CHART_PREFERENCES,
-    defaultTimeGranularity: getLegacySavedGranularity(),
-  }
+  const fallbackPreferences = DEFAULT_DASHBOARD_CHART_PREFERENCES
 
   try {
     const raw = localStorage.getItem(DASHBOARD_CHART_PREFERENCES_STORAGE_KEY)
-    if (!raw) return fallbackPreferences
+    if (!raw) {
+      const preferences = {
+        ...fallbackPreferences,
+        defaultTimeGranularity: fallbackPreferences.defaultTimeGranularity,
+      }
+      saveChartPreferences(preferences)
+      return preferences
+    }
 
     const parsed = JSON.parse(raw) as Partial<DashboardChartPreferences>
-    return {
+    const isCurrentVersion = parsed.version === DASHBOARD_CHART_PREFERENCES_VERSION
+    const preferences: DashboardChartPreferences = {
+      version: DASHBOARD_CHART_PREFERENCES_VERSION,
       consumptionDistributionChart: isConsumptionDistributionChartType(
         parsed.consumptionDistributionChart
       )
@@ -119,14 +127,20 @@ export function getSavedChartPreferences(): DashboardChartPreferences {
       modelAnalyticsChart: isModelAnalyticsChartTab(parsed.modelAnalyticsChart)
         ? parsed.modelAnalyticsChart
         : fallbackPreferences.modelAnalyticsChart,
-      defaultTimeRangeDays: isTimeRangePresetDays(parsed.defaultTimeRangeDays)
-        ? parsed.defaultTimeRangeDays
-        : fallbackPreferences.defaultTimeRangeDays,
-      defaultTimeGranularity: isTimeGranularity(parsed.defaultTimeGranularity)
-        ? parsed.defaultTimeGranularity
-        : fallbackPreferences.defaultTimeGranularity,
+      defaultTimeRangeDays:
+        isCurrentVersion && isTimeRangePresetDays(parsed.defaultTimeRangeDays)
+          ? parsed.defaultTimeRangeDays
+          : fallbackPreferences.defaultTimeRangeDays,
+      defaultTimeGranularity:
+        isCurrentVersion && isTimeGranularity(parsed.defaultTimeGranularity)
+          ? parsed.defaultTimeGranularity
+          : fallbackPreferences.defaultTimeGranularity,
     }
+
+    if (!isCurrentVersion) saveChartPreferences(preferences)
+    return preferences
   } catch {
+    saveChartPreferences(fallbackPreferences)
     return fallbackPreferences
   }
 }
@@ -135,21 +149,32 @@ export function saveChartPreferences(
   preferences: DashboardChartPreferences
 ): void {
   if (typeof window === 'undefined') return
+  const nextPreferences = {
+    ...preferences,
+    version: DASHBOARD_CHART_PREFERENCES_VERSION,
+  }
   localStorage.setItem(
     DASHBOARD_CHART_PREFERENCES_STORAGE_KEY,
-    JSON.stringify(preferences)
+    JSON.stringify(nextPreferences)
+  )
+  localStorage.setItem(
+    TIME_GRANULARITY_STORAGE_KEY,
+    nextPreferences.defaultTimeGranularity
   )
 }
 
 export function getDefaultDays(granularity?: TimeGranularity): number {
-  if (!granularity) return getSavedChartPreferences().defaultTimeRangeDays
-  return TIME_RANGE_BY_GRANULARITY[getSavedGranularity(granularity)]
+  const preferences = getSavedChartPreferences()
+  if (!granularity || granularity === preferences.defaultTimeGranularity) {
+    return preferences.defaultTimeRangeDays
+  }
+  return TIME_RANGE_BY_GRANULARITY[granularity]
 }
 
 export function buildDefaultDashboardFilters(
   preferences: DashboardChartPreferences = getSavedChartPreferences()
 ): DashboardFilters {
-  const { start, end } = getRollingDateRange(preferences.defaultTimeRangeDays)
+  const { start, end } = getDashboardDateRange(preferences.defaultTimeRangeDays)
   return {
     ...EMPTY_DASHBOARD_FILTERS,
     start_timestamp: start,

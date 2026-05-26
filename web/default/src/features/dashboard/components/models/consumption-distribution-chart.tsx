@@ -47,6 +47,8 @@ interface ConsumptionDistributionChartProps {
   tokenData: TokenDistributionDataItem[]
   loading?: boolean
   timeGranularity?: TimeGranularity
+  timeRange?: { start?: Date; end?: Date }
+  preferencesRevision?: number
   defaultChartType?: ConsumptionDistributionChartType
   mode?: ConsumptionDistributionMode
 }
@@ -82,12 +84,12 @@ export function ConsumptionDistributionChart(
   const timeGranularity = props.timeGranularity ?? DEFAULT_TIME_GRANULARITY
 
   useEffect(() => {
-    if (props.defaultChartType) setChartType(props.defaultChartType)
-  }, [props.defaultChartType])
+    setChartType(props.defaultChartType ?? 'bar')
+  }, [props.defaultChartType, props.preferencesRevision])
 
   useEffect(() => {
-    if (props.mode) setMode(props.mode)
-  }, [props.mode])
+    setMode(props.mode ?? 'quota')
+  }, [props.mode, props.preferencesRevision])
 
   useEffect(() => {
     const updateTheme = async () => {
@@ -115,7 +117,8 @@ export function ConsumptionDistributionChart(
         timeGranularity,
         t,
         customization.preset,
-        chartRadius
+        chartRadius,
+        props.timeRange
       ),
     [
       props.quotaData,
@@ -124,6 +127,7 @@ export function ConsumptionDistributionChart(
       t,
       customization.preset,
       chartRadius,
+      props.timeRange,
     ]
   )
 
@@ -133,9 +137,17 @@ export function ConsumptionDistributionChart(
         props.loading ? [] : props.tokenData,
         timeGranularity,
         t,
-        customization.preset
+        customization.preset,
+        props.timeRange
       ),
-    [props.tokenData, props.loading, timeGranularity, t, customization.preset]
+    [
+      props.tokenData,
+      props.loading,
+      timeGranularity,
+      t,
+      customization.preset,
+      props.timeRange,
+    ]
   )
 
   const activeChartData = mode === 'token' ? tokenChartData : quotaChartData
@@ -147,6 +159,11 @@ export function ConsumptionDistributionChart(
     props.loading ? 'loading' : 'ready',
     props.quotaData.length,
     props.tokenData.length,
+    timeGranularity,
+    mode,
+    props.timeRange?.start?.getTime(),
+    props.timeRange?.end?.getTime(),
+    props.preferencesRevision,
     resolvedTheme,
     customization.preset,
   ].join('-')

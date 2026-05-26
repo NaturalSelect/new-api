@@ -2026,6 +2026,8 @@
     "Initializing…": "Initializing…",
     "Inpaint": "Inpaint",
     "Input": "Input",
+    "Input (Cache Hit)": "Input (Cache Hit)",
+    "Input (Cache Miss)": "Input (Cache Miss)",
     "Input mode": "Input mode",
     "Input price": "Input price",
     "Input price is required before saving dependent prices.": "Input price is required before saving dependent prices.",

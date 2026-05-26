@@ -241,8 +241,21 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 			request.ExtraBody = extraBody
 			request.ReasoningEffort = ""
 		}
+		// Strip fields that POE Chat Completions API ignores per its API documentation
+		request.Store = nil
+		request.Metadata = nil
+		request.ResponseFormat = nil
+		request.Prediction = nil
+		request.PresencePenalty = nil
+		request.FrequencyPenalty = nil
+		request.Seed = nil
+		request.ServiceTier = nil
+		request.Audio = nil
+		request.LogitBias = nil
+		request.User = nil
+		request.Modalities = nil
 	}
-	if info.ChannelType != constant.ChannelTypeOpenAI && info.ChannelType != constant.ChannelTypeAzure {
+	if info.ChannelType != constant.ChannelTypeOpenAI && info.ChannelType != constant.ChannelTypeAzure && info.ChannelType != constant.ChannelTypePoeOpenAI {
 		request.StreamOptions = nil
 	}
 	if info.ChannelType == constant.ChannelTypeOpenRouter {
@@ -609,28 +622,6 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommo
 
 	if info != nil && request.Reasoning != nil && request.Reasoning.Effort != "" {
 		info.ReasoningEffort = request.Reasoning.Effort
-	}
-
-	if info != nil && info.ChannelType == constant.ChannelTypePoeOpenAI {
-		requestMap := make(map[string]any)
-		requestBytes, err := common.Marshal(request)
-		if err != nil {
-			return nil, fmt.Errorf("error marshalling responses request: %w", err)
-		}
-		if err = common.Unmarshal(requestBytes, &requestMap); err != nil {
-			return nil, fmt.Errorf("error unmarshalling responses request: %w", err)
-		}
-		requestMap["n"] = 1
-		if request.Reasoning != nil && request.Reasoning.Effort != "" {
-			extraBody := map[string]any{}
-			if existingExtraBody, ok := requestMap["extra_body"].(map[string]any); ok {
-				extraBody = existingExtraBody
-			}
-			extraBody["reasoning_effort"] = request.Reasoning.Effort
-			requestMap["extra_body"] = extraBody
-			delete(requestMap, "reasoning")
-		}
-		return requestMap, nil
 	}
 
 	return request, nil

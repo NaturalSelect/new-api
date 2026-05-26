@@ -2026,6 +2026,8 @@
     "Initializing…": "初期化中…",
     "Inpaint": "インペイント",
     "Input": "入力",
+    "Input (Cache Hit)": "入力（キャッシュヒット）",
+    "Input (Cache Miss)": "入力（キャッシュミス）",
     "Input mode": "入力モード",
     "Input price": "入力価格",
     "Input price is required before saving dependent prices.": "依存する価格を保存する前に入力価格が必要です。",

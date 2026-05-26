@@ -164,6 +164,7 @@ export function Dashboard() {
   const [tokenDistributionLoading, setTokenDistributionLoading] = useState(false)
   const [chartPreferences, setChartPreferences] =
     useState<DashboardChartPreferences>(() => getSavedChartPreferences())
+  const [chartPreferencesRevision, setChartPreferencesRevision] = useState(0)
   const [modelFilters, setModelFilters] = useState<DashboardFilters>(() =>
     buildDefaultDashboardFilters(getSavedChartPreferences())
   )
@@ -188,11 +189,16 @@ export function Dashboard() {
 
   const handleChartPreferencesChange = useCallback(
     (preferences: DashboardChartPreferences) => {
-      setChartPreferences(preferences)
-      setModelFilters(buildDefaultDashboardFilters(preferences))
-      saveChartPreferences(preferences)
+      const nextPreferences = {
+        ...preferences,
+        version: chartPreferences.version,
+      }
+      setChartPreferences(nextPreferences)
+      setChartPreferencesRevision((revision) => revision + 1)
+      setModelFilters(buildDefaultDashboardFilters(nextPreferences))
+      saveChartPreferences(nextPreferences)
     },
-    []
+    [chartPreferences.version]
   )
 
   useEffect(() => {
@@ -232,6 +238,13 @@ export function Dashboard() {
       ),
     [isAdmin]
   )
+  const modelChartTimeRange = useMemo(
+    () => ({
+      start: modelFilters.start_timestamp,
+      end: modelFilters.end_timestamp,
+    }),
+    [modelFilters.start_timestamp, modelFilters.end_timestamp]
+  )
   const handleSectionChange = useCallback(
     (section: string) => {
       void navigate({
@@ -252,6 +265,7 @@ export function Dashboard() {
         />
         <ModelsFilter
           preferences={chartPreferences}
+          filters={modelFilters}
           onFilterChange={handleFilterChange}
           onReset={handleResetFilters}
         />
@@ -316,6 +330,8 @@ export function Dashboard() {
                     timeGranularity={
                       modelFilters.time_granularity || DEFAULT_TIME_GRANULARITY
                     }
+                    timeRange={modelChartTimeRange}
+                    preferencesRevision={chartPreferencesRevision}
                   />
                 </Suspense>
               </FadeIn>
@@ -328,6 +344,8 @@ export function Dashboard() {
                     timeGranularity={
                       modelFilters.time_granularity || DEFAULT_TIME_GRANULARITY
                     }
+                    timeRange={modelChartTimeRange}
+                    preferencesRevision={chartPreferencesRevision}
                   />
                 </Suspense>
               </FadeIn>

@@ -2026,6 +2026,8 @@
     "Initializing…": "Đang khởi tạo…",
     "Inpaint": "Inpaint",
     "Input": "Đầu vào",
+    "Input (Cache Hit)": "Đầu vào (trúng cache)",
+    "Input (Cache Miss)": "Đầu vào (trượt cache)",
     "Input mode": "Chế độ nhập",
     "Input price": "Giá đầu vào",
     "Input price is required before saving dependent prices.": "Cần có giá đầu vào trước khi lưu các giá phụ thuộc.",

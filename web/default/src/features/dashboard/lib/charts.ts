@@ -29,6 +29,7 @@ import type {
 } from '@/features/dashboard/types'
 
 type TFunction = (key: string) => string
+type ChartTimeRange = { start?: Date; end?: Date }
 type TooltipLineItem = {
   key: string
   value: string | number
@@ -60,6 +61,46 @@ function getThemeChartColors(themeKey?: string): string[] {
       bodyStyle.getPropertyValue(name) || rootStyle.getPropertyValue(name)
     ).trim()
   }).filter(Boolean)
+}
+
+function getIntervalSeconds(granularity: TimeGranularity): number {
+  if (granularity === 'week') return 604800
+  if (granularity === 'day') return 86400
+  return 3600
+}
+
+function buildChartTimes(
+  existingTimes: string[],
+  timeGranularity: TimeGranularity,
+  range?: ChartTimeRange,
+  fallbackLastTimestamp?: number
+): string[] {
+  const intervalSec = getIntervalSeconds(timeGranularity)
+  const uniqueTimes = new Set(existingTimes)
+
+  if (range?.start && range?.end) {
+    const startTs = Math.floor(range.start.getTime() / 1000)
+    const endTs = Math.floor(range.end.getTime() / 1000)
+    for (let ts = startTs; ts <= endTs; ts += intervalSec) {
+      uniqueTimes.add(formatChartTime(ts, timeGranularity))
+    }
+    uniqueTimes.add(formatChartTime(endTs, timeGranularity))
+    return Array.from(uniqueTimes).sort()
+  }
+
+  if (existingTimes.length >= MAX_CHART_TREND_POINTS) return existingTimes
+  const lastTime = fallbackLastTimestamp ?? 0
+  if (lastTime <= 0) return existingTimes
+
+  for (let i = 0; i < MAX_CHART_TREND_POINTS; i++) {
+    uniqueTimes.add(
+      formatChartTime(
+        lastTime - (MAX_CHART_TREND_POINTS - 1 - i) * intervalSec,
+        timeGranularity
+      )
+    )
+  }
+  return Array.from(uniqueTimes).sort()
 }
 
 function getVChartDefaultColors(domainLength: number, themeKey?: string) {
@@ -101,7 +142,8 @@ export function processChartData(
   timeGranularity: TimeGranularity = 'day',
   t?: TFunction,
   themeKey?: string,
-  chartCornerRadius?: number
+  chartCornerRadius?: number,
+  range?: ChartTimeRange
 ): ProcessedChartData {
   const tt: TFunction = t ?? ((x) => x)
   const otherLabel = tt('Other')
@@ -305,28 +347,12 @@ export function processChartData(
     range: modelColorRange,
   }
 
-  // Pad time points if too few (default 7 points)
-  const MAX_TREND_POINTS = MAX_CHART_TREND_POINTS
-  const fillTimePoints = (times: string[]) => {
-    if (times.length >= MAX_TREND_POINTS) return times
-    const lastTime = Math.max(
-      ...data.map((item) => Number(item.created_at) || 0)
-    )
-    const intervalSec =
-      timeGranularity === 'week'
-        ? 604800
-        : timeGranularity === 'day'
-          ? 86400
-          : 3600
-    const padded = Array.from({ length: MAX_TREND_POINTS }, (_, i) =>
-      formatChartTime(
-        lastTime - (MAX_TREND_POINTS - 1 - i) * intervalSec,
-        timeGranularity
-      )
-    )
-    return padded
-  }
-  const chartTimes = fillTimePoints(sortedTimes)
+  const chartTimes = buildChartTimes(
+    sortedTimes,
+    timeGranularity,
+    range,
+    Math.max(...data.map((item) => Number(item.created_at) || 0))
+  )
 
   const totalTimes = Array.from(modelTotalsMap.values()).reduce(
     (sum, x) => sum + (Number(x.count) || 0),
@@ -738,7 +764,8 @@ export function processTokenDistributionChartData(
   data: TokenDistributionDataItem[],
   timeGranularity: TimeGranularity = 'day',
   t?: TFunction,
-  themeKey?: string
+  themeKey?: string,
+  range?: ChartTimeRange
 ): ProcessedTokenDistributionChartData {
   const tt: TFunction = t ?? ((x) => x)
   const formatInt = (value: number) =>
@@ -769,9 +796,9 @@ export function processTokenDistributionChartData(
   }
 
   const dimensionDefs = [
-    { key: 'input_tokens', label: tt('Input') },
+    { key: 'input_tokens', label: tt('Input (Cache Miss)') },
     { key: 'output_tokens', label: tt('Output') },
-    { key: 'cache_read_tokens', label: tt('Cache Read') },
+    { key: 'cache_read_tokens', label: tt('Input (Cache Hit)') },
     { key: 'cache_write_tokens', label: tt('Cache Write') },
   ] as const
 
@@ -793,6 +820,7 @@ export function processTokenDistributionChartData(
     const output = Number(item.output_tokens) || 0
     const cacheRead = Number(item.cache_read_tokens) || 0
     const cacheWrite = Number(item.cache_write_tokens) || 0
+    const inputCacheMiss = Math.max(input - cacheRead, 0)
 
     if (!timeModelMap.has(timeKey)) {
       timeModelMap.set(timeKey, new Map())
@@ -807,7 +835,7 @@ export function processTokenDistributionChartData(
     }
 
     const next = {
-      input: prev.input + input,
+      input: prev.input + inputCacheMiss,
       output: prev.output + output,
       cacheRead: prev.cacheRead + cacheRead,
       cacheWrite: prev.cacheWrite + cacheWrite,
@@ -816,7 +844,11 @@ export function processTokenDistributionChartData(
 
     modelTotalsMap.set(
       model,
-      (modelTotalsMap.get(model) || 0) + input + output + cacheRead + cacheWrite
+      (modelTotalsMap.get(model) || 0) +
+        inputCacheMiss +
+        output +
+        cacheRead +
+        cacheWrite
     )
   })
 
@@ -825,23 +857,12 @@ export function processTokenDistributionChartData(
     .sort((a, b) => b[1] - a[1])
     .map(([model]) => model)
 
-  const fillTimePoints = (times: string[]) => {
-    if (times.length >= MAX_CHART_TREND_POINTS) return times
-    const lastTime = Math.max(...data.map((item) => Number(item.created_at) || 0))
-    const intervalSec =
-      timeGranularity === 'week'
-        ? 604800
-        : timeGranularity === 'day'
-          ? 86400
-          : 3600
-    return Array.from({ length: MAX_CHART_TREND_POINTS }, (_, i) =>
-      formatChartTime(
-        lastTime - (MAX_CHART_TREND_POINTS - 1 - i) * intervalSec,
-        timeGranularity
-      )
-    )
-  }
-  const chartTimes = fillTimePoints(sortedTimes)
+  const chartTimes = buildChartTimes(
+    sortedTimes,
+    timeGranularity,
+    range,
+    Math.max(...data.map((item) => Number(item.created_at) || 0))
+  )
 
   const values: Array<{
     Time: string
@@ -887,11 +908,13 @@ export function processTokenDistributionChartData(
   }
 
   const totalTokens = data.reduce((sum, item) => {
+    const input = Number(item.input_tokens) || 0
+    const cacheRead = Number(item.cache_read_tokens) || 0
     return (
       sum +
-      (Number(item.input_tokens) || 0) +
+      Math.max(input - cacheRead, 0) +
       (Number(item.output_tokens) || 0) +
-      (Number(item.cache_read_tokens) || 0) +
+      cacheRead +
       (Number(item.cache_write_tokens) || 0)
     )
   }, 0)

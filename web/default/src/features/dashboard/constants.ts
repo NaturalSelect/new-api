@@ -21,14 +21,16 @@ import type { DashboardChartPreferences, DashboardFilters } from './types'
 export const TIME_GRANULARITY_STORAGE_KEY = 'data_export_default_time'
 export const DASHBOARD_CHART_PREFERENCES_STORAGE_KEY =
   'dashboard_models_chart_preferences'
-export const DEFAULT_TIME_GRANULARITY = 'hour' as const
+export const DASHBOARD_CHART_PREFERENCES_VERSION = 2
+export const DEFAULT_TIME_GRANULARITY = 'day' as const
 export const MAX_CHART_TREND_POINTS = 7
 
 export const DEFAULT_DASHBOARD_CHART_PREFERENCES: DashboardChartPreferences = {
+  version: DASHBOARD_CHART_PREFERENCES_VERSION,
   consumptionDistributionChart: 'bar',
   consumptionDistributionMode: 'quota',
   modelAnalyticsChart: 'trend',
-  defaultTimeRangeDays: 1,
+  defaultTimeRangeDays: 0,
   defaultTimeGranularity: DEFAULT_TIME_GRANULARITY,
 }
 
@@ -45,6 +47,7 @@ export const TIME_GRANULARITY_OPTIONS = [
 ] as const
 
 export const TIME_RANGE_PRESETS = [
+  { label: 'This month', days: 0 },
   { label: '1 Day', days: 1 },
   { label: '7 Days', days: 7 },
   { label: '14 Days', days: 14 },
@@ -70,6 +73,6 @@ export const MODEL_ANALYTICS_CHART_OPTIONS = [
 export const EMPTY_DASHBOARD_FILTERS: DashboardFilters = {
   start_timestamp: undefined,
   end_timestamp: undefined,
-  time_granularity: 'hour',
+  time_granularity: DEFAULT_TIME_GRANULARITY,
   username: '',
 }

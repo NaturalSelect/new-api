@@ -33,8 +33,8 @@ function validateDataExportDefaultTime(value: string): 'week' | 'hour' | 'day' {
   if (value === 'week' || value === 'hour' || value === 'day') {
     return value
   }
-  // Default to 'hour' if value is unexpected
-  return 'hour'
+  // Default to 'day' if value is unexpected
+  return 'day'
 }
 
 const CONTENT_SECTIONS = [

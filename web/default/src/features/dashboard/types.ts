@@ -67,6 +67,7 @@ export type ConsumptionDistributionMode = 'quota' | 'token'
 export type ModelAnalyticsChartTab = 'trend' | 'proportion' | 'top'
 
 export interface DashboardChartPreferences {
+  version: number
   consumptionDistributionChart: ConsumptionDistributionChartType
   consumptionDistributionMode: ConsumptionDistributionMode
   modelAnalyticsChart: ModelAnalyticsChartTab

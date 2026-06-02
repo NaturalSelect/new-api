@@ -70,12 +70,8 @@ func GetUserQuotaDates(c *gin.Context) {
 func GetTokenDistribution(c *gin.Context) {
 	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
 	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
-	timeGranularity := c.Query("default_time")
-	if timeGranularity == "" {
-		timeGranularity = c.Query("time_granularity")
-	}
 	username := c.Query("username")
-	dates, err := model.GetTokenDistribution(startTimestamp, endTimestamp, timeGranularity, username)
+	dates, err := model.GetTokenDistribution(startTimestamp, endTimestamp, username)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -90,12 +86,8 @@ func GetTokenDistribution(c *gin.Context) {
 func GetSelfTokenDistribution(c *gin.Context) {
 	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
 	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
-	timeGranularity := c.Query("default_time")
-	if timeGranularity == "" {
-		timeGranularity = c.Query("time_granularity")
-	}
 	username := c.GetString("username")
-	dates, err := model.GetTokenDistribution(startTimestamp, endTimestamp, timeGranularity, username)
+	dates, err := model.GetTokenDistribution(startTimestamp, endTimestamp, username)
 	if err != nil {
 		common.ApiError(c, err)
 		return

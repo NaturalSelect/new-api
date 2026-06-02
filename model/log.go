@@ -526,38 +526,14 @@ func getCacheWriteTokensFromOther(otherMap map[string]interface{}) int {
 	return 0
 }
 
-func bucketTimestampByGranularity(timestamp int64, granularity string) int64 {
+func bucketTimestampToHour(timestamp int64) int64 {
 	if timestamp <= 0 {
 		return 0
 	}
-	t := time.Unix(timestamp, 0).UTC()
-	switch granularity {
-	case "week":
-		weekday := int(t.Weekday())
-		if weekday == 0 {
-			weekday = 7
-		}
-		start := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, 0, -(weekday - 1))
-		return start.Unix()
-	case "day":
-		start := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
-		return start.Unix()
-	default:
-		return timestamp - (timestamp % 3600)
-	}
+	return timestamp - (timestamp % 3600)
 }
 
-func normalizeTimeGranularity(granularity string) string {
-	switch granularity {
-	case "hour", "day", "week":
-		return granularity
-	default:
-		return "hour"
-	}
-}
-
-func GetTokenDistribution(startTimestamp int64, endTimestamp int64, timeGranularity string, username string) ([]*TokenDistributionData, error) {
-	timeGranularity = normalizeTimeGranularity(timeGranularity)
+func GetTokenDistribution(startTimestamp int64, endTimestamp int64, username string) ([]*TokenDistributionData, error) {
 	base := LOG_DB.Table("logs").Select("created_at, model_name, prompt_tokens, completion_tokens, other").Where("type = ?", LogTypeConsume)
 	if startTimestamp != 0 {
 		base = base.Where("created_at >= ?", startTimestamp)
@@ -582,7 +558,7 @@ func GetTokenDistribution(startTimestamp int64, endTimestamp int64, timeGranular
 			return nil, err
 		}
 		for _, record := range batch {
-			bucket := bucketTimestampByGranularity(record.CreatedAt, timeGranularity)
+			bucket := bucketTimestampToHour(record.CreatedAt)
 			if bucket == 0 {
 				continue
 			}

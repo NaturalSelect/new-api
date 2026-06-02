@@ -887,19 +887,21 @@ export function processTokenDistributionChartData(
               : dimension.key === 'cache_read_tokens'
                 ? modelStats.cacheRead
                 : modelStats.cacheWrite
-        values.push({
-          Time: time,
-          Series: `${model} · ${dimension.label}`,
-          Value: rawValue,
-          rawValue,
-          Model: model,
-          Dimension: dimension.label,
-        })
+        if (rawValue > 0) {
+          values.push({
+            Time: time,
+            Series: `${model} · ${dimension.label}`,
+            Value: rawValue,
+            rawValue,
+            Model: model,
+            Dimension: dimension.label,
+          })
+        }
       })
     })
   })
 
-  const colorDomain = values.map((item) => item.Series)
+  const colorDomain = [...new Set(values.map((item) => item.Series))]
   const colorRange = getVChartDefaultColors(colorDomain.length, themeKey)
   const color = {
     type: 'ordinal',

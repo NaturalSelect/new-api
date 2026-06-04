@@ -14,6 +14,57 @@ import (
 	"github.com/samber/lo"
 )
 
+func ExtractClaudeMetadataUserID(metadata json.RawMessage) string {
+	if len(metadata) == 0 {
+		return ""
+	}
+	var claudeMetadata dto.ClaudeMetadata
+	if err := common.Unmarshal(metadata, &claudeMetadata); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(claudeMetadata.UserId)
+}
+
+func EnsurePromptCacheKeyFromClaudeMetadata(req *dto.GeneralOpenAIRequest) {
+	if req == nil {
+		return
+	}
+	if strings.TrimSpace(req.PromptCacheKey) != "" {
+		return
+	}
+	userID := ExtractClaudeMetadataUserID(req.Metadata)
+	if userID == "" {
+		return
+	}
+	req.PromptCacheKey = userID
+}
+
+func EnsureClaudeMetadataUserIDFromPromptCacheKey(req *dto.ClaudeRequest, promptCacheKey string) {
+	if req == nil {
+		return
+	}
+	promptCacheKey = strings.TrimSpace(promptCacheKey)
+	if promptCacheKey == "" {
+		return
+	}
+	if ExtractClaudeMetadataUserID(req.Metadata) != "" {
+		return
+	}
+
+	metadataMap := make(map[string]any)
+	if len(req.Metadata) > 0 {
+		if err := common.Unmarshal(req.Metadata, &metadataMap); err != nil {
+			return
+		}
+	}
+	metadataMap["user_id"] = promptCacheKey
+	metadata, err := common.Marshal(metadataMap)
+	if err != nil {
+		return
+	}
+	req.Metadata = metadata
+}
+
 func ClaudeToOpenAIRequest(claudeRequest dto.ClaudeRequest, info *relaycommon.RelayInfo) (*dto.GeneralOpenAIRequest, error) {
 	openAIRequest := dto.GeneralOpenAIRequest{
 		Model:       claudeRequest.Model,
@@ -31,6 +82,7 @@ func ClaudeToOpenAIRequest(claudeRequest dto.ClaudeRequest, info *relaycommon.Re
 	if claudeRequest.Stream != nil {
 		openAIRequest.Stream = lo.ToPtr(lo.FromPtr(claudeRequest.Stream))
 	}
+	openAIRequest.Metadata = claudeRequest.Metadata
 
 	isOpenRouter := info.ChannelType == constant.ChannelTypeOpenRouter
 
@@ -212,6 +264,7 @@ func ClaudeToOpenAIRequest(claudeRequest dto.ClaudeRequest, info *relaycommon.Re
 	}
 
 	openAIRequest.Messages = openAIMessages
+	EnsurePromptCacheKeyFromClaudeMetadata(&openAIRequest)
 
 	return &openAIRequest, nil
 }

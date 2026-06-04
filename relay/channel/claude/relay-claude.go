@@ -433,6 +433,7 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 
 	claudeRequest.Prompt = ""
 	claudeRequest.Messages = claudeMessages
+	service.EnsureClaudeMetadataUserIDFromPromptCacheKey(&claudeRequest, textRequest.PromptCacheKey)
 	return &claudeRequest, nil
 }
 

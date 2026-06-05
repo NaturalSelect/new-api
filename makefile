@@ -8,7 +8,7 @@ DEV_POSTGRES_DB = new-api
 DEV_POSTGRES_USER = root
 DEV_SQLITE_PATH ?= one-api.db
 
-.PHONY: all build-frontend build-frontend-classic build-all-frontends start-backend dev dev-api dev-api-rebuild dev-web dev-web-classic reset-setup
+.PHONY: all build-frontend build-frontend-classic build-all-frontends start-backend dev dev-api dev-api-rebuild dev-web dev-web-classic reset-setup docker-export docker-prune
 
 all: build-all-frontends start-backend
 
@@ -43,6 +43,15 @@ dev-web-classic:
 	@cd $(FRONTEND_CLASSIC_DIR) && bun install && bun run dev
 
 dev: dev-api dev-web
+
+docker-export:
+	@echo "Building and exporting Docker image..."
+	@docker build -t calciumion/new-api:latest .
+	@docker save -o new-api.tar localhost/calciumion/new-api:latest
+
+docker-prune:
+	@echo "Pruning Docker system..."
+	@docker system prune
 
 reset-setup:
 	@echo "Resetting local setup wizard state..."

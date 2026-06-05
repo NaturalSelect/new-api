@@ -73,6 +73,17 @@ func convertChatResponseFormatToResponsesText(reqFormat *dto.ResponseFormat) jso
 	return textRaw
 }
 
+func extractPromptCacheKeyFromMetadata(metadata json.RawMessage) string {
+	if len(metadata) == 0 {
+		return ""
+	}
+	var metadataMap map[string]any
+	if err := common.Unmarshal(metadata, &metadataMap); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(common.Interface2String(metadataMap["prompt_cache_key"]))
+}
+
 func ChatCompletionsRequestToResponsesRequest(req *dto.GeneralOpenAIRequest) (*dto.OpenAIResponsesRequest, error) {
 	if req == nil {
 		return nil, errors.New("request is nil")
@@ -372,6 +383,15 @@ func ChatCompletionsRequestToResponsesRequest(req *dto.GeneralOpenAIRequest) (*d
 		topP = common.GetPointer(lo.FromPtr(req.TopP))
 	}
 
+	var promptCacheKeyRaw json.RawMessage
+	promptCacheKey := strings.TrimSpace(req.PromptCacheKey)
+	if promptCacheKey == "" {
+		promptCacheKey = extractPromptCacheKeyFromMetadata(req.Metadata)
+	}
+	if promptCacheKey != "" {
+		promptCacheKeyRaw, _ = common.Marshal(promptCacheKey)
+	}
+
 	out := &dto.OpenAIResponsesRequest{
 		Model:             req.Model,
 		Input:             inputRaw,
@@ -385,6 +405,7 @@ func ChatCompletionsRequestToResponsesRequest(req *dto.GeneralOpenAIRequest) (*d
 		User:              req.User,
 		ParallelToolCalls: parallelToolCallsRaw,
 		Store:             req.Store,
+		PromptCacheKey:    promptCacheKeyRaw,
 		Metadata:          req.Metadata,
 	}
 	if req.MaxTokens != nil || req.MaxCompletionTokens != nil {

@@ -40,6 +40,17 @@ type Adaptor struct {
 	ResponseFormat string
 }
 
+func extractPromptCacheKeyFromMetadata(metadata json.RawMessage) string {
+	if len(metadata) == 0 {
+		return ""
+	}
+	var metadataMap map[string]any
+	if err := common.Unmarshal(metadata, &metadataMap); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(common.Interface2String(metadataMap["prompt_cache_key"]))
+}
+
 func (a *Adaptor) ConvertGeminiRequest(c *gin.Context, info *relaycommon.RelayInfo, request *dto.GeminiChatRequest) (any, error) {
 	// 使用 service.GeminiToOpenAIRequest 转换请求格式
 	openaiRequest, err := service.GeminiToOpenAIRequest(request, info)
@@ -229,6 +240,9 @@ func (a *Adaptor) SetupRequestHeader(c *gin.Context, header *http.Header, info *
 func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayInfo, request *dto.GeneralOpenAIRequest) (any, error) {
 	if request == nil {
 		return nil, errors.New("request is nil")
+	}
+	if request.PromptCacheKey == "" {
+		request.PromptCacheKey = extractPromptCacheKeyFromMetadata(request.Metadata)
 	}
 	if info.ChannelType == constant.ChannelTypePoeOpenAI {
 		one := 1
@@ -607,6 +621,12 @@ func detectImageMimeType(filename string) string {
 }
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
+	if len(request.PromptCacheKey) == 0 {
+		promptCacheKey := extractPromptCacheKeyFromMetadata(request.Metadata)
+		if promptCacheKey != "" {
+			request.PromptCacheKey, _ = common.Marshal(promptCacheKey)
+		}
+	}
 	//  转换模型推理力度后缀
 	effort, originModel := reasoning.ParseOpenAIReasoningEffortFromModelSuffix(request.Model)
 	if effort != "" {

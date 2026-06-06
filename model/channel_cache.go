@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"math"
 	"math/rand"
 	"sort"
 	"strings"
@@ -195,19 +196,36 @@ func GetRandomSatisfiedChannel(group string, model string, retry int) (*Channel,
 		return nil, errors.New("weight bucket not found")
 	}
 
-	var selectedChannel *Channel
+	bucketChannels := make([]*Channel, 0)
+	positiveBalanceSum := 0.0
 	for _, channel := range targetChannels {
 		if channel.GetWeight() != selectedWeight {
 			continue
 		}
-		if selectedChannel == nil || channel.Balance > selectedChannel.Balance {
-			selectedChannel = channel
-		}
+		bucketChannels = append(bucketChannels, channel)
+		positiveBalanceSum += max(channel.Balance, 0)
 	}
-	if selectedChannel == nil {
+	if len(bucketChannels) == 0 {
 		return nil, errors.New("channel not found")
 	}
-	return selectedChannel, nil
+	if positiveBalanceSum == 0 {
+		return bucketChannels[rand.Intn(len(bucketChannels))], nil
+	}
+
+	winner := bucketChannels[0]
+	winnerScore := -1.0
+	for _, channel := range bucketChannels {
+		weight := max(channel.Balance, 0)
+		if weight == 0 {
+			continue
+		}
+		score := -math.Log(rand.Float64()) / weight
+		if winnerScore < 0 || score < winnerScore {
+			winner = channel
+			winnerScore = score
+		}
+	}
+	return winner, nil
 }
 
 func CacheGetChannel(id int) (*Channel, error) {

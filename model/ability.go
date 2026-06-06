@@ -3,6 +3,8 @@ package model
 import (
 	"errors"
 	"fmt"
+	"math"
+	"math/rand"
 	"strings"
 	"sync"
 
@@ -162,7 +164,8 @@ func GetChannel(group string, model string, retry int) (*Channel, error) {
 			return nil, errors.New("weight bucket not found")
 		}
 
-		selectedBalance := -1.0
+		bucketChannels := make([]*Channel, 0)
+		positiveBalanceSum := 0.0
 		for _, ability_ := range abilities {
 			if ability_.Weight != selectedWeight {
 				continue
@@ -171,13 +174,29 @@ func GetChannel(group string, model string, retry int) (*Channel, error) {
 			if !ok {
 				return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", ability_.ChannelId)
 			}
-			if channel.Id == 0 || candidate.Balance > selectedBalance {
-				channel = *candidate
-				selectedBalance = candidate.Balance
-			}
+			bucketChannels = append(bucketChannels, candidate)
+			positiveBalanceSum += max(candidate.Balance, 0)
 		}
-		if channel.Id == 0 {
+		if len(bucketChannels) == 0 {
 			return nil, errors.New("channel not found")
+		}
+		if positiveBalanceSum == 0 {
+			channel = *bucketChannels[common.GetRandomInt(len(bucketChannels))]
+		} else {
+			winner := bucketChannels[0]
+			winnerScore := -1.0
+			for _, candidate := range bucketChannels {
+				weight := max(candidate.Balance, 0)
+				if weight == 0 {
+					continue
+				}
+				score := -math.Log(rand.Float64()) / weight
+				if winnerScore < 0 || score < winnerScore {
+					winner = candidate
+					winnerScore = score
+				}
+			}
+			channel = *winner
 		}
 	} else {
 		return nil, nil

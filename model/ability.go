@@ -121,20 +121,63 @@ func GetChannel(group string, model string, retry int) (*Channel, error) {
 	}
 	channel := Channel{}
 	if len(abilities) > 0 {
-		// Randomly choose one
-		weightSum := uint(0)
+		uniqueWeights := make(map[uint]bool)
+		channelIDs := make([]int, 0, len(abilities))
 		for _, ability_ := range abilities {
-			weightSum += ability_.Weight + 10
+			uniqueWeights[ability_.Weight] = true
+			channelIDs = append(channelIDs, ability_.ChannelId)
 		}
-		// Randomly choose one
+
+		channels, err := GetChannelsByIds(channelIDs)
+		if err != nil {
+			return nil, err
+		}
+		channelByID := make(map[int]*Channel, len(channels))
+		for _, candidate := range channels {
+			channelByID[candidate.Id] = candidate
+		}
+
+		weightBuckets := make([]uint, 0, len(uniqueWeights))
+		for weight := range uniqueWeights {
+			weightBuckets = append(weightBuckets, weight)
+		}
+
+		weightSum := uint(0)
+		for _, weight := range weightBuckets {
+			weightSum += weight + 10
+		}
+
 		weight := common.GetRandomInt(int(weightSum))
-		for _, ability_ := range abilities {
-			weight -= int(ability_.Weight) + 10
-			//log.Printf("weight: %d, ability weight: %d", weight, *ability_.Weight)
+		selectedWeight := uint(0)
+		selected := false
+		for _, bucketWeight := range weightBuckets {
+			weight -= int(bucketWeight) + 10
 			if weight <= 0 {
-				channel.Id = ability_.ChannelId
+				selectedWeight = bucketWeight
+				selected = true
 				break
 			}
+		}
+		if !selected {
+			return nil, errors.New("weight bucket not found")
+		}
+
+		selectedBalance := -1.0
+		for _, ability_ := range abilities {
+			if ability_.Weight != selectedWeight {
+				continue
+			}
+			candidate, ok := channelByID[ability_.ChannelId]
+			if !ok {
+				return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", ability_.ChannelId)
+			}
+			if channel.Id == 0 || candidate.Balance > selectedBalance {
+				channel = *candidate
+				selectedBalance = candidate.Balance
+			}
+		}
+		if channel.Id == 0 {
+			return nil, errors.New("channel not found")
 		}
 	} else {
 		return nil, nil

@@ -255,6 +255,13 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 			request.ExtraBody = extraBody
 			request.ReasoningEffort = ""
 		}
+		if request.Store != nil {
+			extraBody, err := mergeStoreToExtraBody(request.ExtraBody, request.Store)
+			if err != nil {
+				return nil, err
+			}
+			request.ExtraBody = extraBody
+		}
 		// Strip fields that POE Chat Completions API ignores per its API documentation
 		request.Store = nil
 		request.Metadata = nil
@@ -655,6 +662,21 @@ func mergeReasoningEffortToExtraBody(extraBody json.RawMessage, reasoningEffort 
 		}
 	}
 	extraBodyMap["reasoning_effort"] = reasoningEffort
+	mergedExtraBody, err := common.Marshal(extraBodyMap)
+	if err != nil {
+		return nil, fmt.Errorf("error marshalling extra_body: %w", err)
+	}
+	return mergedExtraBody, nil
+}
+
+func mergeStoreToExtraBody(extraBody json.RawMessage, store any) (json.RawMessage, error) {
+	extraBodyMap := make(map[string]any)
+	if len(extraBody) > 0 {
+		if err := common.Unmarshal(extraBody, &extraBodyMap); err != nil {
+			return nil, fmt.Errorf("error unmarshalling extra_body: %w", err)
+		}
+	}
+	extraBodyMap["store"] = store
 	mergedExtraBody, err := common.Marshal(extraBodyMap)
 	if err != nil {
 		return nil, fmt.Errorf("error marshalling extra_body: %w", err)

@@ -86,7 +86,7 @@ func ClaudeToOpenAIRequest(claudeRequest dto.ClaudeRequest, info *relaycommon.Re
 
 	isOpenRouter := info.ChannelType == constant.ChannelTypeOpenRouter
 
-	if isOpenRouter {
+	if isOpenRouter || info.ChannelType == constant.ChannelTypePoeOpenAI {
 		if effort := claudeRequest.GetEfforts(); effort != "" {
 			effortBytes, _ := json.Marshal(effort)
 			openAIRequest.Verbosity = effortBytes
@@ -114,6 +114,18 @@ func ClaudeToOpenAIRequest(claudeRequest dto.ClaudeRequest, info *relaycommon.Re
 		if strings.HasSuffix(info.OriginModelName, thinkingSuffix) &&
 			!strings.HasSuffix(openAIRequest.Model, thinkingSuffix) {
 			openAIRequest.Model = openAIRequest.Model + thinkingSuffix
+		}
+	}
+
+	if info.ChannelType == constant.ChannelTypePoeOpenAI {
+		// NOTE: Poe OpenAI does not accept a top-level reasoning_effort; ConvertOpenAIRequest
+		// will move it into extra_body later. Map Thinking -> ReasoningEffort so the Claude
+		// Message path gets the same treatment as the native OpenAI path.
+		if claudeRequest.Thinking != nil {
+			if claudeRequest.Thinking.Type == "adaptive" || claudeRequest.Thinking.Type == "enabled" ||
+				claudeRequest.Thinking.GetBudgetTokens() > 0 {
+				openAIRequest.ReasoningEffort = "high"
+			}
 		}
 	}
 

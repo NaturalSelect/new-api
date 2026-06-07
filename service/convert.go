@@ -86,7 +86,7 @@ func ClaudeToOpenAIRequest(claudeRequest dto.ClaudeRequest, info *relaycommon.Re
 
 	isOpenRouter := info.ChannelType == constant.ChannelTypeOpenRouter
 
-	if isOpenRouter || info.ChannelType == constant.ChannelTypePoeOpenAI {
+	if isOpenRouter {
 		if effort := claudeRequest.GetEfforts(); effort != "" {
 			effortBytes, _ := json.Marshal(effort)
 			openAIRequest.Verbosity = effortBytes

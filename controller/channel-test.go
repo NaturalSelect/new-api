@@ -928,6 +928,19 @@ func testAllChannels(notify bool) error {
 				continue
 			}
 			isChannelEnabled := channel.Status == common.ChannelStatusEnabled
+			isAutoDisabled := channel.Status == common.ChannelStatusAutoDisabled
+
+			// 余额不足导致的封禁：不需要测试请求，直接查余额。
+			// 余额恢复则解禁，余额仍不足则跳过（测试无意义）。
+			// 仅对悲观路径生效，乐观渠道由定时器处理。
+			if isAutoDisabled && !channel.GetAutoBanOptimistic() && channel.GetAutoUnbanByBalance() {
+				balance, err := updateChannelBalance(channel)
+				if err == nil && balance > 0 {
+					service.EnableChannel(channel.Id, "", channel.Name)
+				}
+				continue
+			}
+
 			// 如果开启了"仅测试被封禁渠道"，跳过启用的渠道
 			if monitorSetting.AutoTestDisabledChannelsOnly && isChannelEnabled {
 				continue
@@ -959,7 +972,8 @@ func testAllChannels(notify bool) error {
 			}
 
 			// enable channel
-			if !isChannelEnabled && service.ShouldEnableChannel(newAPIError, channel.Status) {
+			// 乐观解禁的渠道不在此处处理，由乐观定时器负责
+			if !isChannelEnabled && service.ShouldEnableChannel(newAPIError, channel.Status) && !channel.GetAutoBanOptimistic() {
 				service.EnableChannel(channel.Id, common.GetContextKeyString(result.context, constant.ContextKeyChannelKey), channel.Name)
 			}
 

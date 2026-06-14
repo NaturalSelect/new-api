@@ -68,6 +68,10 @@ const monitoringSchema = z
         .int()
         .min(1, 'Interval must be at least 1 minute'),
       auto_test_disabled_channels_only: z.boolean(),
+      auto_ban_optimistic_minutes: z.coerce
+        .number()
+        .int()
+        .min(1, 'Interval must be at least 1 minute'),
     }),
   })
   .superRefine((values, ctx) => {
@@ -113,6 +117,7 @@ type MonitoringSettingsSectionProps = {
     'monitor_setting.auto_test_channel_enabled': boolean
     'monitor_setting.auto_test_channel_minutes': number
     'monitor_setting.auto_test_disabled_channels_only': boolean
+    'monitor_setting.auto_ban_optimistic_minutes': number
   }
 }
 
@@ -131,6 +136,7 @@ type NormalizedMonitoringValues = {
   'monitor_setting.auto_test_channel_enabled': boolean
   'monitor_setting.auto_test_channel_minutes': number
   'monitor_setting.auto_test_disabled_channels_only': boolean
+  'monitor_setting.auto_ban_optimistic_minutes': number
 }
 
 const buildFormDefaults = (
@@ -152,6 +158,8 @@ const buildFormDefaults = (
       defaults['monitor_setting.auto_test_channel_minutes'],
     auto_test_disabled_channels_only:
       defaults['monitor_setting.auto_test_disabled_channels_only'],
+    auto_ban_optimistic_minutes:
+      defaults['monitor_setting.auto_ban_optimistic_minutes'],
   },
 })
 
@@ -177,6 +185,8 @@ const normalizeDefaults = (
     defaults['monitor_setting.auto_test_channel_minutes'],
   'monitor_setting.auto_test_disabled_channels_only':
     defaults['monitor_setting.auto_test_disabled_channels_only'],
+  'monitor_setting.auto_ban_optimistic_minutes':
+    defaults['monitor_setting.auto_ban_optimistic_minutes'],
 })
 
 const normalizeFormValues = (
@@ -201,6 +211,8 @@ const normalizeFormValues = (
     values.monitor_setting.auto_test_channel_minutes,
   'monitor_setting.auto_test_disabled_channels_only':
     values.monitor_setting.auto_test_disabled_channels_only,
+  'monitor_setting.auto_ban_optimistic_minutes':
+    values.monitor_setting.auto_ban_optimistic_minutes,
 })
 
 export function MonitoringSettingsSection({
@@ -330,6 +342,30 @@ export function MonitoringSettingsSection({
                     />
                   </FormControl>
                 </SettingsSwitchItem>
+              )}
+            />
+          </div>
+
+          <div className='grid gap-6 md:grid-cols-2'>
+            <FormField
+              control={form.control}
+              name='monitor_setting.auto_ban_optimistic_minutes'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Optimistic unban interval (minutes)')}</FormLabel>
+                  <FormControl>
+                    <Input
+                      type='number'
+                      min={1}
+                      step={1}
+                      {...safeNumberFieldProps(field)}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    {t('Auto-disabled channels with optimistic unban enabled will be re-enabled after this interval without testing. If still broken, the next request will disable them again.')}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
               )}
             />
           </div>

@@ -2589,6 +2589,52 @@ export function ChannelMutateDrawer({
                             </FormItem>
                           )}
                         />
+
+                        <FormField
+                          control={form.control}
+                          name='auto_ban_optimistic'
+                          render={({ field }) => (
+                            <FormItem className='flex items-center justify-between'>
+                              <div className='space-y-0.5'>
+                                <FormLabel>{t('Auto Unban (Optimistic)')}</FormLabel>
+                                <FormDescription>
+                                  {t(FIELD_DESCRIPTIONS.AUTO_BAN_OPTIMISTIC)}
+                                </FormDescription>
+                              </div>
+                              <FormControl>
+                                <Switch
+                                  checked={field.value === 1}
+                                  onCheckedChange={(checked) =>
+                                    field.onChange(checked ? 1 : 0)
+                                  }
+                                />
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
+
+                        <FormField
+                          control={form.control}
+                          name='auto_unban_by_balance'
+                          render={({ field }) => (
+                            <FormItem className='flex items-center justify-between'>
+                              <div className='space-y-0.5'>
+                                <FormLabel>{t('Auto Unban on Balance')}</FormLabel>
+                                <FormDescription>
+                                  {t(FIELD_DESCRIPTIONS.AUTO_UNBAN_BY_BALANCE)}
+                                </FormDescription>
+                              </div>
+                              <FormControl>
+                                <Switch
+                                  checked={field.value === 1}
+                                  onCheckedChange={(checked) =>
+                                    field.onChange(checked ? 1 : 0)
+                                  }
+                                />
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
                       </div>
 
                       <div className='flex flex-col gap-4 border-t pt-4'>

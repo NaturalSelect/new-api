@@ -43,7 +43,9 @@ type Channel struct {
 	//MaxInputTokens     *int    `json:"max_input_tokens" gorm:"default:0"`
 	StatusCodeMapping *string `json:"status_code_mapping" gorm:"type:varchar(1024);default:''"`
 	Priority          *int64  `json:"priority" gorm:"bigint;default:0"`
-	AutoBan           *int    `json:"auto_ban" gorm:"default:1"`
+	AutoBan          *int   `json:"auto_ban" gorm:"default:1"`
+	AutoBanOptimistic   *int  `json:"auto_ban_optimistic" gorm:"default:0"`
+	AutoUnbanByBalance  *int  `json:"auto_unban_by_balance" gorm:"default:1"`
 	OtherInfo         string  `json:"other_info"`
 	Tag               *string `json:"tag" gorm:"index"`
 	Setting           *string `json:"setting" gorm:"type:text"` // 渠道额外设置
@@ -340,6 +342,20 @@ func (channel *Channel) GetAutoBan() bool {
 		return false
 	}
 	return *channel.AutoBan == 1
+}
+
+func (channel *Channel) GetAutoBanOptimistic() bool {
+	if channel.AutoBanOptimistic == nil {
+		return false // default to disabled
+	}
+	return *channel.AutoBanOptimistic == 1
+}
+
+func (channel *Channel) GetAutoUnbanByBalance() bool {
+	if channel.AutoUnbanByBalance == nil {
+		return true // default to enabled
+	}
+	return *channel.AutoUnbanByBalance == 1
 }
 
 func (channel *Channel) Save() error {

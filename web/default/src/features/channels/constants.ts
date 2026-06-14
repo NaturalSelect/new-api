@@ -227,6 +227,11 @@ export const AUTO_BAN_OPTIONS = [
   { value: 0, label: 'Disabled' },
 ] as const
 
+export const AUTO_BAN_OPTIMISTIC_OPTIONS = [
+  { value: 1, label: 'Enabled' },
+  { value: 0, label: 'Disabled' },
+] as const
+
 // ============================================================================
 // Error / Success Messages (i18n keys: use t(ERROR_MESSAGES.xxx) when displaying)
 // ============================================================================
@@ -278,6 +283,8 @@ export const DEFAULT_CHANNEL_VALUES = {
   priority: 0,
   weight: 0,
   auto_ban: 1,
+  auto_ban_optimistic: 0,
+  auto_unban_by_balance: 1,
   remark: '',
 } as const
 
@@ -361,6 +368,8 @@ export const FIELD_DESCRIPTIONS = {
   WEIGHT: 'Used for load balancing. Higher weight = more requests',
   TEST_MODEL: 'Model to use when testing channel connectivity',
   AUTO_BAN: 'Automatically disable channel on repeated failures',
+  AUTO_BAN_OPTIMISTIC: 'Automatically re-enable channel after the configured timeout without testing. If still broken, the next request will disable it again.',
+  AUTO_UNBAN_BY_BALANCE: 'Automatically re-enable channel when sufficient balance is detected during balance checks.',
   STATUS_CODE_MAPPING: 'Map response status codes (JSON format)',
   TAG: 'Group channels by tag for batch operations',
   REMARK: 'Internal notes (not shown to users)',

@@ -922,11 +922,16 @@ func testAllChannels(notify bool) error {
 			testAllChannelsLock.Unlock()
 		}()
 
+		monitorSetting := operation_setting.GetMonitorSetting()
 		for _, channel := range channels {
 			if channel.Status == common.ChannelStatusManuallyDisabled {
 				continue
 			}
 			isChannelEnabled := channel.Status == common.ChannelStatusEnabled
+			// 如果开启了"仅测试被封禁渠道"，跳过启用的渠道
+			if monitorSetting.AutoTestDisabledChannelsOnly && isChannelEnabled {
+				continue
+			}
 			tik := time.Now()
 			result := testChannel(channel, testUserID, "", "", shouldUseStreamForAutomaticChannelTest(channel))
 			tok := time.Now()

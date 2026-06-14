@@ -67,6 +67,7 @@ const monitoringSchema = z
         .number()
         .int()
         .min(1, 'Interval must be at least 1 minute'),
+      auto_test_disabled_channels_only: z.boolean(),
     }),
   })
   .superRefine((values, ctx) => {
@@ -111,6 +112,7 @@ type MonitoringSettingsSectionProps = {
     AutomaticRetryStatusCodes: string
     'monitor_setting.auto_test_channel_enabled': boolean
     'monitor_setting.auto_test_channel_minutes': number
+    'monitor_setting.auto_test_disabled_channels_only': boolean
   }
 }
 
@@ -128,6 +130,7 @@ type NormalizedMonitoringValues = {
   AutomaticRetryStatusCodes: string
   'monitor_setting.auto_test_channel_enabled': boolean
   'monitor_setting.auto_test_channel_minutes': number
+  'monitor_setting.auto_test_disabled_channels_only': boolean
 }
 
 const buildFormDefaults = (
@@ -147,6 +150,8 @@ const buildFormDefaults = (
       defaults['monitor_setting.auto_test_channel_enabled'],
     auto_test_channel_minutes:
       defaults['monitor_setting.auto_test_channel_minutes'],
+    auto_test_disabled_channels_only:
+      defaults['monitor_setting.auto_test_disabled_channels_only'],
   },
 })
 
@@ -170,6 +175,8 @@ const normalizeDefaults = (
     defaults['monitor_setting.auto_test_channel_enabled'],
   'monitor_setting.auto_test_channel_minutes':
     defaults['monitor_setting.auto_test_channel_minutes'],
+  'monitor_setting.auto_test_disabled_channels_only':
+    defaults['monitor_setting.auto_test_disabled_channels_only'],
 })
 
 const normalizeFormValues = (
@@ -192,6 +199,8 @@ const normalizeFormValues = (
     values.monitor_setting.auto_test_channel_enabled,
   'monitor_setting.auto_test_channel_minutes':
     values.monitor_setting.auto_test_channel_minutes,
+  'monitor_setting.auto_test_disabled_channels_only':
+    values.monitor_setting.auto_test_disabled_channels_only,
 })
 
 export function MonitoringSettingsSection({
@@ -298,6 +307,29 @@ export function MonitoringSettingsSection({
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
+              )}
+            />
+          </div>
+
+          <div className='grid gap-6 md:grid-cols-2'>
+            <FormField
+              control={form.control}
+              name='monitor_setting.auto_test_disabled_channels_only'
+              render={({ field }) => (
+                <SettingsSwitchItem>
+                  <SettingsSwitchContent>
+                    <FormLabel>{t('Only test disabled channels')}</FormLabel>
+                    <FormDescription>
+                      {t('When enabled, scheduled tests only probe auto-disabled channels and skip healthy ones, saving API costs.')}
+                    </FormDescription>
+                  </SettingsSwitchContent>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                </SettingsSwitchItem>
               )}
             />
           </div>

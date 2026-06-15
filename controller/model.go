@@ -278,7 +278,7 @@ func ListModels(c *gin.Context, modelType int) {
 	}
 
 	switch modelType {
-	case constant.ChannelTypeAnthropic:
+	case constant.ChannelTypeAnthropic, constant.ChannelTypePoeAnthropic:
 		useranthropicModels := make([]dto.AnthropicModel, len(userOpenAiModels))
 		for i, model := range userOpenAiModels {
 			useranthropicModels[i] = dto.AnthropicModel{

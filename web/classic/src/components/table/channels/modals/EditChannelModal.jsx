@@ -1785,8 +1785,8 @@ const EditChannelModal = (props) => {
       delete settings.vertex_key_type;
     }
 
-    // type === 1 (OpenAI) 或 type === 14 (Claude): 设置字段透传控制（显式保存布尔值）
-    if (localInputs.type === 1 || localInputs.type === 14) {
+    // type === 1 (OpenAI) 或 Anthropic-compatible: 设置字段透传控制（显式保存布尔值）
+    if (localInputs.type === 1 || [14, 59].includes(localInputs.type)) {
       settings.allow_service_tier = localInputs.allow_service_tier === true;
       // 仅 OpenAI 渠道需要 store / safety_identifier / include_obfuscation
       if (localInputs.type === 1) {
@@ -1796,7 +1796,7 @@ const EditChannelModal = (props) => {
         settings.allow_include_obfuscation =
           localInputs.allow_include_obfuscation === true;
       }
-      if (localInputs.type === 14) {
+      if ([14, 59].includes(localInputs.type)) {
         settings.allow_inference_geo = localInputs.allow_inference_geo === true;
         settings.allow_speed = localInputs.allow_speed === true;
         settings.claude_beta_query = localInputs.claude_beta_query === true;
@@ -2497,7 +2497,7 @@ const EditChannelModal = (props) => {
                     </>
                   )}
 
-                  {inputs.type === 14 && (
+                  {[14, 59].includes(inputs.type) && (
                     <>
                       <div className='mt-4 mb-2 text-sm font-medium text-gray-700'>
                         {t('字段透传控制')}
@@ -2515,7 +2515,7 @@ const EditChannelModal = (props) => {
                     {t('额外设置')}
                   </Text>
 
-                  {inputs.type === 14 && (
+                  {[14, 59].includes(inputs.type) && (
                     <Form.Switch field='claude_beta_query' label={t('Claude 强制 beta=true')} checkedText={t('开')} uncheckedText={t('关')} onChange={(value) => handleChannelOtherSettingsChange('claude_beta_query', value)} extraText={t('开启后，该渠道请求 Claude 时将强制追加 ?beta=true（无需客户端手动传参）')} />
                   )}
 

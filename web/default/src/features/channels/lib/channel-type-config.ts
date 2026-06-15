@@ -145,6 +145,17 @@ export const CHANNEL_TYPE_CONFIGS: Record<number, ChannelTypeConfig> = {
       models: 'Use Poe OpenAI-compatible model IDs',
     },
   },
+  59: {
+    id: 59,
+    name: CHANNEL_TYPES[59],
+    icon: 'anthropic',
+    defaultBaseUrl: 'https://api.poe.com',
+    hints: {
+      baseUrl: 'Default: https://api.poe.com',
+      key: 'Format: Bearer API key',
+      models: 'Use Poe Anthropic-compatible model IDs',
+    },
+  },
 }
 
 /**

@@ -41,17 +41,17 @@ type Channel struct {
 	UsedQuota          int64   `json:"used_quota" gorm:"bigint;default:0"`
 	ModelMapping       *string `json:"model_mapping" gorm:"type:text"`
 	//MaxInputTokens     *int    `json:"max_input_tokens" gorm:"default:0"`
-	StatusCodeMapping *string `json:"status_code_mapping" gorm:"type:varchar(1024);default:''"`
-	Priority          *int64  `json:"priority" gorm:"bigint;default:0"`
-	AutoBan          *int   `json:"auto_ban" gorm:"default:1"`
-	AutoBanOptimistic   *int  `json:"auto_ban_optimistic" gorm:"default:0"`
-	AutoUnbanByBalance  *int  `json:"auto_unban_by_balance" gorm:"default:1"`
-	OtherInfo         string  `json:"other_info"`
-	Tag               *string `json:"tag" gorm:"index"`
-	Setting           *string `json:"setting" gorm:"type:text"` // 渠道额外设置
-	ParamOverride     *string `json:"param_override" gorm:"type:text"`
-	HeaderOverride    *string `json:"header_override" gorm:"type:text"`
-	Remark            *string `json:"remark" gorm:"type:varchar(255)" validate:"max=255"`
+	StatusCodeMapping  *string `json:"status_code_mapping" gorm:"type:varchar(1024);default:''"`
+	Priority           *int64  `json:"priority" gorm:"bigint;default:0"`
+	AutoBan            *int    `json:"auto_ban" gorm:"default:1"`
+	AutoBanOptimistic  *int    `json:"auto_ban_optimistic" gorm:"default:0"`
+	AutoUnbanByBalance *int    `json:"auto_unban_by_balance" gorm:"default:1"`
+	OtherInfo          string  `json:"other_info"`
+	Tag                *string `json:"tag" gorm:"index"`
+	Setting            *string `json:"setting" gorm:"type:text"` // 渠道额外设置
+	ParamOverride      *string `json:"param_override" gorm:"type:text"`
+	HeaderOverride     *string `json:"header_override" gorm:"type:text"`
+	Remark             *string `json:"remark" gorm:"type:varchar(255)" validate:"max=255"`
 	// add after v0.8.5
 	ChannelInfo ChannelInfo `json:"channel_info" gorm:"type:json"`
 
@@ -70,6 +70,8 @@ type ChannelInfo struct {
 	MultiKeyPollingIndex   int                   `json:"multi_key_polling_index"`             // 多Key模式下轮询的key索引
 	MultiKeyMode           constant.MultiKeyMode `json:"multi_key_mode"`
 }
+
+const ChannelDisableReasonBalance = "余额不足"
 
 type ChannelSortOptions struct {
 	SortBy    string
@@ -317,8 +319,14 @@ func (channel *Channel) GetOtherInfo() map[string]interface{} {
 	return otherInfo
 }
 
+func (channel *Channel) IsDisabledByBalance() bool {
+	otherInfo := channel.GetOtherInfo()
+	reason, ok := otherInfo["status_reason"].(string)
+	return ok && reason == ChannelDisableReasonBalance
+}
+
 func (channel *Channel) SetOtherInfo(otherInfo map[string]interface{}) {
-	otherInfoBytes, err := json.Marshal(otherInfo)
+	otherInfoBytes, err := common.Marshal(otherInfo)
 	if err != nil {
 		common.SysLog(fmt.Sprintf("failed to marshal other info: channel_id=%d, tag=%s, name=%s, error=%v", channel.Id, channel.GetTag(), channel.Name, err))
 		return
@@ -654,10 +662,14 @@ func CleanupChannelPollingLocks() {
 	})
 }
 
-func handlerMultiKeyUpdate(channel *Channel, usingKey string, status int, reason string) {
+func handlerMultiKeyUpdate(channel *Channel, usingKey string, status int, reason string) bool {
 	keys := channel.GetKeys()
 	if len(keys) == 0 {
+		if channel.Status == status {
+			return false
+		}
 		channel.Status = status
+		return true
 	} else {
 		keyIndex := -1
 		for i, key := range keys {
@@ -669,21 +681,43 @@ func handlerMultiKeyUpdate(channel *Channel, usingKey string, status int, reason
 		if keyIndex < 0 {
 			if usingKey != "" {
 				common.SysLog(fmt.Sprintf("failed to update multi-key status: channel_id=%d, using key not found", channel.Id))
-				return
+				return false
+			}
+			if channel.Status == status {
+				return false
 			}
 			channel.Status = status
 			info := channel.GetOtherInfo()
 			info["status_reason"] = reason
 			info["status_time"] = common.GetTimestamp()
 			channel.SetOtherInfo(info)
-			return
+			return true
 		}
+		changed := false
 		if channel.ChannelInfo.MultiKeyStatusList == nil {
 			channel.ChannelInfo.MultiKeyStatusList = make(map[int]int)
 		}
 		if status == common.ChannelStatusEnabled {
-			delete(channel.ChannelInfo.MultiKeyStatusList, keyIndex)
+			if _, exists := channel.ChannelInfo.MultiKeyStatusList[keyIndex]; exists {
+				delete(channel.ChannelInfo.MultiKeyStatusList, keyIndex)
+				changed = true
+			}
+			if channel.ChannelInfo.MultiKeyDisabledReason != nil {
+				if _, exists := channel.ChannelInfo.MultiKeyDisabledReason[keyIndex]; exists {
+					delete(channel.ChannelInfo.MultiKeyDisabledReason, keyIndex)
+					changed = true
+				}
+			}
+			if channel.ChannelInfo.MultiKeyDisabledTime != nil {
+				if _, exists := channel.ChannelInfo.MultiKeyDisabledTime[keyIndex]; exists {
+					delete(channel.ChannelInfo.MultiKeyDisabledTime, keyIndex)
+					changed = true
+				}
+			}
 		} else {
+			if currentStatus, exists := channel.ChannelInfo.MultiKeyStatusList[keyIndex]; !exists || currentStatus != status {
+				changed = true
+			}
 			channel.ChannelInfo.MultiKeyStatusList[keyIndex] = status
 			if channel.ChannelInfo.MultiKeyDisabledReason == nil {
 				channel.ChannelInfo.MultiKeyDisabledReason = make(map[int]string)
@@ -691,18 +725,29 @@ func handlerMultiKeyUpdate(channel *Channel, usingKey string, status int, reason
 			if channel.ChannelInfo.MultiKeyDisabledTime == nil {
 				channel.ChannelInfo.MultiKeyDisabledTime = make(map[int]int64)
 			}
+			if currentReason, exists := channel.ChannelInfo.MultiKeyDisabledReason[keyIndex]; !exists || currentReason != reason {
+				changed = true
+			}
 			channel.ChannelInfo.MultiKeyDisabledReason[keyIndex] = reason
 			channel.ChannelInfo.MultiKeyDisabledTime[keyIndex] = common.GetTimestamp()
+			changed = true
 		}
 		if !hasEnabledMultiKey(keys, channel.ChannelInfo.MultiKeyStatusList) {
+			if channel.Status != common.ChannelStatusAutoDisabled {
+				changed = true
+			}
 			channel.Status = common.ChannelStatusAutoDisabled
 			info := channel.GetOtherInfo()
 			info["status_reason"] = "All keys are disabled"
 			info["status_time"] = common.GetTimestamp()
 			channel.SetOtherInfo(info)
 		} else if status == common.ChannelStatusEnabled {
+			if channel.Status != common.ChannelStatusEnabled {
+				changed = true
+			}
 			channel.Status = common.ChannelStatusEnabled
 		}
+		return changed
 	}
 }
 
@@ -763,7 +808,7 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 	if err != nil {
 		return false
 	} else {
-		if channel.Status == status {
+		if !channel.ChannelInfo.IsMultiKey && channel.Status == status {
 			return false
 		}
 
@@ -772,8 +817,11 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 			// Protect map writes with the same per-channel lock used by readers
 			pollingLock := GetChannelPollingLock(channelId)
 			pollingLock.Lock()
-			handlerMultiKeyUpdate(channel, usingKey, status, reason)
+			changed := handlerMultiKeyUpdate(channel, usingKey, status, reason)
 			pollingLock.Unlock()
+			if !changed {
+				return false
+			}
 			if beforeStatus != channel.Status {
 				shouldUpdateAbilities = true
 			}

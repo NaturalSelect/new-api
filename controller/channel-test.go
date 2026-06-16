@@ -893,7 +893,7 @@ func TestChannel(c *gin.Context) {
 var testAllChannelsLock sync.Mutex
 var testAllChannelsRunning bool = false
 
-func testAllChannels(notify bool) error {
+func testAllChannels(notify bool, isAutomatic bool) error {
 	testUserID, err := resolveChannelTestUserID(nil)
 	if err != nil {
 		return err
@@ -933,7 +933,7 @@ func testAllChannels(notify bool) error {
 			// 余额不足导致的封禁：不需要测试请求，直接查余额。
 			// 余额恢复则解禁，余额仍不足则跳过（测试无意义）。
 			// 仅对悲观路径生效，乐观渠道由定时器处理。
-			if isAutoDisabled && !channel.GetAutoBanOptimistic() && channel.GetAutoUnbanByBalance() {
+			if isAutoDisabled && !channel.GetAutoBanOptimistic() && channel.GetAutoUnbanByBalance() && channel.IsDisabledByBalance() {
 				balance, err := updateChannelBalance(channel)
 				if err == nil && balance > 0 {
 					service.EnableChannel(channel.Id, "", channel.Name)
@@ -942,7 +942,7 @@ func testAllChannels(notify bool) error {
 			}
 
 			// 如果开启了"仅测试被封禁渠道"，跳过启用的渠道
-			if monitorSetting.AutoTestDisabledChannelsOnly && isChannelEnabled {
+			if isAutomatic && monitorSetting.AutoTestDisabledChannelsOnly && isChannelEnabled {
 				continue
 			}
 			tik := time.Now()
@@ -972,7 +972,6 @@ func testAllChannels(notify bool) error {
 			}
 
 			// enable channel
-			// 乐观解禁的渠道不在此处处理，由乐观定时器负责
 			if !isChannelEnabled && service.ShouldEnableChannel(newAPIError, channel.Status) && !channel.GetAutoBanOptimistic() {
 				service.EnableChannel(channel.Id, common.GetContextKeyString(result.context, constant.ContextKeyChannelKey), channel.Name)
 			}
@@ -989,7 +988,7 @@ func testAllChannels(notify bool) error {
 }
 
 func TestAllChannels(c *gin.Context) {
-	err := testAllChannels(true)
+	err := testAllChannels(true, false)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -997,6 +996,114 @@ func TestAllChannels(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
+	})
+}
+
+func parseChannelStatusTime(statusTime any) (int64, bool) {
+	switch value := statusTime.(type) {
+	case float64:
+		if value <= 0 || math.IsNaN(value) || math.IsInf(value, 0) {
+			return 0, false
+		}
+		return int64(value), true
+	case int:
+		if value <= 0 {
+			return 0, false
+		}
+		return int64(value), true
+	case int64:
+		return value, value > 0
+	case json.Number:
+		if intValue, err := value.Int64(); err == nil {
+			return intValue, intValue > 0
+		}
+		floatValue, err := value.Float64()
+		if err != nil || floatValue <= 0 || math.IsNaN(floatValue) || math.IsInf(floatValue, 0) {
+			return 0, false
+		}
+		return int64(floatValue), true
+	default:
+		return 0, false
+	}
+}
+
+func hasOptimisticUnbanElapsed(now int64, disabledAt int64, intervalMinutes float64) bool {
+	if disabledAt <= 0 || intervalMinutes <= 0 {
+		return false
+	}
+	return float64(now-disabledAt) >= intervalMinutes*60
+}
+
+func optimisticUnbanKeys(channel *model.Channel, now int64, intervalMinutes float64) []string {
+	if channel == nil || channel.Status == common.ChannelStatusManuallyDisabled || !channel.GetAutoBanOptimistic() {
+		return nil
+	}
+
+	if !channel.ChannelInfo.IsMultiKey {
+		if channel.Status != common.ChannelStatusAutoDisabled {
+			return nil
+		}
+		statusTime, ok := parseChannelStatusTime(channel.GetOtherInfo()["status_time"])
+		if !ok || !hasOptimisticUnbanElapsed(now, statusTime, intervalMinutes) {
+			return nil
+		}
+		return []string{""}
+	}
+
+	keys := channel.GetKeys()
+	if len(keys) == 0 || channel.ChannelInfo.MultiKeyStatusList == nil || channel.ChannelInfo.MultiKeyDisabledTime == nil {
+		return nil
+	}
+
+	keysToEnable := make([]string, 0, len(channel.ChannelInfo.MultiKeyStatusList))
+	for keyIndex, status := range channel.ChannelInfo.MultiKeyStatusList {
+		if status != common.ChannelStatusAutoDisabled || keyIndex < 0 || keyIndex >= len(keys) {
+			continue
+		}
+		disabledAt, ok := channel.ChannelInfo.MultiKeyDisabledTime[keyIndex]
+		if !ok || !hasOptimisticUnbanElapsed(now, disabledAt, intervalMinutes) {
+			continue
+		}
+		keysToEnable = append(keysToEnable, keys[keyIndex])
+	}
+	return keysToEnable
+}
+
+func optimisticUnbanChannel(channel *model.Channel, now int64, intervalMinutes float64) {
+	for _, key := range optimisticUnbanKeys(channel, now, intervalMinutes) {
+		service.EnableChannel(channel.Id, key, channel.Name)
+	}
+}
+
+func runOptimisticUnbanChannels() {
+	monitorSetting := operation_setting.GetMonitorSetting()
+	if monitorSetting.AutoBanOptimisticMinutes <= 0 {
+		return
+	}
+
+	channels, err := model.GetAllChannels(0, 0, true, false)
+	if err != nil {
+		common.SysError(fmt.Sprintf("failed to load channels for optimistic auto-unban: %s", err.Error()))
+		return
+	}
+
+	now := common.GetTimestamp()
+	for _, channel := range channels {
+		optimisticUnbanChannel(channel, now, monitorSetting.AutoBanOptimisticMinutes)
+	}
+}
+
+var autoOptimisticUnbanChannelsOnce sync.Once
+
+func AutomaticallyOptimisticUnbanChannels() {
+	if !common.IsMasterNode {
+		return
+	}
+	autoOptimisticUnbanChannelsOnce.Do(func() {
+		for {
+			runOptimisticUnbanChannels()
+			time.Sleep(1 * time.Minute)
+		}
 	})
 }
 
@@ -1018,7 +1125,7 @@ func AutomaticallyTestChannels() {
 				time.Sleep(time.Duration(int(math.Round(frequency))) * time.Minute)
 				common.SysLog(fmt.Sprintf("automatically test channels with interval %f minutes", frequency))
 				common.SysLog("automatically testing all channels")
-				_ = testAllChannels(false)
+				_ = testAllChannels(false, true)
 				common.SysLog("automatically channel test finished")
 				if !operation_setting.GetMonitorSetting().AutoTestChannelEnabled {
 					break

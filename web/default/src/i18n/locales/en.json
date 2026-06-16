@@ -2984,6 +2984,8 @@
     "Please wait a moment before trying again.": "Please wait a moment before trying again.",
     "Please wait a moment, human check is initializing...": "Please wait a moment, human check is initializing...",
     "Please wait before editing to avoid overwriting saved values.": "Please wait before editing to avoid overwriting saved values.",
+    "Poe Anthropic": "Poe Anthropic",
+    "Poe OpenAI": "Poe OpenAI",
     "Policy JSON": "Policy JSON",
     "Polling": "Polling",
     "Polling mode requires Redis and memory cache, otherwise performance will be significantly degraded": "Polling mode requires Redis and memory cache, otherwise performance will be significantly degraded",

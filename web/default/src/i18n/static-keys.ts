@@ -65,6 +65,10 @@ export const STATIC_I18N_KEYS = [
   'More...',
   'Less',
 
+  // Channel type labels
+  'Poe OpenAI',
+  'Poe Anthropic',
+
   // Roles
   'Super Admin',
   'Admin',

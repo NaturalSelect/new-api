@@ -2984,6 +2984,8 @@
     "Please wait a moment before trying again.": "请稍候再试。",
     "Please wait a moment, human check is initializing...": "请稍等，人机验证正在初始化...",
     "Please wait before editing to avoid overwriting saved values.": "请等待加载完成后再编辑，以免覆盖已保存的值。",
+    "Poe Anthropic": "Poe Anthropic",
+    "Poe OpenAI": "Poe OpenAI",
     "Policy JSON": "策略 JSON",
     "Polling": "轮询",
     "Polling mode requires Redis and memory cache, otherwise performance will be significantly degraded": "轮询模式需要 Redis 和内存缓存，否则性能将显著下降",

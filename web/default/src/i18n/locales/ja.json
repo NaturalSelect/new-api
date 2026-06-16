@@ -2984,6 +2984,8 @@
     "Please wait a moment before trying again.": "しばらく待ってからもう一度お試しください。",
     "Please wait a moment, human check is initializing...": "しばらくお待ちください、人間チェックを初期化中です...",
     "Please wait before editing to avoid overwriting saved values.": "保存済みの値を上書きしないよう、編集前に読み込み完了をお待ちください。",
+    "Poe Anthropic": "Poe Anthropic",
+    "Poe OpenAI": "Poe OpenAI",
     "Policy JSON": "ポリシーJSON",
     "Polling": "ポーリング",
     "Polling mode requires Redis and memory cache, otherwise performance will be significantly degraded": "ポーリングモードにはRedisとメモリキャッシュが必要です。そうでない場合、パフォーマンスが大幅に低下します",

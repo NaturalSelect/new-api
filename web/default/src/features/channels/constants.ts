@@ -76,8 +76,8 @@ export const CHANNEL_TYPES = {
   55: 'Sora',
   56: 'Replicate',
   57: 'Codex',
-  58: 'PoeOpenAI',
-  59: 'PoeAnthropic',
+  58: 'Poe OpenAI',
+  59: 'Poe Anthropic',
 } as const
 
 const CHANNEL_TYPE_DISPLAY_ORDER: number[] = [

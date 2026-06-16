@@ -51,10 +51,12 @@ export function getChannelTypeIcon(type: number): string {
     6: 'OpenAI', // OpenAIMax
     7: 'OpenAI', // OhMyGPT
     8: 'OpenAI', // Custom
+    58: 'OpenAI', // Poe OpenAI
     3: 'Azure', // Azure
 
     // Anthropic
     14: 'Claude', // Anthropic
+    59: 'Claude', // Poe Anthropic
 
     // Google family
     24: 'Gemini', // Gemini

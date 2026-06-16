@@ -930,6 +930,13 @@ func testAllChannels(notify bool, isAutomatic bool) error {
 			isChannelEnabled := channel.Status == common.ChannelStatusEnabled
 			isAutoDisabled := channel.Status == common.ChannelStatusAutoDisabled
 
+			// 如果开启了"仅测试被封禁渠道"，跳过启用的渠道
+			if isAutomatic && monitorSetting.AutoTestDisabledChannelsOnly && isChannelEnabled {
+				continue
+			}
+			if isAutomatic && isAutoDisabled && channel.GetAutoBanOptimistic() {
+				continue
+			}
 			// 余额不足导致的封禁：不需要测试请求，直接查余额。
 			// 余额恢复则解禁，余额仍不足则跳过（测试无意义）。
 			// 仅对悲观路径生效，乐观渠道由定时器处理。
@@ -941,10 +948,6 @@ func testAllChannels(notify bool, isAutomatic bool) error {
 				continue
 			}
 
-			// 如果开启了"仅测试被封禁渠道"，跳过启用的渠道
-			if isAutomatic && monitorSetting.AutoTestDisabledChannelsOnly && isChannelEnabled {
-				continue
-			}
 			tik := time.Now()
 			result := testChannel(channel, testUserID, "", "", shouldUseStreamForAutomaticChannelTest(channel))
 			tok := time.Now()

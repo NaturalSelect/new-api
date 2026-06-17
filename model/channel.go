@@ -322,7 +322,19 @@ func (channel *Channel) GetOtherInfo() map[string]interface{} {
 func (channel *Channel) IsDisabledByBalance() bool {
 	otherInfo := channel.GetOtherInfo()
 	reason, ok := otherInfo["status_reason"].(string)
-	return ok && reason == ChannelDisableReasonBalance
+	return ok && isBalanceDisabledReason(reason)
+}
+
+func isBalanceDisabledReason(reason string) bool {
+	if reason == ChannelDisableReasonBalance {
+		return true
+	}
+	reason = strings.ToLower(reason)
+	return strings.Contains(reason, "credit balance") ||
+		strings.Contains(reason, "current quota") ||
+		strings.Contains(reason, "insufficient_quota") ||
+		strings.Contains(reason, "quota exceeded") ||
+		strings.Contains(reason, "status_code=402")
 }
 
 func (channel *Channel) SetOtherInfo(otherInfo map[string]interface{}) {

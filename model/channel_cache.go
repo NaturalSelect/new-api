@@ -208,6 +208,9 @@ func GetRandomSatisfiedChannel(group string, model string, retry int) (*Channel,
 	if len(bucketChannels) == 0 {
 		return nil, errors.New("channel not found")
 	}
+	if freeChannel := selectFreeModelChannel(model, bucketChannels); freeChannel != nil {
+		return freeChannel, nil
+	}
 	if positiveBalanceSum == 0 {
 		return bucketChannels[rand.Intn(len(bucketChannels))], nil
 	}

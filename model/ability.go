@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/samber/lo"
 	"gorm.io/gorm"
@@ -24,6 +25,8 @@ type Ability struct {
 	Weight    uint    `json:"weight" gorm:"default:0;index"`
 	Tag       *string `json:"tag" gorm:"index"`
 }
+
+var errAbilityPriorityNotFound = errors.New("数据库一致性被破坏")
 
 type AbilityWithChannel struct {
 	Ability
@@ -76,7 +79,7 @@ func getPriority(group string, model string, retry int) (int, error) {
 
 	if len(priorities) == 0 {
 		// 如果没有查询到优先级，则返回错误
-		return 0, errors.New("数据库一致性被破坏")
+		return 0, errAbilityPriorityNotFound
 	}
 
 	// 确定要使用的优先级
@@ -105,21 +108,32 @@ func getChannelQuery(group string, model string, retry int) (*gorm.DB, error) {
 	return channelQuery, nil
 }
 
-func GetChannel(group string, model string, retry int) (*Channel, error) {
+func getChannelAbilities(group string, model string, retry int) ([]Ability, error) {
 	var abilities []Ability
-
-	var err error = nil
 	channelQuery, err := getChannelQuery(group, model, retry)
 	if err != nil {
+		if errors.Is(err, errAbilityPriorityNotFound) {
+			return abilities, nil
+		}
 		return nil, err
 	}
-	if common.UsingSQLite || common.UsingPostgreSQL {
-		err = channelQuery.Order("weight DESC").Find(&abilities).Error
-	} else {
-		err = channelQuery.Order("weight DESC").Find(&abilities).Error
-	}
+	err = channelQuery.Order("weight DESC").Find(&abilities).Error
+	return abilities, err
+}
+
+func GetChannel(group string, model string, retry int) (*Channel, error) {
+	abilities, err := getChannelAbilities(group, model, retry)
 	if err != nil {
 		return nil, err
+	}
+	if len(abilities) == 0 {
+		normalizedModel := ratio_setting.FormatMatchingModelName(model)
+		if normalizedModel != "" && normalizedModel != model {
+			abilities, err = getChannelAbilities(group, normalizedModel, retry)
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 	channel := Channel{}
 	if len(abilities) > 0 {
@@ -180,7 +194,9 @@ func GetChannel(group string, model string, retry int) (*Channel, error) {
 		if len(bucketChannels) == 0 {
 			return nil, errors.New("channel not found")
 		}
-		if positiveBalanceSum == 0 {
+		if freeChannel := selectFreeModelChannel(model, bucketChannels); freeChannel != nil {
+			channel = *freeChannel
+		} else if positiveBalanceSum == 0 {
 			channel = *bucketChannels[common.GetRandomInt(len(bucketChannels))]
 		} else {
 			winner := bucketChannels[0]

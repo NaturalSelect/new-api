@@ -51,6 +51,22 @@ func extractPromptCacheKeyFromMetadata(metadata json.RawMessage) string {
 	return strings.TrimSpace(common.Interface2String(metadataMap["prompt_cache_key"]))
 }
 
+var poeMinimalChatRequestFields = map[string]struct{}{
+	"model":                 {},
+	"messages":              {},
+	"max_tokens":            {},
+	"max_completion_tokens": {},
+	"temperature":           {},
+	"top_p":                 {},
+	"stream":                {},
+	"stream_options":        {},
+	"stop":                  {},
+	"tools":                 {},
+	"tool_choice":           {},
+	"parallel_tool_calls":   {},
+	"n":                     {},
+}
+
 func (a *Adaptor) ConvertGeminiRequest(c *gin.Context, info *relaycommon.RelayInfo, request *dto.GeminiChatRequest) (any, error) {
 	// 使用 service.GeminiToOpenAIRequest 转换请求格式
 	openaiRequest, err := service.GeminiToOpenAIRequest(request, info)
@@ -244,38 +260,6 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 	if request.PromptCacheKey == "" {
 		request.PromptCacheKey = extractPromptCacheKeyFromMetadata(request.Metadata)
 	}
-	if info.ChannelType == constant.ChannelTypePoeOpenAI {
-		one := 1
-		request.N = &one
-		if request.ReasoningEffort != "" {
-			extraBody, err := mergeReasoningEffortToExtraBody(request.ExtraBody, request.ReasoningEffort)
-			if err != nil {
-				return nil, err
-			}
-			request.ExtraBody = extraBody
-			request.ReasoningEffort = ""
-		}
-		if request.Store != nil {
-			extraBody, err := mergeStoreToExtraBody(request.ExtraBody, request.Store)
-			if err != nil {
-				return nil, err
-			}
-			request.ExtraBody = extraBody
-		}
-		// Strip fields that POE Chat Completions API ignores per its API documentation
-		request.Store = nil
-		request.Metadata = nil
-		request.ResponseFormat = nil
-		request.Prediction = nil
-		request.PresencePenalty = nil
-		request.FrequencyPenalty = nil
-		request.Seed = nil
-		request.ServiceTier = nil
-		request.Audio = nil
-		request.LogitBias = nil
-		request.User = nil
-		request.Modalities = nil
-	}
 	if info.ChannelType != constant.ChannelTypeOpenAI && info.ChannelType != constant.ChannelTypeAzure && info.ChannelType != constant.ChannelTypePoeOpenAI {
 		request.StreamOptions = nil
 	}
@@ -327,7 +311,7 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 		// 没有做排除3.5Haiku等，要出问题再加吧，最佳兼容性（不是
 		if request.THINKING != nil && strings.HasPrefix(info.UpstreamModelName, "anthropic") {
 			var thinking dto.Thinking // Claude标准Thinking格式
-			if err := json.Unmarshal(request.THINKING, &thinking); err != nil {
+			if err := common.Unmarshal(request.THINKING, &thinking); err != nil {
 				return nil, fmt.Errorf("error Unmarshal thinking: %w", err)
 			}
 
@@ -389,6 +373,14 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 			if len(request.Messages) > 0 && request.Messages[0].Role == "system" {
 				request.Messages[0].Role = "developer"
 			}
+		}
+	}
+
+	if info.ChannelType == constant.ChannelTypePoeOpenAI {
+		one := 1
+		request.N = &one
+		if err := mergePoeUnsupportedParamsToExtraBody(request); err != nil {
+			return nil, err
 		}
 	}
 
@@ -654,34 +646,51 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommo
 	return request, nil
 }
 
-func mergeReasoningEffortToExtraBody(extraBody json.RawMessage, reasoningEffort string) (json.RawMessage, error) {
-	extraBodyMap := make(map[string]any)
-	if len(extraBody) > 0 {
-		if err := common.Unmarshal(extraBody, &extraBodyMap); err != nil {
-			return nil, fmt.Errorf("error unmarshalling extra_body: %w", err)
-		}
-	}
-	extraBodyMap["reasoning_effort"] = reasoningEffort
-	mergedExtraBody, err := common.Marshal(extraBodyMap)
+func mergePoeUnsupportedParamsToExtraBody(request *dto.GeneralOpenAIRequest) error {
+	requestJSON, err := common.Marshal(request)
 	if err != nil {
-		return nil, fmt.Errorf("error marshalling extra_body: %w", err)
+		return fmt.Errorf("error marshalling request: %w", err)
 	}
-	return mergedExtraBody, nil
-}
 
-func mergeStoreToExtraBody(extraBody json.RawMessage, store any) (json.RawMessage, error) {
-	extraBodyMap := make(map[string]any)
-	if len(extraBody) > 0 {
-		if err := common.Unmarshal(extraBody, &extraBodyMap); err != nil {
-			return nil, fmt.Errorf("error unmarshalling extra_body: %w", err)
+	requestMap := make(map[string]json.RawMessage)
+	if err := common.Unmarshal(requestJSON, &requestMap); err != nil {
+		return fmt.Errorf("error unmarshalling request: %w", err)
+	}
+
+	unsupportedParams := make(map[string]json.RawMessage)
+	for key, value := range requestMap {
+		if key == "extra_body" {
+			continue
+		}
+		if _, ok := poeMinimalChatRequestFields[key]; ok {
+			continue
+		}
+		unsupportedParams[key] = value
+	}
+	if len(unsupportedParams) == 0 {
+		return nil
+	}
+
+	extraBodyMap := make(map[string]json.RawMessage)
+	if len(request.ExtraBody) > 0 {
+		if err := common.Unmarshal(request.ExtraBody, &extraBodyMap); err != nil {
+			return fmt.Errorf("error unmarshalling extra_body: %w", err)
+		}
+		if extraBodyMap == nil {
+			extraBodyMap = make(map[string]json.RawMessage)
 		}
 	}
-	extraBodyMap["store"] = store
+
+	for key, value := range unsupportedParams {
+		extraBodyMap[key] = value
+	}
+
 	mergedExtraBody, err := common.Marshal(extraBodyMap)
 	if err != nil {
-		return nil, fmt.Errorf("error marshalling extra_body: %w", err)
+		return fmt.Errorf("error marshalling extra_body: %w", err)
 	}
-	return mergedExtraBody, nil
+	request.ExtraBody = mergedExtraBody
+	return nil
 }
 
 func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, requestBody io.Reader) (any, error) {

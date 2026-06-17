@@ -163,7 +163,7 @@ func TestConvertOpenAIRequestPoePreservesAllowedMinimalFields(t *testing.T) {
 func TestConvertOpenAIRequestPoeExtractsMetadataPromptCacheKeyToExtraBody(t *testing.T) {
 	adaptor := &Adaptor{}
 	request := &dto.GeneralOpenAIRequest{
-		Metadata: json.RawMessage(`{"prompt_cache_key":"metadata-key","tag":"x"}`),
+		Metadata: json.RawMessage(`{"prompt_cache_key":"metadata-key","user_id":"user-key","tag":"x"}`),
 	}
 
 	converted, err := adaptor.ConvertOpenAIRequest(nil, newPoeRelayInfo(), request)
@@ -181,7 +181,130 @@ func TestConvertOpenAIRequestPoeExtractsMetadataPromptCacheKeyToExtraBody(t *tes
 
 	extraBody := unmarshalRawObject(t, convertedRequest.ExtraBody)
 	assertRawJSONEqual(t, extraBody["prompt_cache_key"], `"metadata-key"`)
-	assertRawJSONEqual(t, extraBody["metadata"], `{"prompt_cache_key":"metadata-key","tag":"x"}`)
+	assertRawJSONEqual(t, extraBody["metadata"], `{"prompt_cache_key":"metadata-key","user_id":"user-key","tag":"x"}`)
+}
+
+func TestConvertOpenAIRequestExtractsMetadataUserIDPromptCacheKey(t *testing.T) {
+	adaptor := &Adaptor{}
+
+	tests := []struct {
+		name      string
+		info      *relaycommon.RelayInfo
+		wantExtra bool
+	}{
+		{
+			name: "openai",
+			info: newOpenAIRelayInfo(),
+		},
+		{
+			name:      "poe",
+			info:      newPoeRelayInfo(),
+			wantExtra: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			request := &dto.GeneralOpenAIRequest{
+				Metadata:  json.RawMessage(`{"user_id":"user-key","tag":"x"}`),
+				ExtraBody: json.RawMessage(`{"existing":true}`),
+			}
+
+			converted, err := adaptor.ConvertOpenAIRequest(nil, tt.info, request)
+			if err != nil {
+				t.Fatalf("ConvertOpenAIRequest returned error: %v", err)
+			}
+
+			convertedRequest := converted.(*dto.GeneralOpenAIRequest)
+			if convertedRequest.PromptCacheKey != "user-key" {
+				t.Fatalf("PromptCacheKey = %q, want %q", convertedRequest.PromptCacheKey, "user-key")
+			}
+
+			extraBody := unmarshalRawObject(t, convertedRequest.ExtraBody)
+			assertRawJSONEqual(t, extraBody["existing"], `true`)
+			if tt.wantExtra {
+				assertRawJSONEqual(t, extraBody["prompt_cache_key"], `"user-key"`)
+				assertRawJSONEqual(t, extraBody["metadata"], `{"user_id":"user-key","tag":"x"}`)
+			} else if _, ok := extraBody["prompt_cache_key"]; ok {
+				t.Fatalf("extra_body unexpectedly contains prompt_cache_key for non-Poe channel: %s", extraBody["prompt_cache_key"])
+			}
+		})
+	}
+}
+
+func TestConvertOpenAIRequestPreservesTopLevelPromptCacheKeyOverMetadataUserID(t *testing.T) {
+	adaptor := &Adaptor{}
+	request := &dto.GeneralOpenAIRequest{
+		PromptCacheKey: "top-level-key",
+		Metadata:       json.RawMessage(`{"user_id":"user-key"}`),
+	}
+
+	converted, err := adaptor.ConvertOpenAIRequest(nil, newPoeRelayInfo(), request)
+	if err != nil {
+		t.Fatalf("ConvertOpenAIRequest returned error: %v", err)
+	}
+
+	convertedRequest := converted.(*dto.GeneralOpenAIRequest)
+	if convertedRequest.PromptCacheKey != "top-level-key" {
+		t.Fatalf("PromptCacheKey = %q, want %q", convertedRequest.PromptCacheKey, "top-level-key")
+	}
+
+	extraBody := unmarshalRawObject(t, convertedRequest.ExtraBody)
+	assertRawJSONEqual(t, extraBody["prompt_cache_key"], `"top-level-key"`)
+}
+
+func TestConvertOpenAIResponsesRequestExtractsMetadataUserIDPromptCacheKey(t *testing.T) {
+	adaptor := &Adaptor{}
+
+	tests := []struct {
+		name           string
+		promptCacheKey json.RawMessage
+		metadata       json.RawMessage
+		want           string
+	}{
+		{
+			name:     "missing prompt cache key",
+			metadata: json.RawMessage(`{"user_id":"user-key"}`),
+			want:     `"user-key"`,
+		},
+		{
+			name:           "empty string prompt cache key",
+			promptCacheKey: json.RawMessage(`""`),
+			metadata:       json.RawMessage(`{"user_id":"user-key"}`),
+			want:           `"user-key"`,
+		},
+		{
+			name:           "null prompt cache key",
+			promptCacheKey: json.RawMessage(`null`),
+			metadata:       json.RawMessage(`{"user_id":"user-key"}`),
+			want:           `"user-key"`,
+		},
+		{
+			name:           "top level prompt cache key wins",
+			promptCacheKey: json.RawMessage(`"top-level-key"`),
+			metadata:       json.RawMessage(`{"user_id":"user-key"}`),
+			want:           `"top-level-key"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			request := dto.OpenAIResponsesRequest{
+				Model:          "gpt-4o",
+				PromptCacheKey: tt.promptCacheKey,
+				Metadata:       tt.metadata,
+			}
+
+			converted, err := adaptor.ConvertOpenAIResponsesRequest(nil, newOpenAIRelayInfo(), request)
+			if err != nil {
+				t.Fatalf("ConvertOpenAIResponsesRequest returned error: %v", err)
+			}
+
+			convertedRequest := converted.(dto.OpenAIResponsesRequest)
+			assertRawJSONEqual(t, convertedRequest.PromptCacheKey, tt.want)
+			assertRawJSONEqual(t, convertedRequest.Metadata, string(tt.metadata))
+		})
+	}
 }
 
 func TestConvertOpenAIRequestNonPoeDoesNotMergeOrStripUnsupportedParams(t *testing.T) {

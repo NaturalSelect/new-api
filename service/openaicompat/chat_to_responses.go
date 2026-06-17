@@ -81,7 +81,10 @@ func extractPromptCacheKeyFromMetadata(metadata json.RawMessage) string {
 	if err := common.Unmarshal(metadata, &metadataMap); err != nil {
 		return ""
 	}
-	return strings.TrimSpace(common.Interface2String(metadataMap["prompt_cache_key"]))
+	if promptCacheKey := strings.TrimSpace(common.Interface2String(metadataMap["prompt_cache_key"])); promptCacheKey != "" {
+		return promptCacheKey
+	}
+	return strings.TrimSpace(common.Interface2String(metadataMap["user_id"]))
 }
 
 func ChatCompletionsRequestToResponsesRequest(req *dto.GeneralOpenAIRequest) (*dto.OpenAIResponsesRequest, error) {

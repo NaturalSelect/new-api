@@ -48,7 +48,24 @@ func extractPromptCacheKeyFromMetadata(metadata json.RawMessage) string {
 	if err := common.Unmarshal(metadata, &metadataMap); err != nil {
 		return ""
 	}
-	return strings.TrimSpace(common.Interface2String(metadataMap["prompt_cache_key"]))
+	if promptCacheKey := strings.TrimSpace(common.Interface2String(metadataMap["prompt_cache_key"])); promptCacheKey != "" {
+		return promptCacheKey
+	}
+	return strings.TrimSpace(common.Interface2String(metadataMap["user_id"]))
+}
+
+func isPromptCacheKeyRawEmpty(promptCacheKey json.RawMessage) bool {
+	trimmed := bytes.TrimSpace(promptCacheKey)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return true
+	}
+
+	var promptCacheKeyStr string
+	if err := common.Unmarshal(trimmed, &promptCacheKeyStr); err == nil {
+		return strings.TrimSpace(promptCacheKeyStr) == ""
+	}
+
+	return false
 }
 
 var poeMinimalChatRequestFields = map[string]struct{}{
@@ -257,7 +274,7 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 	if request == nil {
 		return nil, errors.New("request is nil")
 	}
-	if request.PromptCacheKey == "" {
+	if strings.TrimSpace(request.PromptCacheKey) == "" {
 		request.PromptCacheKey = extractPromptCacheKeyFromMetadata(request.Metadata)
 	}
 	if info.ChannelType != constant.ChannelTypeOpenAI && info.ChannelType != constant.ChannelTypeAzure && info.ChannelType != constant.ChannelTypePoeOpenAI {
@@ -620,7 +637,7 @@ func detectImageMimeType(filename string) string {
 }
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
-	if len(request.PromptCacheKey) == 0 {
+	if isPromptCacheKeyRawEmpty(request.PromptCacheKey) {
 		promptCacheKey := extractPromptCacheKeyFromMetadata(request.Metadata)
 		if promptCacheKey != "" {
 			request.PromptCacheKey, _ = common.Marshal(promptCacheKey)

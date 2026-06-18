@@ -1,9 +1,9 @@
 package common
 
 import (
-	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
 	common2 "github.com/QuantumNous/new-api/common"
@@ -238,7 +238,7 @@ func TestApplyParamOverrideDelete(t *testing.T) {
 	}
 
 	var got map[string]interface{}
-	if err := json.Unmarshal(out, &got); err != nil {
+	if err := common2.Unmarshal(out, &got); err != nil {
 		t.Fatalf("failed to unmarshal output JSON: %v", err)
 	}
 	if _, exists := got["temperature"]; exists {
@@ -288,7 +288,7 @@ func TestApplyParamOverrideSetWildcardPath(t *testing.T) {
 			} `json:"custom"`
 		} `json:"tools"`
 	}
-	if err := json.Unmarshal(out, &got); err != nil {
+	if err := common2.Unmarshal(out, &got); err != nil {
 		t.Fatalf("failed to unmarshal output JSON: %v", err)
 	}
 
@@ -326,7 +326,7 @@ func TestApplyParamOverrideTrimSpaceWildcardPath(t *testing.T) {
 			} `json:"custom"`
 		} `json:"tools"`
 	}
-	if err := json.Unmarshal(out, &got); err != nil {
+	if err := common2.Unmarshal(out, &got); err != nil {
 		t.Fatalf("failed to unmarshal output JSON: %v", err)
 	}
 
@@ -401,7 +401,7 @@ func TestApplyParamOverrideSetWildcardKeepOrigin(t *testing.T) {
 			} `json:"custom"`
 		} `json:"tools"`
 	}
-	if err := json.Unmarshal(out, &got); err != nil {
+	if err := common2.Unmarshal(out, &got); err != nil {
 		t.Fatalf("failed to unmarshal output JSON: %v", err)
 	}
 
@@ -442,7 +442,7 @@ func TestApplyParamOverrideTrimSpaceMultiWildcardPath(t *testing.T) {
 			} `json:"custom"`
 		} `json:"tools"`
 	}
-	if err := json.Unmarshal(out, &got); err != nil {
+	if err := common2.Unmarshal(out, &got); err != nil {
 		t.Fatalf("failed to unmarshal output JSON: %v", err)
 	}
 
@@ -2123,8 +2123,9 @@ func TestApplyClaudeAutoCacheControlInjectsIntoSystemArrayText(t *testing.T) {
 			{"type":"text","text":"first system"},
 			{"type":"text","text":"last system","cache_control":{"type":"ephemeral"}}
 		],
-		"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]
+		"messages":[{"role":"user","content":[{"type":"text","text":"hello","cache_control":{"type":"ephemeral"}}]}]
 	}`, string(out))
+	require.Equal(t, 2, countClaudeCacheControlFields(t, out))
 }
 
 func TestApplyClaudeAutoCacheControlPreservesExistingMessageContent(t *testing.T) {
@@ -2134,6 +2135,103 @@ func TestApplyClaudeAutoCacheControlPreservesExistingMessageContent(t *testing.T
 	out, err := ApplyClaudeAutoCacheControl([]byte(input), settings)
 	require.NoError(t, err)
 	require.Equal(t, input, string(out))
+}
+
+func TestApplyClaudeAutoCacheControlPreservesExistingMessageCacheControl(t *testing.T) {
+	input := `{"messages":[{"role":"user","cache_control":{"type":"ephemeral"},"content":"hello"}]}`
+	settings := dto.ChannelOtherSettings{AutoCacheControl: true}
+
+	out, err := ApplyClaudeAutoCacheControl([]byte(input), settings)
+	require.NoError(t, err)
+	require.Equal(t, input, string(out))
+}
+
+func TestApplyClaudeAutoCacheControlPreservesExistingSystemCacheControl(t *testing.T) {
+	input := `{"system":[{"type":"text","text":"system","cache_control":{"type":"ephemeral"}}],"messages":[{"role":"user","content":"hello"}]}`
+	settings := dto.ChannelOtherSettings{AutoCacheControl: true}
+
+	out, err := ApplyClaudeAutoCacheControl([]byte(input), settings)
+	require.NoError(t, err)
+	require.Equal(t, input, string(out))
+}
+
+func TestApplyClaudeAutoCacheControlPreservesExistingToolCacheControl(t *testing.T) {
+	input := `{"tools":[{"name":"search","cache_control":{"type":"ephemeral"}}],"messages":[{"role":"user","content":"hello"}]}`
+	settings := dto.ChannelOtherSettings{AutoCacheControl: true}
+
+	out, err := ApplyClaudeAutoCacheControl([]byte(input), settings)
+	require.NoError(t, err)
+	require.Equal(t, input, string(out))
+}
+
+func TestApplyClaudeAutoCacheControlAddsLongConversationBreakpoints(t *testing.T) {
+	thresholdText := strings.Repeat("x", claudeAutoCacheControlMessageTokenThreshold*4)
+	input := fmt.Sprintf(`{
+		"system":[
+			{"type":"text","text":"first system"},
+			{"type":"text","text":"last system"}
+		],
+		"tools":[
+			{"name":"first_tool","description":"first"},
+			{"name":"last_tool","description":"last"}
+		],
+		"messages":[
+			{"role":"user","content":[{"type":"text","text":"m0"}]},
+			{"role":"assistant","content":[{"type":"text","text":"m1"}]},
+			{"role":"user","content":[{"type":"text","text":%q}]},
+			{"role":"assistant","content":[{"type":"text","text":"tail one"}]},
+			{"role":"user","content":"tail two"}
+		]
+	}`, thresholdText)
+	settings := dto.ChannelOtherSettings{AutoCacheControl: true}
+
+	out, err := ApplyClaudeAutoCacheControl([]byte(input), settings)
+	require.NoError(t, err)
+	assertJSONEqual(t, fmt.Sprintf(`{
+		"system":[
+			{"type":"text","text":"first system"},
+			{"type":"text","text":"last system","cache_control":{"type":"ephemeral"}}
+		],
+		"tools":[
+			{"name":"first_tool","description":"first"},
+			{"name":"last_tool","description":"last","cache_control":{"type":"ephemeral"}}
+		],
+		"messages":[
+			{"role":"user","content":[{"type":"text","text":"m0"}]},
+			{"role":"assistant","content":[{"type":"text","text":"m1"}]},
+			{"role":"user","content":[{"type":"text","text":%q,"cache_control":{"type":"ephemeral"}}]},
+			{"role":"assistant","content":[{"type":"text","text":"tail one"}]},
+			{"role":"user","content":[{"type":"text","text":"tail two","cache_control":{"type":"ephemeral"}}]}
+		]
+	}`, thresholdText), string(out))
+	cacheControlCount := countClaudeCacheControlFields(t, out)
+	require.Equal(t, 4, cacheControlCount)
+	require.LessOrEqual(t, cacheControlCount, claudeAutoCacheControlMaxBreakpoints)
+}
+
+func TestApplyClaudeAutoCacheControlThresholdAndTailWithoutSystem(t *testing.T) {
+	thresholdText := strings.Repeat("y", claudeAutoCacheControlMessageTokenThreshold*4)
+	input := fmt.Sprintf(`{
+		"messages":[
+			{"role":"user","content":"m0"},
+			{"role":"assistant","content":[{"type":"text","text":%q}]},
+			{"role":"user","content":"middle"},
+			{"role":"assistant","content":"tail"}
+		]
+	}`, thresholdText)
+	settings := dto.ChannelOtherSettings{AutoCacheControl: true}
+
+	out, err := ApplyClaudeAutoCacheControl([]byte(input), settings)
+	require.NoError(t, err)
+	assertJSONEqual(t, fmt.Sprintf(`{
+		"messages":[
+			{"role":"user","content":"m0"},
+			{"role":"assistant","content":[{"type":"text","text":%q,"cache_control":{"type":"ephemeral"}}]},
+			{"role":"user","content":"middle"},
+			{"role":"assistant","content":[{"type":"text","text":"tail","cache_control":{"type":"ephemeral"}}]}
+		]
+	}`, thresholdText), string(out))
+	require.Equal(t, 2, countClaudeCacheControlFields(t, out))
 }
 
 func TestApplyClaudeAutoCacheControlConvertsLastStringMessageContent(t *testing.T) {
@@ -2151,6 +2249,66 @@ func TestApplyClaudeAutoCacheControlConvertsLastStringMessageContent(t *testing.
 			{"role":"user","content":[{"type":"text","text":"last text","cache_control":{"type":"ephemeral"}}]}
 		]
 	}`, string(out))
+	require.Equal(t, 1, countClaudeCacheControlFields(t, out))
+}
+
+func TestApplyClaudeAutoCacheControlThresholdNotReachedAddsTail(t *testing.T) {
+	input := `{
+		"messages":[
+			{"role":"user","content":"first"},
+			{"role":"assistant","content":"last"}
+		]
+	}`
+	settings := dto.ChannelOtherSettings{AutoCacheControl: true}
+
+	out, err := ApplyClaudeAutoCacheControl([]byte(input), settings)
+	require.NoError(t, err)
+	assertJSONEqual(t, `{
+		"messages":[
+			{"role":"user","content":"first"},
+			{"role":"assistant","content":[{"type":"text","text":"last","cache_control":{"type":"ephemeral"}}]}
+		]
+	}`, string(out))
+	require.Equal(t, 1, countClaudeCacheControlFields(t, out))
+}
+
+func TestApplyClaudeAutoCacheControlThresholdTailSameMessageAddsOnce(t *testing.T) {
+	messageText := strings.Repeat("z", claudeAutoCacheControlMessageTokenThreshold*4)
+	input := fmt.Sprintf(`{
+		"messages":[
+			{"role":"user","content":%q}
+		]
+	}`, messageText)
+	settings := dto.ChannelOtherSettings{AutoCacheControl: true}
+
+	out, err := ApplyClaudeAutoCacheControl([]byte(input), settings)
+	require.NoError(t, err)
+	assertJSONEqual(t, fmt.Sprintf(`{
+		"messages":[
+			{"role":"user","content":[{"type":"text","text":%q,"cache_control":{"type":"ephemeral"}}]}
+		]
+	}`, messageText), string(out))
+	require.Equal(t, 1, countClaudeCacheControlFields(t, out))
+}
+
+func TestApplyClaudeAutoCacheControlSystemStringShortConversation(t *testing.T) {
+	input := `{
+		"system":"system prompt",
+		"messages":[
+			{"role":"user","content":"latest"}
+		]
+	}`
+	settings := dto.ChannelOtherSettings{AutoCacheControl: true}
+
+	out, err := ApplyClaudeAutoCacheControl([]byte(input), settings)
+	require.NoError(t, err)
+	assertJSONEqual(t, `{
+		"system":[{"type":"text","text":"system prompt","cache_control":{"type":"ephemeral"}}],
+		"messages":[
+			{"role":"user","content":[{"type":"text","text":"latest","cache_control":{"type":"ephemeral"}}]}
+		]
+	}`, string(out))
+	require.Equal(t, 2, countClaudeCacheControlFields(t, out))
 }
 
 func TestApplyClaudeAutoCacheControlTopLevelCacheControlNoop(t *testing.T) {
@@ -2428,14 +2586,44 @@ func assertJSONEqual(t *testing.T, want, got string) {
 	var wantObj interface{}
 	var gotObj interface{}
 
-	if err := json.Unmarshal([]byte(want), &wantObj); err != nil {
+	if err := common2.Unmarshal([]byte(want), &wantObj); err != nil {
 		t.Fatalf("failed to unmarshal want JSON: %v", err)
 	}
-	if err := json.Unmarshal([]byte(got), &gotObj); err != nil {
+	if err := common2.Unmarshal([]byte(got), &gotObj); err != nil {
 		t.Fatalf("failed to unmarshal got JSON: %v", err)
 	}
 
 	if !reflect.DeepEqual(wantObj, gotObj) {
 		t.Fatalf("json not equal\nwant: %s\ngot:  %s", want, got)
+	}
+}
+
+func countClaudeCacheControlFields(t *testing.T, data []byte) int {
+	t.Helper()
+
+	var value interface{}
+	require.NoError(t, common2.Unmarshal(data, &value))
+	return countCacheControlFields(value)
+}
+
+func countCacheControlFields(value interface{}) int {
+	switch typedValue := value.(type) {
+	case map[string]interface{}:
+		count := 0
+		for key, child := range typedValue {
+			if key == "cache_control" {
+				count++
+			}
+			count += countCacheControlFields(child)
+		}
+		return count
+	case []interface{}:
+		count := 0
+		for _, child := range typedValue {
+			count += countCacheControlFields(child)
+		}
+		return count
+	default:
+		return 0
 	}
 }

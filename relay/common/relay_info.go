@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -32,6 +33,11 @@ const (
 	LastMessageTypeText     = "text"
 	LastMessageTypeTools    = "tools"
 	LastMessageTypeThinking = "thinking"
+)
+
+const (
+	claudeAutoCacheControlMaxBreakpoints        = 4
+	claudeAutoCacheControlMessageTokenThreshold = 1024
 )
 
 type ClaudeConvertInfo struct {
@@ -928,6 +934,9 @@ func hasClaudeCacheControl(data map[string]interface{}) bool {
 	if hasClaudeCacheControlInContentBlocks(data["system"]) {
 		return true
 	}
+	if hasClaudeCacheControlInTools(data["tools"]) {
+		return true
+	}
 
 	messages, ok := data["messages"].([]interface{})
 	if !ok {
@@ -937,6 +946,9 @@ func hasClaudeCacheControl(data map[string]interface{}) bool {
 		messageMap, ok := message.(map[string]interface{})
 		if !ok {
 			continue
+		}
+		if _, exists := messageMap["cache_control"]; exists {
+			return true
 		}
 		if hasClaudeCacheControlInContentBlocks(messageMap["content"]) {
 			return true
@@ -962,32 +974,122 @@ func hasClaudeCacheControlInContentBlocks(content interface{}) bool {
 	return false
 }
 
-func addClaudeAutoCacheControl(data map[string]interface{}) bool {
-	if blocks, ok := data["system"].([]interface{}); ok && addClaudeCacheControlToLastTextBlock(blocks) {
-		return true
+func hasClaudeCacheControlInTools(tools interface{}) bool {
+	toolList, ok := tools.([]interface{})
+	if !ok {
+		return false
 	}
-
-	messages, _ := data["messages"].([]interface{})
-	for i := len(messages) - 1; i >= 0; i-- {
-		messageMap, ok := messages[i].(map[string]interface{})
+	for _, tool := range toolList {
+		toolMap, ok := tool.(map[string]interface{})
 		if !ok {
 			continue
 		}
-		blocks, ok := messageMap["content"].([]interface{})
-		if !ok {
-			continue
-		}
-		if addClaudeCacheControlToLastTextBlock(blocks) {
+		if _, exists := toolMap["cache_control"]; exists {
 			return true
 		}
 	}
+	return false
+}
 
-	if len(messages) > 0 {
-		if messageMap, ok := messages[len(messages)-1].(map[string]interface{}); ok {
-			if content, ok := messageMap["content"].(string); ok {
-				messageMap["content"] = []interface{}{newClaudeTextBlockWithCacheControl(content)}
-				return true
+func addClaudeAutoCacheControl(data map[string]interface{}) bool {
+	breakpoints := 0
+
+	if breakpoints < claudeAutoCacheControlMaxBreakpoints {
+		switch system := data["system"].(type) {
+		case []interface{}:
+			if addClaudeCacheControlToLastTextBlock(system) {
+				breakpoints++
 			}
+		case string:
+			if strings.TrimSpace(system) != "" {
+				data["system"] = []interface{}{newClaudeTextBlockWithCacheControl(system)}
+				breakpoints++
+			}
+		}
+	}
+
+	if breakpoints < claudeAutoCacheControlMaxBreakpoints {
+		if tools, ok := data["tools"].([]interface{}); ok {
+			for i := len(tools) - 1; i >= 0; i-- {
+				toolMap, ok := tools[i].(map[string]interface{})
+				if !ok {
+					continue
+				}
+				toolMap["cache_control"] = newClaudeEphemeralCacheControl()
+				breakpoints++
+				break
+			}
+		}
+	}
+
+	messages, _ := data["messages"].([]interface{})
+	thresholdIndex := -1
+	thresholdAdded := false
+	if breakpoints < claudeAutoCacheControlMaxBreakpoints {
+		thresholdIndex = findClaudeAutoCacheControlThresholdMessageIndex(messages)
+		if thresholdIndex >= 0 && addClaudeCacheControlToMessage(messages[thresholdIndex]) {
+			thresholdAdded = true
+			breakpoints++
+		}
+	}
+
+	if breakpoints < claudeAutoCacheControlMaxBreakpoints && len(messages) > 0 {
+		tailIndex := len(messages) - 1
+		if !thresholdAdded || thresholdIndex != tailIndex {
+			if addClaudeCacheControlToMessage(messages[tailIndex]) {
+				breakpoints++
+			}
+		}
+	}
+
+	if breakpoints > 0 {
+		return true
+	}
+
+	return addClaudeFallbackAutoCacheControl(data)
+}
+
+func findClaudeAutoCacheControlThresholdMessageIndex(messages []interface{}) int {
+	tokens := 0
+	for i, message := range messages {
+		tokens += estimateClaudeAutoCacheControlTokens(message)
+		if tokens >= claudeAutoCacheControlMessageTokenThreshold {
+			return i
+		}
+	}
+	return -1
+}
+
+func estimateClaudeAutoCacheControlTokens(value interface{}) int {
+	switch typedValue := value.(type) {
+	case string:
+		runeCount := utf8.RuneCountInString(typedValue)
+		if runeCount == 0 {
+			return 0
+		}
+		return (runeCount + 3) / 4
+	case []interface{}:
+		tokens := 0
+		for _, child := range typedValue {
+			tokens += estimateClaudeAutoCacheControlTokens(child)
+		}
+		return tokens
+	case map[string]interface{}:
+		tokens := 0
+		for _, child := range typedValue {
+			tokens += estimateClaudeAutoCacheControlTokens(child)
+		}
+		return tokens
+	default:
+		return 0
+	}
+}
+
+func addClaudeFallbackAutoCacheControl(data map[string]interface{}) bool {
+	messages, _ := data["messages"].([]interface{})
+	if len(messages) > 0 {
+		if addClaudeCacheControlToMessage(messages[len(messages)-1]) {
+			return true
 		}
 	}
 
@@ -996,6 +1098,21 @@ func addClaudeAutoCacheControl(data map[string]interface{}) bool {
 		return true
 	}
 
+	return false
+}
+
+func addClaudeCacheControlToMessage(message interface{}) bool {
+	messageMap, ok := message.(map[string]interface{})
+	if !ok {
+		return false
+	}
+	if blocks, ok := messageMap["content"].([]interface{}); ok {
+		return addClaudeCacheControlToLastTextBlock(blocks)
+	}
+	if content, ok := messageMap["content"].(string); ok {
+		messageMap["content"] = []interface{}{newClaudeTextBlockWithCacheControl(content)}
+		return true
+	}
 	return false
 }
 

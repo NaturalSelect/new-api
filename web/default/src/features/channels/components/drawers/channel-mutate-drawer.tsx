@@ -2931,7 +2931,7 @@ export function ChannelMutateDrawer({
                         title={t('Channel Extra Settings')}
                         icon={<Settings className='h-4 w-4' />}
                       />
-                      {([1, 14, 59].includes(currentType)) && (
+                      {[1, 14, 58, 59].includes(currentType) && (
                         <div className='border-border/60 flex flex-col gap-3 border-y py-4'>
                           <SubHeading
                             title={t('Field passthrough controls')}

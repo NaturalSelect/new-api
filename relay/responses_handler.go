@@ -93,6 +93,12 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 		if err != nil {
 			return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
 		}
+		if info.ChannelType == appconstant.ChannelTypeOpenAI || info.ChannelType == appconstant.ChannelTypePoeOpenAI {
+			jsonData, err = relaycommon.ApplyOpenAIAutoPromptCacheRetention(jsonData, info.ChannelOtherSettings, false)
+			if err != nil {
+				return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+			}
+		}
 
 		// apply param override
 		if len(info.ParamOverride) > 0 {

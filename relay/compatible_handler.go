@@ -165,6 +165,19 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 			return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
 		}
 
+		if info.ChannelType == constant.ChannelTypeAnthropic || info.ChannelType == constant.ChannelTypePoeAnthropic {
+			jsonData, err = relaycommon.ApplyClaudeAutoCacheControl(jsonData, info.ChannelOtherSettings)
+			if err != nil {
+				return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+			}
+		}
+		if info.ChannelType == constant.ChannelTypeOpenAI || info.ChannelType == constant.ChannelTypePoeOpenAI {
+			jsonData, err = relaycommon.ApplyOpenAIAutoPromptCacheRetention(jsonData, info.ChannelOtherSettings, info.ChannelType == constant.ChannelTypePoeOpenAI)
+			if err != nil {
+				return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+			}
+		}
+
 		// apply param override
 		if len(info.ParamOverride) > 0 {
 			jsonData, err = relaycommon.ApplyParamOverrideWithRelayInfo(jsonData, info)

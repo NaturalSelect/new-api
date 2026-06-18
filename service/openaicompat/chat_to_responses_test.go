@@ -50,3 +50,47 @@ func TestChatCompletionsRequestToResponsesRequestPromptCacheKeyFromMetadata(t *t
 		})
 	}
 }
+
+func TestChatCompletionsRequestToResponsesRequestPreservesPromptCacheRetention(t *testing.T) {
+	tests := []struct {
+		name                 string
+		promptCacheRetention json.RawMessage
+		extraBody            json.RawMessage
+		want                 string
+	}{
+		{
+			name:                 "top level",
+			promptCacheRetention: json.RawMessage(`"24h"`),
+			want:                 `"24h"`,
+		},
+		{
+			name:      "extra body fallback",
+			extraBody: json.RawMessage(`{"prompt_cache_retention":"1h"}`),
+			want:      `"1h"`,
+		},
+		{
+			name:                 "top level wins",
+			promptCacheRetention: json.RawMessage(`"24h"`),
+			extraBody:            json.RawMessage(`{"prompt_cache_retention":"1h"}`),
+			want:                 `"24h"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out, err := ChatCompletionsRequestToResponsesRequest(&dto.GeneralOpenAIRequest{
+				Model:                "gpt-4o",
+				Messages:             []dto.Message{{Role: "user", Content: "hi"}},
+				PromptCacheRetention: tt.promptCacheRetention,
+				ExtraBody:            tt.extraBody,
+			})
+			if err != nil {
+				t.Fatalf("ChatCompletionsRequestToResponsesRequest returned error: %v", err)
+			}
+
+			if string(out.PromptCacheRetention) != tt.want {
+				t.Fatalf("PromptCacheRetention = %s, want %s", out.PromptCacheRetention, tt.want)
+			}
+		})
+	}
+}

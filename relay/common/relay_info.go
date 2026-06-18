@@ -864,6 +864,172 @@ func RemoveDisabledFields(jsonData []byte, channelOtherSettings dto.ChannelOther
 	return jsonDataAfter, nil
 }
 
+func ApplyClaudeAutoCacheControl(jsonData []byte, channelOtherSettings dto.ChannelOtherSettings) ([]byte, error) {
+	if !channelOtherSettings.AutoCacheControl {
+		return jsonData, nil
+	}
+
+	var data map[string]interface{}
+	if err := common.Unmarshal(jsonData, &data); err != nil {
+		return nil, err
+	}
+	if hasClaudeCacheControl(data) {
+		return jsonData, nil
+	}
+
+	if !addClaudeAutoCacheControl(data) {
+		return jsonData, nil
+	}
+
+	return common.Marshal(data)
+}
+
+func ApplyOpenAIAutoPromptCacheRetention(jsonData []byte, channelOtherSettings dto.ChannelOtherSettings, useExtraBody bool) ([]byte, error) {
+	if !channelOtherSettings.AutoCacheControl {
+		return jsonData, nil
+	}
+
+	var data map[string]interface{}
+	if err := common.Unmarshal(jsonData, &data); err != nil {
+		return nil, err
+	}
+
+	if _, exists := data["prompt_cache_retention"]; exists {
+		return jsonData, nil
+	}
+
+	if !useExtraBody {
+		data["prompt_cache_retention"] = "24h"
+		return common.Marshal(data)
+	}
+
+	extraBodyMap := map[string]interface{}{}
+	if extraBody, exists := data["extra_body"]; exists && extraBody != nil {
+		parsedExtraBody, ok := extraBody.(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("extra_body must be a JSON object to apply prompt_cache_retention, got %T", extraBody)
+		}
+		extraBodyMap = parsedExtraBody
+	}
+
+	if _, exists := extraBodyMap["prompt_cache_retention"]; exists {
+		return jsonData, nil
+	}
+
+	extraBodyMap["prompt_cache_retention"] = "24h"
+	data["extra_body"] = extraBodyMap
+	return common.Marshal(data)
+}
+
+func hasClaudeCacheControl(data map[string]interface{}) bool {
+	if _, exists := data["cache_control"]; exists {
+		return true
+	}
+	if hasClaudeCacheControlInContentBlocks(data["system"]) {
+		return true
+	}
+
+	messages, ok := data["messages"].([]interface{})
+	if !ok {
+		return false
+	}
+	for _, message := range messages {
+		messageMap, ok := message.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if hasClaudeCacheControlInContentBlocks(messageMap["content"]) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasClaudeCacheControlInContentBlocks(content interface{}) bool {
+	blocks, ok := content.([]interface{})
+	if !ok {
+		return false
+	}
+	for _, block := range blocks {
+		blockMap, ok := block.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if _, exists := blockMap["cache_control"]; exists {
+			return true
+		}
+	}
+	return false
+}
+
+func addClaudeAutoCacheControl(data map[string]interface{}) bool {
+	if blocks, ok := data["system"].([]interface{}); ok && addClaudeCacheControlToLastTextBlock(blocks) {
+		return true
+	}
+
+	messages, _ := data["messages"].([]interface{})
+	for i := len(messages) - 1; i >= 0; i-- {
+		messageMap, ok := messages[i].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		blocks, ok := messageMap["content"].([]interface{})
+		if !ok {
+			continue
+		}
+		if addClaudeCacheControlToLastTextBlock(blocks) {
+			return true
+		}
+	}
+
+	if len(messages) > 0 {
+		if messageMap, ok := messages[len(messages)-1].(map[string]interface{}); ok {
+			if content, ok := messageMap["content"].(string); ok {
+				messageMap["content"] = []interface{}{newClaudeTextBlockWithCacheControl(content)}
+				return true
+			}
+		}
+	}
+
+	if system, ok := data["system"].(string); ok && strings.TrimSpace(system) != "" {
+		data["system"] = []interface{}{newClaudeTextBlockWithCacheControl(system)}
+		return true
+	}
+
+	return false
+}
+
+func addClaudeCacheControlToLastTextBlock(blocks []interface{}) bool {
+	for i := len(blocks) - 1; i >= 0; i-- {
+		blockMap, ok := blocks[i].(map[string]interface{})
+		if !ok || !isClaudeTextBlock(blockMap) {
+			continue
+		}
+		blockMap["cache_control"] = newClaudeEphemeralCacheControl()
+		return true
+	}
+	return false
+}
+
+func isClaudeTextBlock(block map[string]interface{}) bool {
+	blockType, ok := block["type"].(string)
+	return ok && blockType == dto.ContentTypeText
+}
+
+func newClaudeTextBlockWithCacheControl(text string) map[string]interface{} {
+	return map[string]interface{}{
+		"type":          dto.ContentTypeText,
+		"text":          text,
+		"cache_control": newClaudeEphemeralCacheControl(),
+	}
+}
+
+func newClaudeEphemeralCacheControl() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "ephemeral",
+	}
+}
+
 func hasRemovableDisabledField(jsonData []byte, channelOtherSettings dto.ChannelOtherSettings) bool {
 	values := gjson.GetManyBytes(
 		jsonData,

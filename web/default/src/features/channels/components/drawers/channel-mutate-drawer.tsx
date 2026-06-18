@@ -220,6 +220,7 @@ function hasAdvancedSettingsValues(values: ChannelFormValues): boolean {
     values.system_prompt_override ||
     values.free_models_list?.trim() ||
     values.claude_beta_query ||
+    values.auto_cache_control ||
     values.upstream_model_update_check_enabled ||
     values.upstream_model_update_auto_sync_enabled ||
     values.upstream_model_update_ignored_models?.trim()
@@ -3150,6 +3151,33 @@ export function ChannelMutateDrawer({
                                   )}
                                 />
                               </>
+                            )}
+
+                            {[1, 14, 58, 59].includes(currentType) && (
+                              <FormField
+                                control={form.control}
+                                name='auto_cache_control'
+                                render={({ field }) => (
+                                  <FormItem className='flex items-center justify-between gap-3 px-4 py-3'>
+                                    <div className='space-y-0.5'>
+                                      <FormLabel className='text-sm'>
+                                        {t('Auto prompt cache control')}
+                                      </FormLabel>
+                                      <FormDescription>
+                                        {t(
+                                          'Automatically add Claude cache_control or OpenAI prompt_cache_retention when absent'
+                                        )}
+                                      </FormDescription>
+                                    </div>
+                                    <FormControl>
+                                      <Switch
+                                        checked={field.value}
+                                        onCheckedChange={field.onChange}
+                                      />
+                                    </FormControl>
+                                  </FormItem>
+                                )}
+                              />
                             )}
                           </div>
                         </div>

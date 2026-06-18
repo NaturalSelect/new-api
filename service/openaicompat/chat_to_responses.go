@@ -87,6 +87,21 @@ func extractPromptCacheKeyFromMetadata(metadata json.RawMessage) string {
 	return strings.TrimSpace(common.Interface2String(metadataMap["user_id"]))
 }
 
+func promptCacheRetentionFromChatRequest(req *dto.GeneralOpenAIRequest) json.RawMessage {
+	if len(req.PromptCacheRetention) > 0 {
+		return req.PromptCacheRetention
+	}
+	if len(req.ExtraBody) == 0 {
+		return nil
+	}
+
+	var extraBody map[string]json.RawMessage
+	if err := common.Unmarshal(req.ExtraBody, &extraBody); err != nil {
+		return nil
+	}
+	return extraBody["prompt_cache_retention"]
+}
+
 func ChatCompletionsRequestToResponsesRequest(req *dto.GeneralOpenAIRequest) (*dto.OpenAIResponsesRequest, error) {
 	if req == nil {
 		return nil, errors.New("request is nil")
@@ -396,20 +411,21 @@ func ChatCompletionsRequestToResponsesRequest(req *dto.GeneralOpenAIRequest) (*d
 	}
 
 	out := &dto.OpenAIResponsesRequest{
-		Model:             req.Model,
-		Input:             inputRaw,
-		Instructions:      instructionsRaw,
-		Stream:            req.Stream,
-		Temperature:       req.Temperature,
-		Text:              textRaw,
-		ToolChoice:        toolChoiceRaw,
-		Tools:             toolsRaw,
-		TopP:              topP,
-		User:              req.User,
-		ParallelToolCalls: parallelToolCallsRaw,
-		Store:             req.Store,
-		PromptCacheKey:    promptCacheKeyRaw,
-		Metadata:          req.Metadata,
+		Model:                req.Model,
+		Input:                inputRaw,
+		Instructions:         instructionsRaw,
+		Stream:               req.Stream,
+		Temperature:          req.Temperature,
+		Text:                 textRaw,
+		ToolChoice:           toolChoiceRaw,
+		Tools:                toolsRaw,
+		TopP:                 topP,
+		User:                 req.User,
+		ParallelToolCalls:    parallelToolCallsRaw,
+		Store:                req.Store,
+		PromptCacheKey:       promptCacheKeyRaw,
+		PromptCacheRetention: promptCacheRetentionFromChatRequest(req),
+		Metadata:             req.Metadata,
 	}
 	if req.MaxTokens != nil || req.MaxCompletionTokens != nil {
 		out.MaxOutputTokens = lo.ToPtr(maxOutputTokens)

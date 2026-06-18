@@ -2097,6 +2097,143 @@ func TestRemoveDisabledFieldsAllowSpeed(t *testing.T) {
 	assertJSONEqual(t, `{"speed":"fast","store":true}`, string(out))
 }
 
+func TestApplyClaudeAutoCacheControlSwitchOffNoop(t *testing.T) {
+	input := `{"system":[{"type":"text","text":"system"}],"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}`
+	settings := dto.ChannelOtherSettings{}
+
+	out, err := ApplyClaudeAutoCacheControl([]byte(input), settings)
+	require.NoError(t, err)
+	require.Equal(t, input, string(out))
+}
+
+func TestApplyClaudeAutoCacheControlInjectsIntoSystemArrayText(t *testing.T) {
+	input := `{
+		"system":[
+			{"type":"text","text":"first system"},
+			{"type":"text","text":"last system"}
+		],
+		"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]
+	}`
+	settings := dto.ChannelOtherSettings{AutoCacheControl: true}
+
+	out, err := ApplyClaudeAutoCacheControl([]byte(input), settings)
+	require.NoError(t, err)
+	assertJSONEqual(t, `{
+		"system":[
+			{"type":"text","text":"first system"},
+			{"type":"text","text":"last system","cache_control":{"type":"ephemeral"}}
+		],
+		"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]
+	}`, string(out))
+}
+
+func TestApplyClaudeAutoCacheControlPreservesExistingMessageContent(t *testing.T) {
+	input := `{"messages":[{"role":"user","content":[{"type":"text","text":"hello","cache_control":{"type":"ephemeral"}}]}]}`
+	settings := dto.ChannelOtherSettings{AutoCacheControl: true}
+
+	out, err := ApplyClaudeAutoCacheControl([]byte(input), settings)
+	require.NoError(t, err)
+	require.Equal(t, input, string(out))
+}
+
+func TestApplyClaudeAutoCacheControlConvertsLastStringMessageContent(t *testing.T) {
+	input := `{
+		"messages":[
+			{"role":"user","content":"last text"}
+		]
+	}`
+	settings := dto.ChannelOtherSettings{AutoCacheControl: true}
+
+	out, err := ApplyClaudeAutoCacheControl([]byte(input), settings)
+	require.NoError(t, err)
+	assertJSONEqual(t, `{
+		"messages":[
+			{"role":"user","content":[{"type":"text","text":"last text","cache_control":{"type":"ephemeral"}}]}
+		]
+	}`, string(out))
+}
+
+func TestApplyClaudeAutoCacheControlTopLevelCacheControlNoop(t *testing.T) {
+	input := `{"cache_control":{"type":"ephemeral"},"messages":[{"role":"user","content":"hello"}]}`
+	settings := dto.ChannelOtherSettings{AutoCacheControl: true}
+
+	out, err := ApplyClaudeAutoCacheControl([]byte(input), settings)
+	require.NoError(t, err)
+	require.Equal(t, input, string(out))
+}
+
+func TestApplyOpenAIAutoPromptCacheRetentionSwitchOffNoop(t *testing.T) {
+	input := `{"model":"gpt-4o","messages":[{"role":"user","content":"hello"}]}`
+	settings := dto.ChannelOtherSettings{}
+
+	out, err := ApplyOpenAIAutoPromptCacheRetention([]byte(input), settings, false)
+	require.NoError(t, err)
+	require.Equal(t, input, string(out))
+}
+
+func TestApplyOpenAIAutoPromptCacheRetentionInjectsTopLevel(t *testing.T) {
+	input := `{"model":"gpt-4o","messages":[{"role":"user","content":"hello"}]}`
+	settings := dto.ChannelOtherSettings{AutoCacheControl: true}
+
+	out, err := ApplyOpenAIAutoPromptCacheRetention([]byte(input), settings, false)
+	require.NoError(t, err)
+	assertJSONEqual(t, `{"model":"gpt-4o","messages":[{"role":"user","content":"hello"}],"prompt_cache_retention":"24h"}`, string(out))
+}
+
+func TestApplyOpenAIAutoPromptCacheRetentionTopLevelExistingNoop(t *testing.T) {
+	input := `{"model":"gpt-4o","prompt_cache_retention":"1h"}`
+	settings := dto.ChannelOtherSettings{AutoCacheControl: true}
+
+	out, err := ApplyOpenAIAutoPromptCacheRetention([]byte(input), settings, false)
+	require.NoError(t, err)
+	require.Equal(t, input, string(out))
+}
+
+func TestApplyOpenAIAutoPromptCacheRetentionPoeInjectsExtraBody(t *testing.T) {
+	input := `{"model":"gpt-4o","extra_body":{"existing":true}}`
+	settings := dto.ChannelOtherSettings{AutoCacheControl: true}
+
+	out, err := ApplyOpenAIAutoPromptCacheRetention([]byte(input), settings, true)
+	require.NoError(t, err)
+	assertJSONEqual(t, `{"model":"gpt-4o","extra_body":{"existing":true,"prompt_cache_retention":"24h"}}`, string(out))
+}
+
+func TestApplyOpenAIAutoPromptCacheRetentionPoeExtraBodyExistingNoop(t *testing.T) {
+	input := `{"model":"gpt-4o","extra_body":{"prompt_cache_retention":"1h"}}`
+	settings := dto.ChannelOtherSettings{AutoCacheControl: true}
+
+	out, err := ApplyOpenAIAutoPromptCacheRetention([]byte(input), settings, true)
+	require.NoError(t, err)
+	require.Equal(t, input, string(out))
+}
+
+func TestApplyOpenAIAutoPromptCacheRetentionPoeTopLevelExistingNoop(t *testing.T) {
+	input := `{"model":"gpt-4o","prompt_cache_retention":"1h","extra_body":{}}`
+	settings := dto.ChannelOtherSettings{AutoCacheControl: true}
+
+	out, err := ApplyOpenAIAutoPromptCacheRetention([]byte(input), settings, true)
+	require.NoError(t, err)
+	require.Equal(t, input, string(out))
+}
+
+func TestApplyOpenAIAutoPromptCacheRetentionPoeNullExtraBodyCreatesObject(t *testing.T) {
+	input := `{"model":"gpt-4o","extra_body":null}`
+	settings := dto.ChannelOtherSettings{AutoCacheControl: true}
+
+	out, err := ApplyOpenAIAutoPromptCacheRetention([]byte(input), settings, true)
+	require.NoError(t, err)
+	assertJSONEqual(t, `{"model":"gpt-4o","extra_body":{"prompt_cache_retention":"24h"}}`, string(out))
+}
+
+func TestApplyOpenAIAutoPromptCacheRetentionPoeNonObjectExtraBodyError(t *testing.T) {
+	input := `{"model":"gpt-4o","extra_body":"bad"}`
+	settings := dto.ChannelOtherSettings{AutoCacheControl: true}
+
+	_, err := ApplyOpenAIAutoPromptCacheRetention([]byte(input), settings, true)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "extra_body must be a JSON object")
+}
+
 func TestApplyParamOverrideWithRelayInfoRecordsOperationAuditInDebugMode(t *testing.T) {
 	originalDebugEnabled := common2.DebugEnabled
 	common2.DebugEnabled = true

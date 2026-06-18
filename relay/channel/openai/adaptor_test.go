@@ -354,6 +354,35 @@ func TestConvertOpenAIRequestNonPoeDoesNotMergeOrStripUnsupportedParams(t *testi
 	}
 }
 
+func TestConvertOpenAIRequestPoeAutoPromptCacheRetentionUsesExtraBody(t *testing.T) {
+	adaptor := &Adaptor{}
+	request := &dto.GeneralOpenAIRequest{
+		Model:    "gpt-4o",
+		Messages: []dto.Message{{Role: "user", Content: "hi"}},
+	}
+
+	converted, err := adaptor.ConvertOpenAIRequest(nil, newPoeRelayInfo(), request)
+	if err != nil {
+		t.Fatalf("ConvertOpenAIRequest returned error: %v", err)
+	}
+
+	jsonData, err := common.Marshal(converted)
+	if err != nil {
+		t.Fatalf("failed to marshal converted request: %v", err)
+	}
+	jsonData, err = relaycommon.ApplyOpenAIAutoPromptCacheRetention(jsonData, dto.ChannelOtherSettings{AutoCacheControl: true}, true)
+	if err != nil {
+		t.Fatalf("ApplyOpenAIAutoPromptCacheRetention returned error: %v", err)
+	}
+
+	requestMap := unmarshalRawObject(t, json.RawMessage(jsonData))
+	if _, ok := requestMap["prompt_cache_retention"]; ok {
+		t.Fatalf("prompt_cache_retention should not be top-level for Poe Chat Completions: %s", requestMap["prompt_cache_retention"])
+	}
+	extraBody := unmarshalRawObject(t, requestMap["extra_body"])
+	assertRawJSONEqual(t, extraBody["prompt_cache_retention"], `"24h"`)
+}
+
 func newPoeRelayInfo() *relaycommon.RelayInfo {
 	return &relaycommon.RelayInfo{
 		ChannelMeta: &relaycommon.ChannelMeta{

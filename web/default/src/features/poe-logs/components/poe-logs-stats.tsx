@@ -120,14 +120,14 @@ export function PoeLogsStats() {
       />
       {(stats?.total_cache_tokens ?? 0) > 0 && (
         <StatBadge
-          label={t('Cache')}↓
+          label={`${t('Cache')}↓`}
           value={formatNumber(stats?.total_cache_tokens || 0)}
           accent='bg-amber-400/70'
         />
       )}
       {(stats?.total_cache_write_tokens ?? 0) > 0 && (
         <StatBadge
-          label={t('Cache')}↑
+          label={`${t('Cache')}↑`}
           value={formatNumber(stats?.total_cache_write_tokens || 0)}
           accent='bg-orange-400/70'
         />

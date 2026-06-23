@@ -29,6 +29,10 @@ export interface PoeLog {
   api_key_name?: string
   chat_name?: string
   canvas_tab_name?: string
+  prompt_tokens: number
+  completion_tokens: number
+  cache_tokens: number
+  cache_write_tokens: number
   synced_at: number
 }
 

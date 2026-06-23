@@ -165,19 +165,19 @@ func mergeTokenDistribution(logData []*model.TokenDistributionData, poeData []*m
 	for _, item := range poeData {
 		k := key{CreatedAt: item.CreatedAt, ModelName: item.ModelName}
 		if existing, ok := merged[k]; ok {
-			existing.InputTokens += item.InputTokens
-			existing.OutputTokens += item.OutputTokens
-			existing.CacheReadTokens += item.CacheReadTokens
-			existing.CacheWriteTokens += item.CacheWriteTokens
+			existing.InputTokens += int(item.InputTokens)
+			existing.OutputTokens += int(item.OutputTokens)
+			existing.CacheReadTokens += int(item.CacheReadTokens)
+			existing.CacheWriteTokens += int(item.CacheWriteTokens)
 			existing.Count += item.Count
 		} else {
 			merged[k] = &model.TokenDistributionData{
 				CreatedAt:        item.CreatedAt,
 				ModelName:        item.ModelName,
-				InputTokens:      item.InputTokens,
-				OutputTokens:     item.OutputTokens,
-				CacheReadTokens:  item.CacheReadTokens,
-				CacheWriteTokens: item.CacheWriteTokens,
+				InputTokens:      int(item.InputTokens),
+				OutputTokens:     int(item.OutputTokens),
+				CacheReadTokens:  int(item.CacheReadTokens),
+				CacheWriteTokens: int(item.CacheWriteTokens),
 				Count:            item.Count,
 			}
 		}

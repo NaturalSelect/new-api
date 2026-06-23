@@ -24,6 +24,10 @@ type PoeLog struct {
 	ApiKeyName    string `json:"api_key_name" gorm:"default:''"`
 	ChatName      string `json:"chat_name" gorm:"default:''"`
 	CanvasTabName string `json:"canvas_tab_name" gorm:"default:''"`
+	PromptTokens      int `json:"prompt_tokens" gorm:"default:0"`
+	CompletionTokens  int `json:"completion_tokens" gorm:"default:0"`
+	CacheTokens       int `json:"cache_tokens" gorm:"default:0"`       // cache read (Cache discount)
+	CacheWriteTokens  int `json:"cache_write_tokens" gorm:"default:0"` // cache write (Cache write)
 	SyncedAt      int64  `json:"synced_at" gorm:"default:0"` // unix timestamp when this record was synced
 }
 
@@ -172,13 +176,12 @@ type PoeLogQuotaData struct {
 	CreatedAt int64  `json:"created_at" gorm:"column:created_at"`
 	Count     int64  `json:"count" gorm:"column:cnt"`
 	Quota     int64  `json:"quota" gorm:"column:total_cost_points"`
-	TokenUsed int64  `json:"token_used" gorm:"column:token_used"`
+	TokenUsed int64  `json:"token_used" gorm:"column:total_tokens"`
 }
 
 // GetPoeLogQuotaData aggregates PoeLog records into hourly buckets by bot_name,
 // returning data compatible with the quota_data table format used by dashboard charts.
-// cost_points is treated as quota, and token_used is set to 0 (Poe API does not
-// provide token counts — only point-based billing).
+// cost_points is treated as quota, token_used is the sum of all token fields.
 func GetPoeLogQuotaData(startTimestamp, endTimestamp int64, username string) ([]*PoeLogQuotaData, error) {
 	if !common.DataExportEnabled {
 		return nil, nil
@@ -209,7 +212,7 @@ func GetPoeLogQuotaData(startTimestamp, endTimestamp int64, username string) ([]
 			hourBucket+" AS created_at, "+
 			"COUNT(*) AS cnt, "+
 			"SUM(cost_points) AS total_cost_points, "+
-			"0 AS token_used").
+			"SUM(prompt_tokens + completion_tokens + cache_tokens + cache_write_tokens) AS total_tokens").
 		Group("bot_name, "+hourBucket).
 		Find(&results).Error
 	return results, err
@@ -233,17 +236,15 @@ func getChannelIdsByUsername(username string) ([]int, error) {
 type PoeLogTokenDistributionData struct {
 	CreatedAt        int64  `json:"created_at" gorm:"column:created_at"`
 	ModelName        string `json:"model_name" gorm:"column:model_name"`
-	InputTokens      int    `json:"input_tokens"`
-	OutputTokens     int    `json:"output_tokens"`
-	CacheReadTokens  int    `json:"cache_read_tokens"`
-	CacheWriteTokens int    `json:"cache_write_tokens"`
+	InputTokens      int64  `json:"input_tokens" gorm:"column:total_prompt_tokens"`
+	OutputTokens     int64  `json:"output_tokens" gorm:"column:total_completion_tokens"`
+	CacheReadTokens  int64  `json:"cache_read_tokens" gorm:"column:total_cache_tokens"`
+	CacheWriteTokens int64  `json:"cache_write_tokens" gorm:"column:total_cache_write_tokens"`
 	Count            int    `json:"count" gorm:"column:cnt"`
 }
 
 // GetPoeLogTokenDistribution aggregates PoeLog records into hourly buckets by bot_name,
 // returning data compatible with the token distribution format used by dashboard charts.
-// Since Poe API provides point-based billing (not token counts), all token fields are 0
-// and only count is populated.
 func GetPoeLogTokenDistribution(startTimestamp, endTimestamp int64, username string) ([]*PoeLogTokenDistributionData, error) {
 	tx := DB.Model(&PoeLog{})
 	if startTimestamp != 0 {
@@ -268,8 +269,10 @@ func GetPoeLogTokenDistribution(startTimestamp, endTimestamp int64, username str
 	err := tx.
 		Select("bot_name AS model_name, "+
 			hourBucket+" AS created_at, "+
-			"0 AS input_tokens, 0 AS output_tokens, "+
-			"0 AS cache_read_tokens, 0 AS cache_write_tokens, "+
+			"SUM(prompt_tokens) AS total_prompt_tokens, "+
+			"SUM(completion_tokens) AS total_completion_tokens, "+
+			"SUM(cache_tokens) AS total_cache_tokens, "+
+			"SUM(cache_write_tokens) AS total_cache_write_tokens, "+
 			"COUNT(*) AS cnt").
 		Group("bot_name, "+hourBucket).
 		Find(&results).Error

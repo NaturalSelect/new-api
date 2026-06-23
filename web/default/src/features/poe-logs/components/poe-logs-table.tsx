@@ -194,6 +194,39 @@ function usePoeLogsColumns(opts: {
         cell: ({ row }) => row.original.usage_type || '-',
       },
       {
+        accessorKey: 'prompt_tokens',
+        meta: { label: 'Tokens' },
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title='Tokens' />
+        ),
+        cell: ({ row }) => {
+          const prompt = row.original.prompt_tokens || 0
+          const completion = row.original.completion_tokens || 0
+          const cache = row.original.cache_tokens || 0
+          const cacheWrite = row.original.cache_write_tokens || 0
+          if (prompt === 0 && completion === 0 && cache === 0 && cacheWrite === 0) {
+            return <span className='text-muted-foreground text-xs'>-</span>
+          }
+          return (
+            <div className='flex flex-col gap-0.5'>
+              <span className='font-mono text-xs font-medium tabular-nums'>
+                {prompt.toLocaleString()} / {completion.toLocaleString()}
+              </span>
+              {cacheWrite > 0 && (
+                <span className='text-muted-foreground/60 text-[11px]'>
+                  {t('Cache')}↑ {cacheWrite.toLocaleString()}
+                </span>
+              )}
+              {cache > 0 && (
+                <span className='text-muted-foreground/60 text-[11px]'>
+                  {t('Cache')}↓ {cache.toLocaleString()}
+                </span>
+              )}
+            </div>
+          )
+        },
+      },
+      {
         accessorKey: 'cost_points',
         meta: { label: t('Cost Points') },
         header: ({ column }) => (

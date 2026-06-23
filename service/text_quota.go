@@ -337,16 +337,17 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	// provides all cost/token data for dashboard aggregation instead.
 	isPoeChannel := relayInfo.ChannelType == constant.ChannelTypePoeOpenAI ||
 		relayInfo.ChannelType == constant.ChannelTypePoeAnthropic
-	if isPoeChannel {
+	isPoeLogEnabled := isPoeChannel && operation_setting.IsPoeLogSyncEnabled()
+	if isPoeLogEnabled {
 		summary.Quota = 0
 		summary.PromptTokens = 0
 		summary.CompletionTokens = 0
-		summary.TotalTokens = 1 // NOTE: non-zero to suppress the "no billing info" error log
+		summary.TotalTokens = 1
 	}
 
 	var tieredResult *billingexpr.TieredResult
 	tieredBillingApplied := false
-	if originUsage != nil && !isPoeChannel {
+	if originUsage != nil && !isPoeLogEnabled {
 		var tieredUsedVars map[string]bool
 		if snap := relayInfo.TieredBillingSnapshot; snap != nil {
 			tieredUsedVars = billingexpr.UsedVars(snap.ExprString)
@@ -471,11 +472,11 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	if tieredBillingApplied {
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
 	}
-	if isPoeChannel {
+	if isPoeLogEnabled {
 		other["billing_source"] = "poe_log"
 	}
 
-	if isPoeChannel && operation_setting.IsPoeLogSyncEnabled() {
+	if isPoeLogEnabled {
 		// NOTE: When PoeLog sync is enabled, skip writing to the logs table
 		// entirely — the PoeLog module provides all cost/token data for
 		// dashboard aggregation. This prevents zero-value entries from

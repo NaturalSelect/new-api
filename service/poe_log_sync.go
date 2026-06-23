@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -257,16 +259,20 @@ outer:
 				}
 			}
 			collected = append(collected, &model.PoeLog{
-				QueryId:       item.QueryId,
-				BotName:       item.BotName,
-				CreationTime:  item.CreationTime,
-				CostUsd:       item.CostUsd,
-				CostPoints:    item.CostPoints,
-				CostBreakdown: breakdownJSON,
-				UsageType:     item.UsageType,
-				ApiKeyName:    item.ApiKeyName,
-				ChatName:      item.ChatName,
-				CanvasTabName: item.CanvasTabName,
+				QueryId:          item.QueryId,
+				BotName:          item.BotName,
+				CreationTime:     item.CreationTime,
+				CostUsd:          item.CostUsd,
+				CostPoints:       item.CostPoints,
+				CostBreakdown:    breakdownJSON,
+				UsageType:        item.UsageType,
+				ApiKeyName:       item.ApiKeyName,
+				ChatName:         item.ChatName,
+				CanvasTabName:    item.CanvasTabName,
+				PromptTokens:      extractBreakdownTokens(item.CostBreakdown, "Input"),
+				CompletionTokens:  extractBreakdownTokens(item.CostBreakdown, "Output"),
+				CacheTokens:       extractBreakdownTokens(item.CostBreakdown, "Cache discount"),
+				CacheWriteTokens:  extractBreakdownTokens(item.CostBreakdown, "Cache write"),
 			})
 		}
 
@@ -368,4 +374,25 @@ func fetchPoePointsHistory(ctx context.Context, baseURL, apiKey, startingAfter s
 		return nil, fmt.Errorf("unmarshal response: %w", err)
 	}
 	return &result, nil
+}
+
+var poeBreakdownTokenRe = regexp.MustCompile(`\((\d+)\s*tokens?\)`)
+
+func extractBreakdownTokens(breakdown map[string]string, key string) int {
+	if breakdown == nil {
+		return 0
+	}
+	val, ok := breakdown[key]
+	if !ok || val == "" {
+		return 0
+	}
+	matches := poeBreakdownTokenRe.FindStringSubmatch(val)
+	if len(matches) < 2 {
+		return 0
+	}
+	n, err := strconv.Atoi(matches[1])
+	if err != nil {
+		return 0
+	}
+	return n
 }

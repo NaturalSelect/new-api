@@ -42,7 +42,7 @@ type poePointsHistoryItem struct {
 	UsageType     string            `json:"usage_type"`
 	ApiKeyName    string            `json:"api_key_name,omitempty"`
 	ChatName      string            `json:"chat_name,omitempty"`
-	CanvasTabName  string            `json:"canvas_tab_name,omitempty"`
+	CanvasTabName string            `json:"canvas_tab_name,omitempty"`
 }
 
 // poePointsHistoryResponse is the full response from the Poe /usage/points_history endpoint.
@@ -206,7 +206,7 @@ func syncPoeChannelsWithKeyDedup(ctx context.Context, channels []*model.Channel)
 			}
 			if inserted > 0 {
 				for _, entry := range channelEntries {
-					createdAt := entry.CreationTime/1_000_000 - (entry.CreationTime/1_000_000 % 3600)
+					createdAt := entry.CreationTime/1_000_000 - (entry.CreationTime / 1_000_000 % 3600)
 					tokenUsed := entry.PromptTokens + entry.CompletionTokens + entry.CacheTokens + entry.CacheWriteTokens
 					model.LogPoeQuotaData(ch.Id, entry.BotName, entry.CostPoints, createdAt, tokenUsed)
 				}
@@ -228,6 +228,8 @@ func keySuffix(key string, n int) string {
 // channel and returns them as PoeLog objects (with ChannelId=0, to be set by caller).
 // This is used by the key-dedup path where entries are shared across channels.
 func fetchPoeLogEntries(ctx context.Context, channel *model.Channel) ([]*model.PoeLog, error) {
+	freeModels := fetchPoeFreeModels(ctx, channel)
+
 	baseURL := strings.TrimSuffix(channel.GetBaseURL(), "/")
 	if baseURL == "" {
 		baseURL = "https://api.poe.com"
@@ -257,6 +259,17 @@ outer:
 			if item.QueryId == latestQueryId {
 				break outer
 			}
+			botNameLower := strings.ToLower(item.BotName)
+			isFree := freeModels != nil && freeModels[botNameLower]
+			isOldEnough := item.CreationTime <= time.Now().UnixMicro()-15*60*1_000_000
+			if item.CostPoints == 0 && len(item.CostBreakdown) == 0 {
+				switch {
+				case isFree:
+				case isOldEnough:
+				default:
+					break outer
+				}
+			}
 			breakdownJSON := ""
 			if len(item.CostBreakdown) > 0 {
 				if b, err2 := common.Marshal(item.CostBreakdown); err2 == nil {
@@ -274,10 +287,10 @@ outer:
 				ApiKeyName:       item.ApiKeyName,
 				ChatName:         item.ChatName,
 				CanvasTabName:    item.CanvasTabName,
-				PromptTokens:      extractBreakdownTokens(item.CostBreakdown, "Input"),
-				CompletionTokens:  extractBreakdownTokens(item.CostBreakdown, "Output"),
-				CacheTokens:       extractBreakdownTokens(item.CostBreakdown, "Cache discount"),
-				CacheWriteTokens:  extractBreakdownTokens(item.CostBreakdown, "Cache write"),
+				PromptTokens:     extractBreakdownTokens(item.CostBreakdown, "Input"),
+				CompletionTokens: extractBreakdownTokens(item.CostBreakdown, "Output"),
+				CacheTokens:      extractBreakdownTokens(item.CostBreakdown, "Cache discount"),
+				CacheWriteTokens: extractBreakdownTokens(item.CostBreakdown, "Cache write"),
 			})
 		}
 
@@ -333,7 +346,7 @@ func syncPoeChannelLogs(ctx context.Context, channel *model.Channel) error {
 
 	if inserted > 0 {
 		for _, entry := range entries {
-			createdAt := entry.CreationTime/1_000_000 - (entry.CreationTime/1_000_000 % 3600)
+			createdAt := entry.CreationTime/1_000_000 - (entry.CreationTime / 1_000_000 % 3600)
 			tokenUsed := entry.PromptTokens + entry.CompletionTokens + entry.CacheTokens + entry.CacheWriteTokens
 			model.LogPoeQuotaData(channel.Id, entry.BotName, entry.CostPoints, createdAt, tokenUsed)
 		}
@@ -387,6 +400,97 @@ func fetchPoePointsHistory(ctx context.Context, baseURL, apiKey, startingAfter s
 		return nil, fmt.Errorf("unmarshal response: %w", err)
 	}
 	return &result, nil
+}
+
+// poeModelPricing holds the pricing info for a single Poe model.
+type poeModelPricing struct {
+	Prompt          *string `json:"prompt"`
+	Completion      *string `json:"completion"`
+	Request         *string `json:"request"`
+	InputCacheRead  *string `json:"input_cache_read"`
+	InputCacheWrite *string `json:"input_cache_write"`
+}
+
+type poeModel struct {
+	Id      string          `json:"id"`
+	Pricing poeModelPricing `json:"pricing"`
+}
+
+type poeModelsResponse struct {
+	Data []poeModel `json:"data"`
+}
+
+// isPoeFreeModel checks if a model has no paid pricing at all.
+func isPoeFreeModel(m poeModel) bool {
+	p := m.Pricing
+	pricingVals := []*string{p.Prompt, p.Completion, p.Request, p.InputCacheRead, p.InputCacheWrite}
+	for _, v := range pricingVals {
+		if v != nil && *v != "" && *v != "0" && *v != "0.0" && *v != "0.00" {
+			return false
+		}
+	}
+	return true
+}
+
+// fetchPoeFreeModels fetches the model list from Poe API and returns a set of free model names (lowercase).
+func fetchPoeFreeModels(ctx context.Context, channel *model.Channel) map[string]bool {
+	baseURL := strings.TrimSuffix(channel.GetBaseURL(), "/")
+	if baseURL == "" {
+		baseURL = "https://api.poe.com"
+	}
+	apiKey := strings.TrimSpace(channel.Key)
+
+	url := baseURL + "/v1/models"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		logger.LogWarn(ctx, fmt.Sprintf("poe log sync: fetch models build request failed: %v", err))
+		return nil
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Accept", "application/json")
+
+	proxyURL := ""
+	if channel != nil {
+		proxyURL = channel.GetSetting().Proxy
+	}
+	client, err := NewProxyHttpClient(proxyURL)
+	if err != nil {
+		logger.LogWarn(ctx, fmt.Sprintf("poe log sync: fetch models create http client failed: %v", err))
+		return nil
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		logger.LogWarn(ctx, fmt.Sprintf("poe log sync: fetch models request failed: %v", err))
+		return nil
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		logger.LogWarn(ctx, fmt.Sprintf("poe log sync: fetch models HTTP %d: %s", resp.StatusCode, string(body)))
+		return nil
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		logger.LogWarn(ctx, fmt.Sprintf("poe log sync: fetch models read body failed: %v", err))
+		return nil
+	}
+
+	var result poeModelsResponse
+	if err := common.Unmarshal(body, &result); err != nil {
+		logger.LogWarn(ctx, fmt.Sprintf("poe log sync: fetch models unmarshal failed: %v", err))
+		return nil
+	}
+
+	freeSet := make(map[string]bool, len(result.Data))
+	for _, m := range result.Data {
+		if isPoeFreeModel(m) {
+			freeSet[strings.ToLower(m.Id)] = true
+		}
+	}
+	return freeSet
 }
 
 var poeBreakdownTokenRe = regexp.MustCompile(`\((\d+)\s*tokens?\)`)

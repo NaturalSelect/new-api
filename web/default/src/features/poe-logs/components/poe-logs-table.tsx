@@ -79,6 +79,15 @@ function parseBreakdown(value: string): Array<[string, string]> {
   }
 }
 
+function getDefaultTimeRange(): { start: Date; end: Date } {
+  const now = new Date()
+  const start = new Date(now)
+  start.setHours(0, 0, 0, 0)
+  const end = new Date(now)
+  end.setHours(23, 59, 59, 999)
+  return { start, end }
+}
+
 function buildApiParams(config: {
   page: number
   pageSize: number
@@ -108,11 +117,11 @@ function buildApiParams(config: {
     start_timestamp:
       typeof config.searchParams.startTime === 'number'
         ? toApiTimestamp(config.searchParams.startTime)
-        : undefined,
+        : toApiTimestamp(getDefaultTimeRange().start.getTime()),
     end_timestamp:
       typeof config.searchParams.endTime === 'number'
         ? toApiTimestamp(config.searchParams.endTime)
-        : undefined,
+        : toApiTimestamp(getDefaultTimeRange().end.getTime()),
   }
 }
 

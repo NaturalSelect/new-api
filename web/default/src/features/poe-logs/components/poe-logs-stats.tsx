@@ -38,8 +38,18 @@ const DEFAULT_STATS = {
   total_tokens: 0,
 }
 
-function toApiTimestamp(value?: number): number | undefined {
-  return value ? Math.floor(value / 1000) : undefined
+function getDefaultTimeRange(): { start: Date; end: Date } {
+  const now = new Date()
+  const start = new Date(now)
+  start.setHours(0, 0, 0, 0)
+  const end = new Date(now)
+  end.setHours(23, 59, 59, 999)
+  return { start, end }
+}
+
+function toApiTimestamp(value?: number, fallback?: number): number | undefined {
+  const ts = value ?? fallback
+  return ts ? Math.floor(ts / 1000) : undefined
 }
 
 function toChannelId(value?: string): number | undefined {
@@ -74,8 +84,14 @@ export function PoeLogsStats() {
     queryFn: async () => {
       const result = await getPoeLogStats({
         channel_id: toChannelId(searchParams.channel_id),
-        start_timestamp: toApiTimestamp(searchParams.startTime),
-        end_timestamp: toApiTimestamp(searchParams.endTime),
+        start_timestamp: toApiTimestamp(
+          searchParams.startTime,
+          getDefaultTimeRange().start.getTime()
+        ),
+        end_timestamp: toApiTimestamp(
+          searchParams.endTime,
+          getDefaultTimeRange().end.getTime()
+        ),
         paid_only: searchParams.paid_only !== false,
       })
       return result.success ? result.data || DEFAULT_STATS : DEFAULT_STATS

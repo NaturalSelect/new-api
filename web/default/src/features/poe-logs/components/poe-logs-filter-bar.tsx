@@ -21,7 +21,6 @@ import { useIsFetching, useQueryClient } from '@tanstack/react-query'
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import { type Table } from '@tanstack/react-table'
 import { useTranslation } from 'react-i18next'
-import dayjs from '@/lib/dayjs'
 import { useIsAdmin } from '@/hooks/use-admin'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -60,8 +59,18 @@ function isUsageTypeValue(value: string): value is UsageTypeValue {
   return (usageTypeValues as readonly string[]).includes(value)
 }
 
-function getDate(value?: number): Date | undefined {
-  return value ? new Date(value) : undefined
+function getDefaultTimeRange(): { start: Date; end: Date } {
+  const now = new Date()
+  const start = new Date(now)
+  start.setHours(0, 0, 0, 0)
+  const end = new Date(now)
+  end.setHours(23, 59, 59, 999)
+  return { start, end }
+}
+
+function getDate(value?: number, fallback?: Date): Date | undefined {
+  if (value) return new Date(value)
+  return fallback
 }
 
 export function PoeLogsFilterBar<TData>(props: PoeLogsFilterBarProps<TData>) {
@@ -71,19 +80,23 @@ export function PoeLogsFilterBar<TData>(props: PoeLogsFilterBarProps<TData>) {
   const searchParams = route.useSearch()
   const isAdmin = useIsAdmin()
   const fetchingLogs = useIsFetching({ queryKey: ['poe-logs'] })
-  const [filters, setFilters] = useState<PoeLogsFilters>({
-    paidOnly: true,
-    startTime: dayjs().startOf('day').toDate(),
-    endTime: dayjs().endOf('day').toDate(),
+  const [filters, setFilters] = useState<PoeLogsFilters>(() => {
+    const { start, end } = getDefaultTimeRange()
+    return {
+      paidOnly: true,
+      startTime: start,
+      endTime: end,
+    }
   })
   const [usageType, setUsageType] = useState<UsageTypeValue>(
     USAGE_TYPE_ALL_VALUE
   )
 
   useEffect(() => {
+    const { start: defaultStart, end: defaultEnd } = getDefaultTimeRange()
     setFilters({
-      startTime: getDate(searchParams.startTime),
-      endTime: getDate(searchParams.endTime),
+      startTime: getDate(searchParams.startTime, defaultStart),
+      endTime: getDate(searchParams.endTime, defaultEnd),
       channelId: searchParams.channel_id || undefined,
       botName: searchParams.bot_name || undefined,
       usageType: searchParams.usage_type || undefined,
@@ -130,10 +143,11 @@ export function PoeLogsFilterBar<TData>(props: PoeLogsFilterBarProps<TData>) {
   }, [filters, navigate, queryClient, searchParams.page_size, usageType])
 
   const handleReset = useCallback(() => {
+    const { start, end } = getDefaultTimeRange()
     setFilters({
       paidOnly: true,
-      startTime: dayjs().startOf('day').toDate(),
-      endTime: dayjs().endOf('day').toDate(),
+      startTime: start,
+      endTime: end,
     })
     setUsageType(USAGE_TYPE_ALL_VALUE)
     void navigate({
@@ -142,8 +156,8 @@ export function PoeLogsFilterBar<TData>(props: PoeLogsFilterBarProps<TData>) {
         p: 1,
         page_size: searchParams.page_size,
         paid_only: true,
-        startTime: dayjs().startOf('day').valueOf(),
-        endTime: dayjs().endOf('day').valueOf(),
+        startTime: start.getTime(),
+        endTime: end.getTime(),
       },
     })
     queryClient.invalidateQueries({ queryKey: ['poe-logs'] })

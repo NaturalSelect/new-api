@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -82,7 +83,7 @@ func GetPoeLogs(params QueryPoeLogsParams) ([]*PoeLog, int64, error) {
 		tx = tx.Where("channel_id = ?", params.ChannelId)
 	}
 	if params.BotName != "" {
-		tx = tx.Where("bot_name = ?", params.BotName)
+		tx = tx.Where("bot_name = ?", strings.ToLower(params.BotName))
 	}
 	if params.UsageType != "" {
 		tx = tx.Where("usage_type = ?", params.UsageType)
@@ -304,4 +305,11 @@ func poeCreationTimeCol() string {
 		return `"creation_time"`
 	}
 	return "`creation_time`"
+}
+
+func MigratePoeLogBotNameLower() error {
+	return DB.Model(&PoeLog{}).
+		Where("bot_name != LOWER(bot_name)").
+		Update("bot_name", DB.Raw("LOWER(bot_name)")).
+		Error
 }

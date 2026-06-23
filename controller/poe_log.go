@@ -3,6 +3,7 @@ package controller
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -16,7 +17,7 @@ import (
 func GetAllPoeLogs(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
 	channelId, _ := strconv.Atoi(c.Query("channel_id"))
-	botName := c.Query("bot_name")
+	botName := strings.ToLower(c.Query("bot_name"))
 	usageType := c.Query("usage_type")
 	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
 	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)

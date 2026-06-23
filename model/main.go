@@ -368,6 +368,11 @@ func migrateDBFast() error {
 		}
 	}
 	common.SysLog("database migrated")
+
+	if err := MigratePoeLogBotNameLower(); err != nil {
+		common.SysError("failed to migrate poe_log bot_name to lowercase: " + err.Error())
+	}
+
 	return nil
 }
 

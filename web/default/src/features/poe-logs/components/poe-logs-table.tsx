@@ -192,7 +192,7 @@ function usePoeLogsColumns(opts: {
         meta: { label: t('Bot Name'), mobileBadge: true },
         header: t('Bot Name'),
         cell: ({ row }) => (
-          <Badge variant='secondary' className='font-mono'>
+          <Badge variant='secondary' className='font-mono lowercase'>
             {row.original.bot_name || '-'}
           </Badge>
         ),

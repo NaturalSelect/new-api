@@ -265,7 +265,7 @@ outer:
 			}
 			collected = append(collected, &model.PoeLog{
 				QueryId:          item.QueryId,
-				BotName:          item.BotName,
+				BotName:          strings.ToLower(item.BotName),
 				CreationTime:     item.CreationTime,
 				CostUsd:          item.CostUsd,
 				CostPoints:       item.CostPoints,

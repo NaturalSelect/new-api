@@ -68,6 +68,7 @@ export interface PoeLogStats {
   total_cache_tokens: number
   total_cache_write_tokens: number
   total_tokens: number
+  total_cost_usd: string
 }
 
 export interface GetPoeLogStatsParams {

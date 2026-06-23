@@ -130,12 +130,13 @@ type PoeLogStats struct {
 // GetPoeLogStats returns aggregated statistics for PoeLog records matching the given filters.
 func GetPoeLogStats(channelId int, startTimestamp, endTimestamp int64, paidOnly bool) (PoeLogStats, error) {
 	type result struct {
-		TotalPoints           int64 `gorm:"column:total_points"`
-		Count                 int64 `gorm:"column:cnt"`
-		TotalPromptTokens     int64 `gorm:"column:total_prompt_tokens"`
-		TotalCompletionTokens int64 `gorm:"column:total_completion_tokens"`
-		TotalCacheTokens      int64 `gorm:"column:total_cache_tokens"`
-		TotalCacheWriteTokens int64 `gorm:"column:total_cache_write_tokens"`
+		TotalPoints           int64  `gorm:"column:total_points"`
+		TotalCostUsd          string `gorm:"column:total_cost_usd"`
+		Count                 int64  `gorm:"column:cnt"`
+		TotalPromptTokens     int64  `gorm:"column:total_prompt_tokens"`
+		TotalCompletionTokens int64  `gorm:"column:total_completion_tokens"`
+		TotalCacheTokens      int64  `gorm:"column:total_cache_tokens"`
+		TotalCacheWriteTokens int64  `gorm:"column:total_cache_write_tokens"`
 	}
 
 	tx := DB.Model(&PoeLog{})
@@ -153,22 +154,29 @@ func GetPoeLogStats(channelId int, startTimestamp, endTimestamp int64, paidOnly 
 	}
 
 	var r result
-	if err := tx.Select("SUM(cost_points) AS total_points, COUNT(*) AS cnt, " +
+	selectExpr := "SUM(cost_points) AS total_points, COUNT(*) AS cnt, " +
 		"SUM(prompt_tokens) AS total_prompt_tokens, " +
 		"SUM(completion_tokens) AS total_completion_tokens, " +
 		"SUM(cache_tokens) AS total_cache_tokens, " +
-		"SUM(cache_write_tokens) AS total_cache_write_tokens").Scan(&r).Error; err != nil {
+		"SUM(cache_write_tokens) AS total_cache_write_tokens"
+	if common.UsingPostgreSQL {
+		selectExpr += ", SUM(cost_usd::numeric) AS total_cost_usd"
+	} else {
+		selectExpr += ", SUM(CAST(cost_usd AS DECIMAL(20,10))) AS total_cost_usd"
+	}
+	if err := tx.Select(selectExpr).Scan(&r).Error; err != nil {
 		return PoeLogStats{}, err
 	}
 
 	return PoeLogStats{
 		TotalPoints:           r.TotalPoints,
+		TotalUsd:             r.TotalCostUsd,
 		Count:                 r.Count,
 		TotalPromptTokens:     r.TotalPromptTokens,
 		TotalCompletionTokens: r.TotalCompletionTokens,
 		TotalCacheTokens:      r.TotalCacheTokens,
 		TotalCacheWriteTokens: r.TotalCacheWriteTokens,
-		TotalTokens:           r.TotalPromptTokens + r.TotalCompletionTokens + r.TotalCacheWriteTokens,
+		TotalTokens:           r.TotalPromptTokens + r.TotalCompletionTokens,
 	}, nil
 }
 

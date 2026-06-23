@@ -30,6 +30,7 @@ const route = getRouteApi('/_authenticated/poe-logs/')
 const DEFAULT_STATS = {
   total_points: 0,
   total_usd: '',
+  total_cost_usd: '',
   count: 0,
   total_prompt_tokens: 0,
   total_completion_tokens: 0,
@@ -115,8 +116,8 @@ export function PoeLogsStats() {
   return (
     <div className='flex flex-wrap items-center gap-2'>
       <StatBadge
-        label={t('Total Points')}
-        value={formatNumber(stats?.total_points || 0)}
+        label={t('Total USD')}
+        value={`$${parseFloat(stats?.total_cost_usd || '0').toFixed(4)}`}
         accent='bg-sky-500/70'
       />
       <StatBadge

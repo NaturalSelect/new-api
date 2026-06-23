@@ -130,13 +130,13 @@ type PoeLogStats struct {
 // GetPoeLogStats returns aggregated statistics for PoeLog records matching the given filters.
 func GetPoeLogStats(channelId int, startTimestamp, endTimestamp int64, paidOnly bool) (PoeLogStats, error) {
 	type result struct {
-		TotalPoints           int64  `gorm:"column:total_points"`
-		TotalCostUsd          string `gorm:"column:total_cost_usd"`
-		Count                 int64  `gorm:"column:cnt"`
-		TotalPromptTokens     int64  `gorm:"column:total_prompt_tokens"`
-		TotalCompletionTokens int64  `gorm:"column:total_completion_tokens"`
-		TotalCacheTokens      int64  `gorm:"column:total_cache_tokens"`
-		TotalCacheWriteTokens int64  `gorm:"column:total_cache_write_tokens"`
+		TotalPoints           int64   `gorm:"column:total_points"`
+		TotalCostUsd          float64 `gorm:"column:total_cost_usd"`
+		Count                 int64   `gorm:"column:cnt"`
+		TotalPromptTokens     int64   `gorm:"column:total_prompt_tokens"`
+		TotalCompletionTokens int64   `gorm:"column:total_completion_tokens"`
+		TotalCacheTokens      int64   `gorm:"column:total_cache_tokens"`
+		TotalCacheWriteTokens int64   `gorm:"column:total_cache_write_tokens"`
 	}
 
 	tx := DB.Model(&PoeLog{})
@@ -170,7 +170,7 @@ func GetPoeLogStats(channelId int, startTimestamp, endTimestamp int64, paidOnly 
 
 	return PoeLogStats{
 		TotalPoints:           r.TotalPoints,
-		TotalUsd:             r.TotalCostUsd,
+		TotalUsd:             fmt.Sprintf("%.6f", r.TotalCostUsd),
 		Count:                 r.Count,
 		TotalPromptTokens:     r.TotalPromptTokens,
 		TotalCompletionTokens: r.TotalCompletionTokens,

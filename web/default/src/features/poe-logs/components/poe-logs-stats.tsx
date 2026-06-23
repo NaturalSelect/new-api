@@ -117,7 +117,7 @@ export function PoeLogsStats() {
     <div className='flex flex-wrap items-center gap-2'>
       <StatBadge
         label={t('Total USD')}
-        value={`$${parseFloat(stats?.total_cost_usd || '0').toFixed(4)}`}
+        value={`$${parseFloat(stats?.total_cost_usd || stats?.total_usd || '0').toFixed(4)}`}
         accent='bg-sky-500/70'
       />
       <StatBadge

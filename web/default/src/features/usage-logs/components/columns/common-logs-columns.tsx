@@ -667,6 +667,44 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         const log = row.original
         if (!isDisplayableLogType(log.type)) return null
 
+        const hasPoeTokens =
+          (log.poe_prompt_tokens ?? 0) > 0 ||
+          (log.poe_completion_tokens ?? 0) > 0
+
+        if (hasPoeTokens) {
+          const poePrompt = log.poe_prompt_tokens ?? 0
+          const poeCompletion = log.poe_completion_tokens ?? 0
+          const poeCacheRead = log.poe_cache_tokens ?? 0
+          const poeCacheWrite = log.poe_cache_write_tokens ?? 0
+
+          if (poePrompt === 0 && poeCompletion === 0) {
+            return <span className='text-muted-foreground text-xs'>-</span>
+          }
+
+          return (
+            <div className='flex flex-col gap-0.5'>
+              <span className='font-mono text-xs font-medium tabular-nums'>
+                {poePrompt.toLocaleString()} /{' '}
+                {poeCompletion.toLocaleString()}
+              </span>
+              {(poeCacheRead > 0 || poeCacheWrite > 0) && (
+                <div className='flex items-center gap-1 text-[11px]'>
+                  {poeCacheRead > 0 && (
+                    <span className='text-muted-foreground/60'>
+                      {t('Cache')}↓ {poeCacheRead.toLocaleString()}
+                    </span>
+                  )}
+                  {poeCacheWrite > 0 && (
+                    <span className='text-muted-foreground/60'>
+                      ↑ {poeCacheWrite.toLocaleString()}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        }
+
         const other = parseLogOther(log.other)
 
         const promptTokens = log.prompt_tokens || 0

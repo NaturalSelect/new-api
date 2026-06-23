@@ -29,6 +29,7 @@ type PoeLog struct {
 	CompletionTokens  int `json:"completion_tokens" gorm:"default:0"`
 	CacheTokens       int `json:"cache_tokens" gorm:"default:0"`       // cache read (Cache discount)
 	CacheWriteTokens  int `json:"cache_write_tokens" gorm:"default:0"` // cache write (Cache write)
+	ChannelName   string `json:"channel_name" gorm:"-"`
 	SyncedAt      int64  `json:"synced_at" gorm:"default:0"` // unix timestamp when this record was synced
 }
 
@@ -69,6 +70,7 @@ type QueryPoeLogsParams struct {
 	UsageType      string
 	StartTimestamp int64
 	EndTimestamp   int64
+	PaidOnly       bool
 	StartIdx       int
 	Num            int
 }
@@ -84,6 +86,9 @@ func GetPoeLogs(params QueryPoeLogsParams) ([]*PoeLog, int64, error) {
 	}
 	if params.UsageType != "" {
 		tx = tx.Where("usage_type = ?", params.UsageType)
+	}
+	if params.PaidOnly {
+		tx = tx.Where("cost_points != 0")
 	}
 	if params.StartTimestamp != 0 {
 		// Convert unix seconds to microseconds for comparison
@@ -111,16 +116,25 @@ func GetPoeLogs(params QueryPoeLogsParams) ([]*PoeLog, int64, error) {
 
 // PoeLogStats holds aggregated statistics for PoeLog queries.
 type PoeLogStats struct {
-	TotalPoints int64  `json:"total_points"`
-	TotalUsd    string `json:"total_usd"`
-	Count       int64  `json:"count"`
+	TotalPoints          int64  `json:"total_points"`
+	TotalUsd             string `json:"total_usd"`
+	Count                int64  `json:"count"`
+	TotalPromptTokens    int64  `json:"total_prompt_tokens"`
+	TotalCompletionTokens int64 `json:"total_completion_tokens"`
+	TotalCacheTokens     int64  `json:"total_cache_tokens"`
+	TotalCacheWriteTokens int64 `json:"total_cache_write_tokens"`
+	TotalTokens          int64  `json:"total_tokens"`
 }
 
 // GetPoeLogStats returns aggregated statistics for PoeLog records matching the given filters.
-func GetPoeLogStats(channelId int, startTimestamp, endTimestamp int64) (PoeLogStats, error) {
+func GetPoeLogStats(channelId int, startTimestamp, endTimestamp int64, paidOnly bool) (PoeLogStats, error) {
 	type result struct {
-		TotalPoints int64 `gorm:"column:total_points"`
-		Count       int64 `gorm:"column:cnt"`
+		TotalPoints          int64 `gorm:"column:total_points"`
+		Count                int64 `gorm:"column:cnt"`
+		TotalPromptTokens    int64 `gorm:"column:total_prompt_tokens"`
+		TotalCompletionTokens int64 `gorm:"column:total_completion_tokens"`
+		TotalCacheTokens     int64 `gorm:"column:total_cache_tokens"`
+		TotalCacheWriteTokens int64 `gorm:"column:total_cache_write_tokens"`
 	}
 
 	tx := DB.Model(&PoeLog{})
@@ -133,15 +147,28 @@ func GetPoeLogStats(channelId int, startTimestamp, endTimestamp int64) (PoeLogSt
 	if endTimestamp != 0 {
 		tx = tx.Where("creation_time <= ?", endTimestamp*1_000_000)
 	}
+	if paidOnly {
+		tx = tx.Where("cost_points != 0")
+	}
 
 	var r result
-	if err := tx.Select("SUM(cost_points) AS total_points, COUNT(*) AS cnt").Scan(&r).Error; err != nil {
+	if err := tx.Select("SUM(cost_points) AS total_points, COUNT(*) AS cnt, " +
+		"SUM(prompt_tokens) AS total_prompt_tokens, " +
+		"SUM(completion_tokens) AS total_completion_tokens, " +
+		"SUM(cache_tokens) AS total_cache_tokens, " +
+		"SUM(cache_write_tokens) AS total_cache_write_tokens").Scan(&r).Error; err != nil {
 		return PoeLogStats{}, err
 	}
 
 	return PoeLogStats{
-		TotalPoints: r.TotalPoints,
-		Count:       r.Count,
+		TotalPoints:          r.TotalPoints,
+		Count:                r.Count,
+		TotalPromptTokens:    r.TotalPromptTokens,
+		TotalCompletionTokens: r.TotalCompletionTokens,
+		TotalCacheTokens:     r.TotalCacheTokens,
+		TotalCacheWriteTokens: r.TotalCacheWriteTokens,
+		TotalTokens: r.TotalPromptTokens + r.TotalCompletionTokens +
+			r.TotalCacheTokens + r.TotalCacheWriteTokens,
 	}, nil
 }
 

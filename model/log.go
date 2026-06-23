@@ -45,6 +45,10 @@ type Log struct {
 	Quota             int    `json:"quota" gorm:"default:0"`
 	PromptTokens      int    `json:"prompt_tokens" gorm:"default:0"`
 	CompletionTokens  int    `json:"completion_tokens" gorm:"default:0"`
+	PoePromptTokens     int `json:"poe_prompt_tokens" gorm:"default:0"`
+	PoeCompletionTokens int `json:"poe_completion_tokens" gorm:"default:0"`
+	PoeCacheTokens      int `json:"poe_cache_tokens" gorm:"default:0"`
+	PoeCacheWriteTokens int `json:"poe_cache_write_tokens" gorm:"default:0"`
 	UseTime           int    `json:"use_time" gorm:"default:0"`
 	IsStream          bool   `json:"is_stream"`
 	ChannelId         int    `json:"channel" gorm:"index"`
@@ -207,18 +211,22 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 }
 
 type RecordConsumeLogParams struct {
-	ChannelId        int                    `json:"channel_id"`
-	PromptTokens     int                    `json:"prompt_tokens"`
-	CompletionTokens int                    `json:"completion_tokens"`
-	ModelName        string                 `json:"model_name"`
-	TokenName        string                 `json:"token_name"`
-	Quota            int                    `json:"quota"`
-	Content          string                 `json:"content"`
-	TokenId          int                    `json:"token_id"`
-	UseTimeSeconds   int                    `json:"use_time_seconds"`
-	IsStream         bool                   `json:"is_stream"`
-	Group            string                 `json:"group"`
-	Other            map[string]interface{} `json:"other"`
+	ChannelId           int                    `json:"channel_id"`
+	PromptTokens        int                    `json:"prompt_tokens"`
+	CompletionTokens    int                    `json:"completion_tokens"`
+	ModelName           string                 `json:"model_name"`
+	TokenName           string                 `json:"token_name"`
+	Quota               int                    `json:"quota"`
+	Content             string                 `json:"content"`
+	TokenId             int                    `json:"token_id"`
+	UseTimeSeconds      int                    `json:"use_time_seconds"`
+	IsStream            bool                   `json:"is_stream"`
+	Group               string                 `json:"group"`
+	Other               map[string]interface{} `json:"other"`
+	PoePromptTokens     int                    `json:"poe_prompt_tokens"`
+	PoeCompletionTokens int                    `json:"poe_completion_tokens"`
+	PoeCacheTokens      int                    `json:"poe_cache_tokens"`
+	PoeCacheWriteTokens int                    `json:"poe_cache_write_tokens"`
 }
 
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
@@ -243,8 +251,12 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		CreatedAt:        common.GetTimestamp(),
 		Type:             LogTypeConsume,
 		Content:          params.Content,
-		PromptTokens:     params.PromptTokens,
-		CompletionTokens: params.CompletionTokens,
+		PromptTokens:        params.PromptTokens,
+		CompletionTokens:    params.CompletionTokens,
+		PoePromptTokens:     params.PoePromptTokens,
+		PoeCompletionTokens: params.PoeCompletionTokens,
+		PoeCacheTokens:      params.PoeCacheTokens,
+		PoeCacheWriteTokens: params.PoeCacheWriteTokens,
 		TokenName:        params.TokenName,
 		ModelName:        params.ModelName,
 		Quota:            params.Quota,

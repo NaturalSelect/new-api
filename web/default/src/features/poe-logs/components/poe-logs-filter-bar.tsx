@@ -21,7 +21,9 @@ import { useIsFetching, useQueryClient } from '@tanstack/react-query'
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import { type Table } from '@tanstack/react-table'
 import { useTranslation } from 'react-i18next'
+import dayjs from '@/lib/dayjs'
 import { useIsAdmin } from '@/hooks/use-admin'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Select,
   SelectContent,
@@ -69,7 +71,11 @@ export function PoeLogsFilterBar<TData>(props: PoeLogsFilterBarProps<TData>) {
   const searchParams = route.useSearch()
   const isAdmin = useIsAdmin()
   const fetchingLogs = useIsFetching({ queryKey: ['poe-logs'] })
-  const [filters, setFilters] = useState<PoeLogsFilters>({})
+  const [filters, setFilters] = useState<PoeLogsFilters>({
+    paidOnly: true,
+    startTime: dayjs().startOf('day').toDate(),
+    endTime: dayjs().endOf('day').toDate(),
+  })
   const [usageType, setUsageType] = useState<UsageTypeValue>(
     USAGE_TYPE_ALL_VALUE
   )
@@ -81,6 +87,7 @@ export function PoeLogsFilterBar<TData>(props: PoeLogsFilterBarProps<TData>) {
       channelId: searchParams.channel_id || undefined,
       botName: searchParams.bot_name || undefined,
       usageType: searchParams.usage_type || undefined,
+      paidOnly: searchParams.paid_only ?? true,
     })
     setUsageType(
       searchParams.usage_type && isUsageTypeValue(searchParams.usage_type)
@@ -91,6 +98,7 @@ export function PoeLogsFilterBar<TData>(props: PoeLogsFilterBarProps<TData>) {
     searchParams.bot_name,
     searchParams.channel_id,
     searchParams.endTime,
+    searchParams.paid_only,
     searchParams.startTime,
     searchParams.usage_type,
   ])
@@ -112,6 +120,7 @@ export function PoeLogsFilterBar<TData>(props: PoeLogsFilterBarProps<TData>) {
         bot_name: filters.botName || undefined,
         usage_type:
           usageType === USAGE_TYPE_ALL_VALUE ? undefined : usageType,
+        paid_only: filters.paidOnly ?? true,
         startTime: filters.startTime?.getTime(),
         endTime: filters.endTime?.getTime(),
       },
@@ -121,13 +130,20 @@ export function PoeLogsFilterBar<TData>(props: PoeLogsFilterBarProps<TData>) {
   }, [filters, navigate, queryClient, searchParams.page_size, usageType])
 
   const handleReset = useCallback(() => {
-    setFilters({})
+    setFilters({
+      paidOnly: true,
+      startTime: dayjs().startOf('day').toDate(),
+      endTime: dayjs().endOf('day').toDate(),
+    })
     setUsageType(USAGE_TYPE_ALL_VALUE)
     void navigate({
       to: '/poe-logs',
       search: {
         p: 1,
         page_size: searchParams.page_size,
+        paid_only: true,
+        startTime: dayjs().startOf('day').valueOf(),
+        endTime: dayjs().endOf('day').valueOf(),
       },
     })
     queryClient.invalidateQueries({ queryKey: ['poe-logs'] })
@@ -157,7 +173,8 @@ export function PoeLogsFilterBar<TData>(props: PoeLogsFilterBarProps<TData>) {
       filters.endTime ||
       filters.channelId ||
       filters.botName ||
-      usageType !== USAGE_TYPE_ALL_VALUE
+      usageType !== USAGE_TYPE_ALL_VALUE ||
+      filters.paidOnly === false
   )
 
   const dateRangeFilter = (
@@ -190,6 +207,19 @@ export function PoeLogsFilterBar<TData>(props: PoeLogsFilterBarProps<TData>) {
         onChange={(e) => handleChange('botName', e.target.value)}
         onKeyDown={handleKeyDown}
       />
+    </LogsFilterField>
+  )
+  const paidOnlyFilter = (
+    <LogsFilterField>
+      <label className='flex items-center gap-1.5 text-xs'>
+        <Checkbox
+          checked={filters.paidOnly ?? true}
+          onCheckedChange={(checked) =>
+            handleChange('paidOnly', checked === true)
+          }
+        />
+        {t('Paid Only')}
+      </label>
     </LogsFilterField>
   )
   const usageTypeFilter = (
@@ -233,6 +263,7 @@ export function PoeLogsFilterBar<TData>(props: PoeLogsFilterBarProps<TData>) {
           {channelFilter}
           {botFilter}
           {usageTypeFilter}
+          {paidOnlyFilter}
         </>
       }
       mobilePinnedFilters={dateRangeFilter}
@@ -241,10 +272,11 @@ export function PoeLogsFilterBar<TData>(props: PoeLogsFilterBarProps<TData>) {
           {channelFilter}
           {botFilter}
           {usageTypeFilter}
+          {paidOnlyFilter}
         </>
       }
       mobileFilterCount={
-        [filters.channelId, filters.botName, usageType !== USAGE_TYPE_ALL_VALUE]
+        [filters.channelId, filters.botName, usageType !== USAGE_TYPE_ALL_VALUE, filters.paidOnly === false]
           .filter(Boolean).length
       }
       hasActiveFilters={hasActiveFilters}

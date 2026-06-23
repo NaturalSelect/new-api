@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import z from 'zod'
 import { createFileRoute, redirect } from '@tanstack/react-router'
+import dayjs from '@/lib/dayjs'
 import { useAuthStore } from '@/stores/auth-store'
 import { ROLE } from '@/lib/roles'
 import { PoeLogs } from '@/features/poe-logs'
@@ -28,8 +29,15 @@ const poeLogsSearchSchema = z.object({
   channel_id: z.string().optional().catch(''),
   bot_name: z.string().optional().catch(''),
   usage_type: z.string().optional().catch(''),
-  startTime: z.number().optional(),
-  endTime: z.number().optional(),
+  paid_only: z.boolean().optional().catch(true),
+  startTime: z
+    .number()
+    .optional()
+    .catch(() => dayjs().startOf('day').valueOf()),
+  endTime: z
+    .number()
+    .optional()
+    .catch(() => dayjs().endOf('day').valueOf()),
 })
 
 export const Route = createFileRoute('/_authenticated/poe-logs/')({

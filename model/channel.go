@@ -1096,6 +1096,21 @@ func GetChannelsByIds(ids []int) ([]*Channel, error) {
 	return channels, err
 }
 
+func GetChannelNamesByIds(ids []int) map[int]string {
+	if len(ids) == 0 {
+		return map[int]string{}
+	}
+	channels, err := GetChannelsByIds(lo.Uniq(ids))
+	if err != nil {
+		return map[int]string{}
+	}
+	m := make(map[int]string, len(channels))
+	for _, ch := range channels {
+		m[ch.Id] = ch.Name
+	}
+	return m
+}
+
 func BatchSetChannelTag(ids []int, tag *string) error {
 	// 开启事务
 	tx := DB.Begin()

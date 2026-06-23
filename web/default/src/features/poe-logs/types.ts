@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 export interface PoeLog {
   id: number
   channel_id: number
+  channel_name?: string
   query_id: string
   bot_name: string
   creation_time: number
@@ -42,6 +43,7 @@ export interface GetPoeLogsParams {
   channel_id?: number
   bot_name?: string
   usage_type?: string
+  paid_only?: boolean
   start_timestamp?: number
   end_timestamp?: number
 }
@@ -61,12 +63,18 @@ export interface PoeLogStats {
   total_points: number
   total_usd: string
   count: number
+  total_prompt_tokens: number
+  total_completion_tokens: number
+  total_cache_tokens: number
+  total_cache_write_tokens: number
+  total_tokens: number
 }
 
 export interface GetPoeLogStatsParams {
   channel_id?: number
   start_timestamp?: number
   end_timestamp?: number
+  paid_only?: boolean
 }
 
 export interface GetPoeLogStatsResponse {
@@ -81,4 +89,5 @@ export interface PoeLogsFilters {
   channelId?: string
   botName?: string
   usageType?: string
+  paidOnly?: boolean
 }

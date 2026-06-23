@@ -101,6 +101,10 @@ function buildApiParams(config: {
       typeof config.searchParams.usage_type === 'string'
         ? config.searchParams.usage_type
         : undefined,
+    paid_only:
+      config.searchParams.paid_only !== false
+        ? true
+        : false,
     start_timestamp:
       typeof config.searchParams.startTime === 'number'
         ? toApiTimestamp(config.searchParams.startTime)
@@ -171,11 +175,17 @@ function usePoeLogsColumns(opts: {
       },
       {
         accessorKey: 'channel_id',
-        meta: { label: t('Channel ID') },
-        header: t('Channel ID'),
-        cell: ({ row }) => (
-          <span className='font-mono text-xs'>{row.original.channel_id}</span>
-        ),
+        meta: { label: t('Channel') },
+        header: t('Channel'),
+        cell: ({ row }) => {
+          const id = row.original.channel_id
+          const name = row.original.channel_name
+          return (
+            <span className='font-mono text-xs'>
+              {name ? `${name} (#${id})` : `#${id}`}
+            </span>
+          )
+        },
       },
       {
         accessorKey: 'bot_name',

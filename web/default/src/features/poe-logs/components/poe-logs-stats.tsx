@@ -31,6 +31,11 @@ const DEFAULT_STATS = {
   total_points: 0,
   total_usd: '',
   count: 0,
+  total_prompt_tokens: 0,
+  total_completion_tokens: 0,
+  total_cache_tokens: 0,
+  total_cache_write_tokens: 0,
+  total_tokens: 0,
 }
 
 function toApiTimestamp(value?: number): number | undefined {
@@ -71,6 +76,7 @@ export function PoeLogsStats() {
         channel_id: toChannelId(searchParams.channel_id),
         start_timestamp: toApiTimestamp(searchParams.startTime),
         end_timestamp: toApiTimestamp(searchParams.endTime),
+        paid_only: searchParams.paid_only !== false,
       })
       return result.success ? result.data || DEFAULT_STATS : DEFAULT_STATS
     },
@@ -82,6 +88,9 @@ export function PoeLogsStats() {
     return (
       <div className='flex items-center gap-2'>
         <Skeleton className='h-7 w-[150px] rounded-md' />
+        <Skeleton className='h-7 w-[100px] rounded-md' />
+        <Skeleton className='h-7 w-[80px] rounded-md' />
+        <Skeleton className='h-7 w-[90px] rounded-md' />
         <Skeleton className='h-7 w-[100px] rounded-md' />
       </div>
     )
@@ -98,6 +107,35 @@ export function PoeLogsStats() {
         label={t('Count')}
         value={formatNumber(stats?.count || 0)}
         accent='bg-slate-400/70'
+      />
+      <StatBadge
+        label='Prompt'
+        value={formatNumber(stats?.total_prompt_tokens || 0)}
+        accent='bg-blue-400/70'
+      />
+      <StatBadge
+        label='Completion'
+        value={formatNumber(stats?.total_completion_tokens || 0)}
+        accent='bg-green-400/70'
+      />
+      {(stats?.total_cache_tokens ?? 0) > 0 && (
+        <StatBadge
+          label={t('Cache')}↓
+          value={formatNumber(stats?.total_cache_tokens || 0)}
+          accent='bg-amber-400/70'
+        />
+      )}
+      {(stats?.total_cache_write_tokens ?? 0) > 0 && (
+        <StatBadge
+          label={t('Cache')}↑
+          value={formatNumber(stats?.total_cache_write_tokens || 0)}
+          accent='bg-orange-400/70'
+        />
+      )}
+      <StatBadge
+        label={t('Total Tokens')}
+        value={formatNumber(stats?.total_tokens || 0)}
+        accent='bg-purple-400/70'
       />
     </div>
   )

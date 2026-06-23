@@ -338,7 +338,12 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	isPoeChannel := relayInfo.ChannelType == constant.ChannelTypePoeOpenAI ||
 		relayInfo.ChannelType == constant.ChannelTypePoeAnthropic
 	isPoeLogEnabled := isPoeChannel && operation_setting.IsPoeLogSyncEnabled()
+	var poePromptTokens, poeCompletionTokens, poeCacheTokens, poeCacheWriteTokens int
 	if isPoeLogEnabled {
+		poePromptTokens = summary.PromptTokens
+		poeCompletionTokens = summary.CompletionTokens
+		poeCacheTokens = summary.CacheTokens
+		poeCacheWriteTokens = cacheWriteTokensTotal(summary)
 		summary.Quota = 0
 		summary.PromptTokens = 0
 		summary.CompletionTokens = 0
@@ -477,12 +482,26 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	}
 
 	if isPoeLogEnabled {
-		// NOTE: When PoeLog sync is enabled, skip writing to the logs table
-		// entirely — the PoeLog module provides all cost/token data for
-		// dashboard aggregation. This prevents zero-value entries from
-		// inflating request counts and distorting consumption/token charts.
 		gopool.Go(func() {
 			perfmetrics.RecordRelaySample(relayInfo, true, int64(summary.CompletionTokens))
+		})
+		model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
+			ChannelId:           relayInfo.ChannelId,
+			PromptTokens:        0,
+			CompletionTokens:    0,
+			ModelName:           logModel,
+			TokenName:           summary.TokenName,
+			Quota:               0,
+			Content:             logContent,
+			TokenId:             relayInfo.TokenId,
+			UseTimeSeconds:      int(summary.UseTimeSeconds),
+			IsStream:            relayInfo.IsStream,
+			Group:               relayInfo.UsingGroup,
+			Other:               other,
+			PoePromptTokens:     poePromptTokens,
+			PoeCompletionTokens: poeCompletionTokens,
+			PoeCacheTokens:      poeCacheTokens,
+			PoeCacheWriteTokens: poeCacheWriteTokens,
 		})
 		return
 	}

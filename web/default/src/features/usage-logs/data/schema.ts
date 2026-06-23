@@ -45,6 +45,10 @@ export const usageLogSchema = z.object({
   other: z.string().default(''),
   request_id: z.string().default(''),
   upstream_request_id: z.string().default(''),
+  poe_prompt_tokens: z.number().default(0),
+  poe_completion_tokens: z.number().default(0),
+  poe_cache_tokens: z.number().default(0),
+  poe_cache_write_tokens: z.number().default(0),
 })
 
 export type UsageLog = z.infer<typeof usageLogSchema>

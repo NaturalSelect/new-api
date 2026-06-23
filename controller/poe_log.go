@@ -7,7 +7,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
-
+	"github.com/samber/lo"
 	"github.com/gin-gonic/gin"
 )
 
@@ -20,6 +20,7 @@ func GetAllPoeLogs(c *gin.Context) {
 	usageType := c.Query("usage_type")
 	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
 	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
+	paidOnly := c.Query("paid_only") == "true"
 
 	logs, total, err := model.GetPoeLogs(model.QueryPoeLogsParams{
 		ChannelId:      channelId,
@@ -27,6 +28,7 @@ func GetAllPoeLogs(c *gin.Context) {
 		UsageType:      usageType,
 		StartTimestamp: startTimestamp,
 		EndTimestamp:   endTimestamp,
+		PaidOnly:       paidOnly,
 		StartIdx:       pageInfo.GetStartIdx(),
 		Num:            pageInfo.GetPageSize(),
 	})
@@ -34,6 +36,14 @@ func GetAllPoeLogs(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+
+	channelNames := model.GetChannelNamesByIds(lo.Map(logs, func(l *model.PoeLog, _ int) int {
+		return l.ChannelId
+	}))
+	for _, l := range logs {
+		l.ChannelName = channelNames[l.ChannelId]
+	}
+
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(logs)
 	common.ApiSuccess(c, pageInfo)
@@ -45,8 +55,9 @@ func GetPoeLogStats(c *gin.Context) {
 	channelId, _ := strconv.Atoi(c.Query("channel_id"))
 	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
 	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
+	paidOnly := c.Query("paid_only") == "true"
 
-	stats, err := model.GetPoeLogStats(channelId, startTimestamp, endTimestamp)
+	stats, err := model.GetPoeLogStats(channelId, startTimestamp, endTimestamp, paidOnly)
 	if err != nil {
 		common.ApiError(c, err)
 		return

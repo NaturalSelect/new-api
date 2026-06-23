@@ -348,6 +348,14 @@ func SetApiRouter(router *gin.Engine) {
 			taskRoute.GET("/", middleware.AdminAuth(), controller.GetAllTask)
 		}
 
+		poeLogRoute := apiRouter.Group("/poe_log")
+		poeLogRoute.Use(middleware.AdminAuth())
+		{
+			poeLogRoute.GET("/", controller.GetAllPoeLogs)
+			poeLogRoute.GET("/stat", controller.GetPoeLogStats)
+			poeLogRoute.POST("/sync", controller.TriggerPoeLogSync)
+		}
+
 		vendorRoute := apiRouter.Group("/vendors")
 		vendorRoute.Use(middleware.AdminAuth())
 		{

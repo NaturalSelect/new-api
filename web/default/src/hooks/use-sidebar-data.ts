@@ -32,6 +32,7 @@ import {
   User,
   Users,
   Wallet,
+  Zap,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { type SidebarData } from '@/components/layout/types'
@@ -93,6 +94,11 @@ export function useSidebarData(): SidebarData {
             activeUrls: ['/usage-logs/drawing'],
             configUrls: ['/usage-logs/drawing', '/usage-logs/task'],
             icon: ListTodo,
+          },
+          {
+            title: t('Poe Logs'),
+            url: '/poe-logs',
+            icon: Zap,
           },
         ],
       },

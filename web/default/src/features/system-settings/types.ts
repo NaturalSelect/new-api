@@ -307,6 +307,9 @@ export type OperationsSettings = {
   'perf_metrics_setting.flush_interval': number
   'perf_metrics_setting.bucket_time': 'hour' | 'minute' | '5min'
   'perf_metrics_setting.retention_days': number
+  'poe_log_setting.enabled': boolean
+  'poe_log_setting.sync_interval': number
+  'poe_log_setting.key_deduplicate': boolean
 }
 
 export type SecuritySettings = {

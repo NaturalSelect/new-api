@@ -331,9 +331,22 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	adminRejectReason := common.GetContextKeyString(ctx, constant.ContextKeyAdminRejectReason)
 	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
 
+	// NOTE: Poe channels do not charge internal quota; actual cost is tracked
+	// via the PoeLog module (synced from the Poe usage API). When PoeLog sync
+	// is enabled, skip recording to the usage log entirely — the PoeLog table
+	// provides all cost/token data for dashboard aggregation instead.
+	isPoeChannel := relayInfo.ChannelType == constant.ChannelTypePoeOpenAI ||
+		relayInfo.ChannelType == constant.ChannelTypePoeAnthropic
+	if isPoeChannel {
+		summary.Quota = 0
+		summary.PromptTokens = 0
+		summary.CompletionTokens = 0
+		summary.TotalTokens = 1 // NOTE: non-zero to suppress the "no billing info" error log
+	}
+
 	var tieredResult *billingexpr.TieredResult
 	tieredBillingApplied := false
-	if originUsage != nil {
+	if originUsage != nil && !isPoeChannel {
 		var tieredUsedVars map[string]bool
 		if snap := relayInfo.TieredBillingSnapshot; snap != nil {
 			tieredUsedVars = billingexpr.UsedVars(snap.ExprString)
@@ -457,6 +470,20 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	}
 	if tieredBillingApplied {
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
+	}
+	if isPoeChannel {
+		other["billing_source"] = "poe_log"
+	}
+
+	if isPoeChannel && operation_setting.IsPoeLogSyncEnabled() {
+		// NOTE: When PoeLog sync is enabled, skip writing to the logs table
+		// entirely — the PoeLog module provides all cost/token data for
+		// dashboard aggregation. This prevents zero-value entries from
+		// inflating request counts and distorting consumption/token charts.
+		gopool.Go(func() {
+			perfmetrics.RecordRelaySample(relayInfo, true, int64(summary.CompletionTokens))
+		})
+		return
 	}
 
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{

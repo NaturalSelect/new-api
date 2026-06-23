@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { SystemBehaviorSection } from '../general/system-behavior-section'
 import { EmailSettingsSection } from '../integrations/email-settings-section'
 import { MonitoringSettingsSection } from '../integrations/monitoring-settings-section'
+import { PoeLogSettingsSection } from '../integrations/poe-log-settings-section'
 import { WorkerSettingsSection } from '../integrations/worker-settings-section'
 import { LogSettingsSection } from '../maintenance/log-settings-section'
 import { PerformanceSection } from '../maintenance/performance-section'
@@ -94,6 +95,19 @@ const OPERATIONS_SECTIONS = [
           WorkerValidKey: settings.WorkerValidKey,
           WorkerAllowHttpImageRequestEnabled:
             settings.WorkerAllowHttpImageRequestEnabled,
+        }}
+      />
+    ),
+  },
+  {
+    id: 'poe-log',
+    titleKey: 'Poe Log Sync',
+    build: (settings: OperationsSettings) => (
+      <PoeLogSettingsSection
+        defaultValues={{
+          'poe_log_setting.enabled': settings['poe_log_setting.enabled'] ?? false,
+          'poe_log_setting.sync_interval': settings['poe_log_setting.sync_interval'] ?? 300,
+          'poe_log_setting.key_deduplicate': settings['poe_log_setting.key_deduplicate'] ?? true,
         }}
       />
     ),

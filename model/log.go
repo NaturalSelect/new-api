@@ -534,6 +534,13 @@ func bucketTimestampToHour(timestamp int64) int64 {
 }
 
 func GetTokenDistribution(startTimestamp int64, endTimestamp int64, username string) ([]*TokenDistributionData, error) {
+	return GetTokenDistributionWithPoe(startTimestamp, endTimestamp, username, true)
+}
+
+// GetTokenDistributionWithPoe aggregates token distribution from the logs table.
+// When includePoe is false, entries with billing_source "poe_log" in the other
+// field are excluded so that the PoeLog module's data is used instead.
+func GetTokenDistributionWithPoe(startTimestamp int64, endTimestamp int64, username string, includePoe bool) ([]*TokenDistributionData, error) {
 	base := LOG_DB.Table("logs").Select("created_at, model_name, prompt_tokens, completion_tokens, other").Where("type = ?", LogTypeConsume)
 	if startTimestamp != 0 {
 		base = base.Where("created_at >= ?", startTimestamp)
@@ -543,6 +550,9 @@ func GetTokenDistribution(startTimestamp int64, endTimestamp int64, username str
 	}
 	if username != "" {
 		base = base.Where("username = ?", username)
+	}
+	if !includePoe {
+		base = base.Where("other NOT LIKE ?", `%billing_source%poe_log%`)
 	}
 
 	type aggregateKey struct {

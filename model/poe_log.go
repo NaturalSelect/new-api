@@ -14,24 +14,24 @@ import (
 // PoeLog stores Poe API usage records synced from the Poe usage history endpoint.
 // Each entry corresponds to one query charged on the Poe account.
 type PoeLog struct {
-	Id            int    `json:"id"`
-	ChannelId     int    `json:"channel_id" gorm:"index;index:idx_poe_ch_creation,priority:1"`
-	QueryId       string `json:"query_id" gorm:"uniqueIndex;type:varchar(64)"`
-	BotName       string `json:"bot_name" gorm:"index;index:idx_poe_creation_bot,priority:2;default:''"`
-	CreationTime  int64  `json:"creation_time" gorm:"index;index:idx_poe_ch_creation,priority:2;index:idx_poe_creation_bot,priority:1"` // microseconds (from Poe API)
-	CostUsd       string `json:"cost_usd" gorm:"default:''"`
-	CostPoints    int    `json:"cost_points" gorm:"default:0"`
-	CostBreakdown string `json:"cost_breakdown"` // JSON string of cost_breakdown_in_points
-	UsageType     string `json:"usage_type" gorm:"default:''"` // Chat, API, Canvas App
-	ApiKeyName    string `json:"api_key_name" gorm:"default:''"`
-	ChatName      string `json:"chat_name" gorm:"default:''"`
-	CanvasTabName string `json:"canvas_tab_name" gorm:"default:''"`
-	PromptTokens      int `json:"prompt_tokens" gorm:"default:0"`
-	CompletionTokens  int `json:"completion_tokens" gorm:"default:0"`
-	CacheTokens       int `json:"cache_tokens" gorm:"default:0"`       // cache read (Cache discount)
-	CacheWriteTokens  int `json:"cache_write_tokens" gorm:"default:0"` // cache write (Cache write)
-	ChannelName   string `json:"channel_name" gorm:"-"`
-	SyncedAt      int64  `json:"synced_at" gorm:"default:0"` // unix timestamp when this record was synced
+	Id               int    `json:"id"`
+	ChannelId        int    `json:"channel_id" gorm:"index;index:idx_poe_ch_creation,priority:1"`
+	QueryId          string `json:"query_id" gorm:"uniqueIndex;type:varchar(64)"`
+	BotName          string `json:"bot_name" gorm:"index;index:idx_poe_creation_bot,priority:2;default:''"`
+	CreationTime     int64  `json:"creation_time" gorm:"index;index:idx_poe_ch_creation,priority:2;index:idx_poe_creation_bot,priority:1"` // microseconds (from Poe API)
+	CostUsd          string `json:"cost_usd" gorm:"default:''"`
+	CostPoints       int    `json:"cost_points" gorm:"default:0"`
+	CostBreakdown    string `json:"cost_breakdown"`               // JSON string of cost_breakdown_in_points
+	UsageType        string `json:"usage_type" gorm:"default:''"` // Chat, API, Canvas App
+	ApiKeyName       string `json:"api_key_name" gorm:"default:''"`
+	ChatName         string `json:"chat_name" gorm:"default:''"`
+	CanvasTabName    string `json:"canvas_tab_name" gorm:"default:''"`
+	PromptTokens     int    `json:"prompt_tokens" gorm:"default:0"`
+	CompletionTokens int    `json:"completion_tokens" gorm:"default:0"`
+	CacheTokens      int    `json:"cache_tokens" gorm:"default:0"`       // cache read (Cache discount)
+	CacheWriteTokens int    `json:"cache_write_tokens" gorm:"default:0"` // cache write (Cache write)
+	ChannelName      string `json:"channel_name" gorm:"-"`
+	SyncedAt         int64  `json:"synced_at" gorm:"default:0"` // unix timestamp when this record was synced
 }
 
 // GetPoeLogLatestQueryId returns the query_id of the most recent PoeLog entry
@@ -117,24 +117,24 @@ func GetPoeLogs(params QueryPoeLogsParams) ([]*PoeLog, int64, error) {
 
 // PoeLogStats holds aggregated statistics for PoeLog queries.
 type PoeLogStats struct {
-	TotalPoints          int64  `json:"total_points"`
-	TotalUsd             string `json:"total_usd"`
-	Count                int64  `json:"count"`
-	TotalPromptTokens    int64  `json:"total_prompt_tokens"`
-	TotalCompletionTokens int64 `json:"total_completion_tokens"`
-	TotalCacheTokens     int64  `json:"total_cache_tokens"`
-	TotalCacheWriteTokens int64 `json:"total_cache_write_tokens"`
-	TotalTokens          int64  `json:"total_tokens"`
+	TotalPoints           int64  `json:"total_points"`
+	TotalUsd              string `json:"total_usd"`
+	Count                 int64  `json:"count"`
+	TotalPromptTokens     int64  `json:"total_prompt_tokens"`
+	TotalCompletionTokens int64  `json:"total_completion_tokens"`
+	TotalCacheTokens      int64  `json:"total_cache_tokens"`
+	TotalCacheWriteTokens int64  `json:"total_cache_write_tokens"`
+	TotalTokens           int64  `json:"total_tokens"`
 }
 
 // GetPoeLogStats returns aggregated statistics for PoeLog records matching the given filters.
 func GetPoeLogStats(channelId int, startTimestamp, endTimestamp int64, paidOnly bool) (PoeLogStats, error) {
 	type result struct {
-		TotalPoints          int64 `gorm:"column:total_points"`
-		Count                int64 `gorm:"column:cnt"`
-		TotalPromptTokens    int64 `gorm:"column:total_prompt_tokens"`
+		TotalPoints           int64 `gorm:"column:total_points"`
+		Count                 int64 `gorm:"column:cnt"`
+		TotalPromptTokens     int64 `gorm:"column:total_prompt_tokens"`
 		TotalCompletionTokens int64 `gorm:"column:total_completion_tokens"`
-		TotalCacheTokens     int64 `gorm:"column:total_cache_tokens"`
+		TotalCacheTokens      int64 `gorm:"column:total_cache_tokens"`
 		TotalCacheWriteTokens int64 `gorm:"column:total_cache_write_tokens"`
 	}
 
@@ -162,14 +162,13 @@ func GetPoeLogStats(channelId int, startTimestamp, endTimestamp int64, paidOnly 
 	}
 
 	return PoeLogStats{
-		TotalPoints:          r.TotalPoints,
-		Count:                r.Count,
-		TotalPromptTokens:    r.TotalPromptTokens,
+		TotalPoints:           r.TotalPoints,
+		Count:                 r.Count,
+		TotalPromptTokens:     r.TotalPromptTokens,
 		TotalCompletionTokens: r.TotalCompletionTokens,
-		TotalCacheTokens:     r.TotalCacheTokens,
+		TotalCacheTokens:      r.TotalCacheTokens,
 		TotalCacheWriteTokens: r.TotalCacheWriteTokens,
-		TotalTokens: r.TotalPromptTokens + r.TotalCompletionTokens +
-			r.TotalCacheTokens + r.TotalCacheWriteTokens,
+		TotalTokens:           r.TotalPromptTokens + r.TotalCompletionTokens + r.TotalCacheWriteTokens,
 	}, nil
 }
 
@@ -286,14 +285,14 @@ func GetPoeLogTokenDistribution(startTimestamp, endTimestamp int64, username str
 	hourBucket := fmt.Sprintf("(%s / 1000000 / 3600 * 3600)", poeCreationTimeCol())
 	var results []*PoeLogTokenDistributionData
 	err := tx.
-		Select("bot_name AS model_name, "+
-			hourBucket+" AS created_at, "+
-			"SUM(prompt_tokens) AS total_prompt_tokens, "+
-			"SUM(completion_tokens) AS total_completion_tokens, "+
-			"SUM(cache_tokens) AS total_cache_tokens, "+
-			"SUM(cache_write_tokens) AS total_cache_write_tokens, "+
+		Select("bot_name AS model_name, " +
+			hourBucket + " AS created_at, " +
+			"SUM(prompt_tokens) AS total_prompt_tokens, " +
+			"SUM(completion_tokens) AS total_completion_tokens, " +
+			"SUM(cache_tokens) AS total_cache_tokens, " +
+			"SUM(cache_write_tokens) AS total_cache_write_tokens, " +
 			"COUNT(*) AS cnt").
-		Group("bot_name, "+hourBucket).
+		Group("bot_name, " + hourBucket).
 		Find(&results).Error
 	return results, err
 }

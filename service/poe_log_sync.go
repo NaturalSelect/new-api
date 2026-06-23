@@ -104,7 +104,7 @@ func runPoeLogSyncOnce() {
 	for {
 		var channels []*model.Channel
 		err := model.DB.
-			Select("id", "name", "key", "status", "base_url", "channel_info").
+			Select("id", "name", "key", "status", "base_url", "channel_info", "setting").
 			Where("type IN (?, ?) AND status = ?",
 				constant.ChannelTypePoeOpenAI,
 				constant.ChannelTypePoeAnthropic,

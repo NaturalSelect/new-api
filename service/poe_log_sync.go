@@ -205,6 +205,11 @@ func syncPoeChannelsWithKeyDedup(ctx context.Context, channels []*model.Channel)
 				logger.LogWarn(ctx, fmt.Sprintf("poe log sync (key dedup): update sync state for channel_id=%d failed: %v", ch.Id, err))
 			}
 			if inserted > 0 {
+				for _, entry := range channelEntries {
+					createdAt := entry.CreationTime/1_000_000 - (entry.CreationTime/1_000_000 % 3600)
+					tokenUsed := entry.PromptTokens + entry.CompletionTokens + entry.CacheTokens + entry.CacheWriteTokens
+					model.LogPoeQuotaData(ch.Id, entry.BotName, entry.CostPoints, createdAt, tokenUsed)
+				}
 				logger.LogInfo(ctx, fmt.Sprintf("poe log sync (key dedup): channel_id=%d name=%s synced %d new entries", ch.Id, ch.Name, inserted))
 			}
 		}
@@ -324,6 +329,14 @@ func syncPoeChannelLogs(ctx context.Context, channel *model.Channel) error {
 
 	if err := model.UpsertPoeLogSyncState(channel.Id); err != nil {
 		logger.LogWarn(ctx, fmt.Sprintf("poe log sync: update sync state for channel_id=%d failed: %v", channel.Id, err))
+	}
+
+	if inserted > 0 {
+		for _, entry := range entries {
+			createdAt := entry.CreationTime/1_000_000 - (entry.CreationTime/1_000_000 % 3600)
+			tokenUsed := entry.PromptTokens + entry.CompletionTokens + entry.CacheTokens + entry.CacheWriteTokens
+			model.LogPoeQuotaData(channel.Id, entry.BotName, entry.CostPoints, createdAt, tokenUsed)
+		}
 	}
 
 	logger.LogInfo(ctx, fmt.Sprintf("poe log sync: channel_id=%d name=%s synced %d new entries (fetched %d)", channel.Id, channel.Name, inserted, len(entries)))

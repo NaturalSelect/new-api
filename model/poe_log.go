@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -13,10 +14,10 @@ import (
 // Each entry corresponds to one query charged on the Poe account.
 type PoeLog struct {
 	Id            int    `json:"id"`
-	ChannelId     int    `json:"channel_id" gorm:"index"`
+	ChannelId     int    `json:"channel_id" gorm:"index;index:idx_poe_ch_creation,priority:1"`
 	QueryId       string `json:"query_id" gorm:"uniqueIndex;type:varchar(64)"`
-	BotName       string `json:"bot_name" gorm:"index;default:''"`
-	CreationTime  int64  `json:"creation_time" gorm:"index"` // microseconds (from Poe API)
+	BotName       string `json:"bot_name" gorm:"index;index:idx_poe_creation_bot,priority:2;default:''"`
+	CreationTime  int64  `json:"creation_time" gorm:"index;index:idx_poe_ch_creation,priority:2;index:idx_poe_creation_bot,priority:1"` // microseconds (from Poe API)
 	CostUsd       string `json:"cost_usd" gorm:"default:''"`
 	CostPoints    int    `json:"cost_points" gorm:"default:0"`
 	CostBreakdown string `json:"cost_breakdown"` // JSON string of cost_breakdown_in_points
@@ -170,56 +171,35 @@ func GetPoeLogSyncState(channelId int) (PoeLogSyncState, error) {
 	return state, err
 }
 
-// PoeLogQuotaData mirrors QuotaData for PoeLog-based dashboard aggregation.
-type PoeLogQuotaData struct {
-	ModelName string `json:"model_name" gorm:"column:model_name"`
-	CreatedAt int64  `json:"created_at" gorm:"column:created_at"`
-	Count     int64  `json:"count" gorm:"column:cnt"`
-	Quota     int64  `json:"quota" gorm:"column:total_cost_points"`
-	TokenUsed int64  `json:"token_used" gorm:"column:total_tokens"`
+// LogPoeQuotaData writes PoeLog data into the quota_data cache used by the dashboard.
+// This mirrors LogQuotaData but for Poe-sourced records, so dashboard reads from the
+// pre-aggregated quota_data table instead of doing full table scans on poe_logs.
+func LogPoeQuotaData(channelId int, modelName string, costPoints int, createdAt int64, tokenUsed int) {
+	if !common.DataExportEnabled {
+		return
+	}
+	LogQuotaData(0, "", modelName, costPoints, createdAt, tokenUsed)
 }
 
-// GetPoeLogQuotaData aggregates PoeLog records into hourly buckets by bot_name,
-// returning data compatible with the quota_data table format used by dashboard charts.
-// cost_points is treated as quota, token_used is the sum of all token fields.
-func GetPoeLogQuotaData(startTimestamp, endTimestamp int64, username string) ([]*PoeLogQuotaData, error) {
-	if !common.DataExportEnabled {
-		return nil, nil
-	}
+var poeChannelIdsCache struct {
+	sync.RWMutex
+	m map[string][]int
+}
 
-	tx := DB.Model(&PoeLog{})
-	if startTimestamp != 0 {
-		tx = tx.Where("creation_time >= ?", startTimestamp*1_000_000)
-	}
-	if endTimestamp != 0 {
-		tx = tx.Where("creation_time <= ?", endTimestamp*1_000_000)
-	}
-	if username != "" {
-		channelIds, err := getChannelIdsByUsername(username)
-		if err != nil {
-			return nil, err
-		}
-		if len(channelIds) == 0 {
-			return nil, nil
-		}
-		tx = tx.Where("channel_id IN ?", channelIds)
-	}
-
-	hourBucket := fmt.Sprintf("(%s / 1000000 / 3600 * 3600)", poeCreationTimeCol())
-	var results []*PoeLogQuotaData
-	err := tx.
-		Select("bot_name AS model_name, "+
-			hourBucket+" AS created_at, "+
-			"COUNT(*) AS cnt, "+
-			"SUM(cost_points) AS total_cost_points, "+
-			"SUM(prompt_tokens + completion_tokens + cache_tokens + cache_write_tokens) AS total_tokens").
-		Group("bot_name, "+hourBucket).
-		Find(&results).Error
-	return results, err
+func init() {
+	poeChannelIdsCache.m = make(map[string][]int)
 }
 
 // getChannelIdsByUsername looks up channel IDs owned by a user through their tokens.
+// Results are cached to avoid repeated JOINs on every dashboard request.
 func getChannelIdsByUsername(username string) ([]int, error) {
+	poeChannelIdsCache.RLock()
+	if ids, ok := poeChannelIdsCache.m[username]; ok {
+		poeChannelIdsCache.RUnlock()
+		return ids, nil
+	}
+	poeChannelIdsCache.RUnlock()
+
 	var channelIds []int
 	err := DB.Model(&Channel{}).
 		Joins("JOIN tokens ON tokens.channel_id = channels.id").
@@ -229,7 +209,18 @@ func getChannelIdsByUsername(username string) ([]int, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	poeChannelIdsCache.Lock()
+	poeChannelIdsCache.m[username] = channelIds
+	poeChannelIdsCache.Unlock()
+
 	return channelIds, nil
+}
+
+func InvalidatePoeChannelIdsCache() {
+	poeChannelIdsCache.Lock()
+	poeChannelIdsCache.m = make(map[string][]int)
+	poeChannelIdsCache.Unlock()
 }
 
 // PoeLogTokenDistributionData mirrors TokenDistributionData for PoeLog aggregation.

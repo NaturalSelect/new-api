@@ -65,6 +65,9 @@ const defaultOperationsSettings: OperationsSettings = {
   'perf_metrics_setting.flush_interval': 5,
   'perf_metrics_setting.bucket_time': 'hour',
   'perf_metrics_setting.retention_days': 0,
+  'poe_log_setting.enabled': false,
+  'poe_log_setting.sync_interval': 300,
+  'poe_log_setting.key_deduplicate': true,
 }
 
 export function OperationsSettings() {

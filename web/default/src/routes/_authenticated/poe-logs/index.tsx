@@ -23,6 +23,14 @@ import { useAuthStore } from '@/stores/auth-store'
 import { ROLE } from '@/lib/roles'
 import { PoeLogs } from '@/features/poe-logs'
 
+function todayStart() {
+  return dayjs().startOf('day').valueOf()
+}
+
+function todayEnd() {
+  return dayjs().endOf('day').valueOf()
+}
+
 const poeLogsSearchSchema = z.object({
   p: z.number().optional().catch(1),
   page_size: z.number().optional().catch(undefined),
@@ -31,13 +39,17 @@ const poeLogsSearchSchema = z.object({
   usage_type: z.string().optional().catch(''),
   paid_only: z.boolean().optional().catch(true),
   startTime: z
-    .number()
-    .optional()
-    .catch(() => dayjs().startOf('day').valueOf()),
+    .preprocess(
+      (v) => (v == null ? todayStart() : v),
+      z.number()
+    )
+    .optional(),
   endTime: z
-    .number()
-    .optional()
-    .catch(() => dayjs().endOf('day').valueOf()),
+    .preprocess(
+      (v) => (v == null ? todayEnd() : v),
+      z.number()
+    )
+    .optional(),
 })
 
 export const Route = createFileRoute('/_authenticated/poe-logs/')({

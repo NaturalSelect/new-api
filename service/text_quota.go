@@ -333,21 +333,17 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 
 	// NOTE: Poe channels do not charge internal quota; actual cost is tracked
 	// via the PoeLog module (synced from the Poe usage API). When PoeLog sync
-	// is enabled, skip recording to the usage log entirely — the PoeLog table
-	// provides all cost/token data for dashboard aggregation instead.
+	// is enabled, only zero out the internal quota — real token counts are
+	// still recorded in the standard prompt_tokens/completion_tokens columns
+	// so the dashboard token distribution works correctly (including free
+	// models whose tokens are not available from the Poe usage API).
 	isPoeChannel := relayInfo.ChannelType == constant.ChannelTypePoeOpenAI ||
 		relayInfo.ChannelType == constant.ChannelTypePoeAnthropic
 	isPoeLogEnabled := isPoeChannel && operation_setting.IsPoeLogSyncEnabled()
-	var poePromptTokens, poeCompletionTokens, poeCacheTokens, poeCacheWriteTokens int
 	if isPoeLogEnabled {
-		poePromptTokens = summary.PromptTokens
-		poeCompletionTokens = summary.CompletionTokens
-		poeCacheTokens = summary.CacheTokens
-		poeCacheWriteTokens = cacheWriteTokensTotal(summary)
 		summary.Quota = 0
-		summary.PromptTokens = 0
-		summary.CompletionTokens = 0
-		summary.TotalTokens = 1
+		// NOTE: keep TotalTokens as-is; if it is 0 (free model with no usage),
+		// the downstream "no billing info" branch will fire, which is fine.
 	}
 
 	var tieredResult *billingexpr.TieredResult
@@ -479,31 +475,6 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	}
 	if isPoeLogEnabled {
 		other["billing_source"] = "poe_log"
-	}
-
-	if isPoeLogEnabled {
-		gopool.Go(func() {
-			perfmetrics.RecordRelaySample(relayInfo, true, int64(summary.CompletionTokens))
-		})
-		model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
-			ChannelId:           relayInfo.ChannelId,
-			PromptTokens:        0,
-			CompletionTokens:    0,
-			ModelName:           logModel,
-			TokenName:           summary.TokenName,
-			Quota:               0,
-			Content:             logContent,
-			TokenId:             relayInfo.TokenId,
-			UseTimeSeconds:      int(summary.UseTimeSeconds),
-			IsStream:            relayInfo.IsStream,
-			Group:               relayInfo.UsingGroup,
-			Other:               other,
-			PoePromptTokens:     poePromptTokens,
-			PoeCompletionTokens: poeCompletionTokens,
-			PoeCacheTokens:      poeCacheTokens,
-			PoeCacheWriteTokens: poeCacheWriteTokens,
-		})
-		return
 	}
 
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{

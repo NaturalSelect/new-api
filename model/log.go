@@ -45,10 +45,6 @@ type Log struct {
 	Quota             int    `json:"quota" gorm:"default:0"`
 	PromptTokens      int    `json:"prompt_tokens" gorm:"default:0"`
 	CompletionTokens  int    `json:"completion_tokens" gorm:"default:0"`
-	PoePromptTokens     int `json:"poe_prompt_tokens" gorm:"default:0"`
-	PoeCompletionTokens int `json:"poe_completion_tokens" gorm:"default:0"`
-	PoeCacheTokens      int `json:"poe_cache_tokens" gorm:"default:0"`
-	PoeCacheWriteTokens int `json:"poe_cache_write_tokens" gorm:"default:0"`
 	UseTime           int    `json:"use_time" gorm:"default:0"`
 	IsStream          bool   `json:"is_stream"`
 	ChannelId         int    `json:"channel" gorm:"index"`
@@ -211,22 +207,18 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 }
 
 type RecordConsumeLogParams struct {
-	ChannelId           int                    `json:"channel_id"`
-	PromptTokens        int                    `json:"prompt_tokens"`
-	CompletionTokens    int                    `json:"completion_tokens"`
-	ModelName           string                 `json:"model_name"`
-	TokenName           string                 `json:"token_name"`
-	Quota               int                    `json:"quota"`
-	Content             string                 `json:"content"`
-	TokenId             int                    `json:"token_id"`
-	UseTimeSeconds      int                    `json:"use_time_seconds"`
-	IsStream            bool                   `json:"is_stream"`
-	Group               string                 `json:"group"`
-	Other               map[string]interface{} `json:"other"`
-	PoePromptTokens     int                    `json:"poe_prompt_tokens"`
-	PoeCompletionTokens int                    `json:"poe_completion_tokens"`
-	PoeCacheTokens      int                    `json:"poe_cache_tokens"`
-	PoeCacheWriteTokens int                    `json:"poe_cache_write_tokens"`
+	ChannelId        int                    `json:"channel_id"`
+	PromptTokens     int                    `json:"prompt_tokens"`
+	CompletionTokens int                    `json:"completion_tokens"`
+	ModelName        string                 `json:"model_name"`
+	TokenName        string                 `json:"token_name"`
+	Quota            int                    `json:"quota"`
+	Content          string                 `json:"content"`
+	TokenId          int                    `json:"token_id"`
+	UseTimeSeconds   int                    `json:"use_time_seconds"`
+	IsStream         bool                   `json:"is_stream"`
+	Group            string                 `json:"group"`
+	Other            map[string]interface{} `json:"other"`
 }
 
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
@@ -251,12 +243,8 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		CreatedAt:        common.GetTimestamp(),
 		Type:             LogTypeConsume,
 		Content:          params.Content,
-		PromptTokens:        params.PromptTokens,
-		CompletionTokens:    params.CompletionTokens,
-		PoePromptTokens:     params.PoePromptTokens,
-		PoeCompletionTokens: params.PoeCompletionTokens,
-		PoeCacheTokens:      params.PoeCacheTokens,
-		PoeCacheWriteTokens: params.PoeCacheWriteTokens,
+		PromptTokens:     params.PromptTokens,
+		CompletionTokens: params.CompletionTokens,
 		TokenName:        params.TokenName,
 		ModelName:        params.ModelName,
 		Quota:            params.Quota,
@@ -546,13 +534,14 @@ func bucketTimestampToHour(timestamp int64) int64 {
 }
 
 func GetTokenDistribution(startTimestamp int64, endTimestamp int64, username string) ([]*TokenDistributionData, error) {
-	return GetTokenDistributionWithPoe(startTimestamp, endTimestamp, username, true)
+	return getTokenDistributionAggregated(startTimestamp, endTimestamp, username)
 }
 
-// GetTokenDistributionWithPoe aggregates token distribution from the logs table.
-// When includePoe is false, entries with billing_source "poe_log" in the other
-// field are excluded so that the PoeLog module's data is used instead.
-func GetTokenDistributionWithPoe(startTimestamp int64, endTimestamp int64, username string, includePoe bool) ([]*TokenDistributionData, error) {
+// NOTE: getTokenDistributionAggregated aggregates token distribution from the logs table.
+// NOTE: Poe channel records carry billing_source "poe_log" in the other field and have
+// NOTE: real token values in the standard prompt_tokens/completion_tokens columns, so
+// NOTE: they are included naturally — no special exclusion is needed.
+func getTokenDistributionAggregated(startTimestamp int64, endTimestamp int64, username string) ([]*TokenDistributionData, error) {
 	base := LOG_DB.Table("logs").Select("created_at, model_name, prompt_tokens, completion_tokens, other").Where("type = ?", LogTypeConsume)
 	if startTimestamp != 0 {
 		base = base.Where("created_at >= ?", startTimestamp)
@@ -562,9 +551,6 @@ func GetTokenDistributionWithPoe(startTimestamp int64, endTimestamp int64, usern
 	}
 	if username != "" {
 		base = base.Where("username = ?", username)
-	}
-	if !includePoe {
-		base = base.Where("other NOT LIKE ?", `%billing_source%poe_log%`)
 	}
 
 	type aggregateKey struct {

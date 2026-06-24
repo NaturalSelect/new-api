@@ -64,6 +64,34 @@ func LogQuotaData(userId int, username string, modelName string, quota int, crea
 	logQuotaDataCache(userId, username, modelName, quota, createdAt, tokenUsed)
 }
 
+// NOTE: LogQuotaDataPointsOnly records only Poe points (as quota) into quota_data
+// NOTE: without incrementing count or token_used. This is used by the PoeLog sync
+// NOTE: path, because the real token count is already written by RecordConsumeLog's
+// NOTE: internal LogQuotaData call — only the Poe cost points need to be added here.
+func LogQuotaDataPointsOnly(userId int, username string, modelName string, quota int, createdAt int64) {
+	createdAt = createdAt - (createdAt % 3600)
+
+	CacheQuotaDataLock.Lock()
+	defer CacheQuotaDataLock.Unlock()
+
+	key := fmt.Sprintf("%d-%s-%s-%d", userId, username, modelName, createdAt)
+	quotaData, ok := CacheQuotaData[key]
+	if ok {
+		quotaData.Quota += quota
+	} else {
+		quotaData = &QuotaData{
+			UserID:    userId,
+			Username:  username,
+			ModelName: modelName,
+			CreatedAt: createdAt,
+			Count:     0,
+			Quota:     quota,
+			TokenUsed: 0,
+		}
+	}
+	CacheQuotaData[key] = quotaData
+}
+
 func SaveQuotaDataCache() {
 	CacheQuotaDataLock.Lock()
 	defer CacheQuotaDataLock.Unlock()

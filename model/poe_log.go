@@ -237,7 +237,11 @@ func LogPoeQuotaData(channelId int, modelName string, costPoints int, createdAt 
 	if !common.DataExportEnabled {
 		return
 	}
-	LogQuotaData(0, "", modelName, costPoints, createdAt, tokenUsed)
+	// NOTE: Only record Poe cost points here. Real token counts are already
+	// NOTE: written to quota_data by RecordConsumeLog's internal LogQuotaData call,
+	// NOTE: so we must not double-count tokens or request count.
+	_ = tokenUsed // NOTE: kept for API compatibility, intentionally unused
+	LogQuotaDataPointsOnly(0, "", modelName, costPoints, createdAt)
 }
 
 var poeChannelIdsCache struct {

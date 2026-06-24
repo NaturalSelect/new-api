@@ -6,7 +6,6 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/gin-gonic/gin"
 )
@@ -72,13 +71,7 @@ func GetTokenDistribution(c *gin.Context) {
 	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
 	username := c.Query("username")
 
-	var dates []*model.TokenDistributionData
-	var err error
-	if operation_setting.IsPoeLogSyncEnabled() {
-		dates, err = model.GetTokenDistributionWithPoe(startTimestamp, endTimestamp, username, false)
-	} else {
-		dates, err = model.GetTokenDistribution(startTimestamp, endTimestamp, username)
-	}
+	dates, err := model.GetTokenDistribution(startTimestamp, endTimestamp, username)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -96,13 +89,7 @@ func GetSelfTokenDistribution(c *gin.Context) {
 	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
 	username := c.GetString("username")
 
-	var dates []*model.TokenDistributionData
-	var err error
-	if operation_setting.IsPoeLogSyncEnabled() {
-		dates, err = model.GetTokenDistributionWithPoe(startTimestamp, endTimestamp, username, false)
-	} else {
-		dates, err = model.GetTokenDistribution(startTimestamp, endTimestamp, username)
-	}
+	dates, err := model.GetTokenDistribution(startTimestamp, endTimestamp, username)
 	if err != nil {
 		common.ApiError(c, err)
 		return

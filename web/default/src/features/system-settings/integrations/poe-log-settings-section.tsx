@@ -147,7 +147,11 @@ export function PoeLogSettingsSection(props: PoeLogSettingsSectionProps) {
     if (updates.length === 0) return
 
     for (const key of updates) {
-      await updateOption.mutateAsync({ key, value: normalized[key] })
+      const value = normalized[key]
+      await updateOption.mutateAsync({
+        key,
+        value: Array.isArray(value) ? JSON.stringify(value) : value,
+      })
     }
   }
 

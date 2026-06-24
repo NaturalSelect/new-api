@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
-	"math"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -547,16 +547,20 @@ func extractBreakdownTokens(breakdown map[string]string, key string) int {
 // recordPoeConsumeLogFromEntry creates a Log entry from a PoeLog entry and returns the Log ID.
 func recordPoeConsumeLogFromEntry(entry *model.PoeLog, channelId int) int {
 	costFloat, _ := strconv.ParseFloat(entry.CostUsd, 64)
+	// NOTE: Skip syncing Poe logs with zero cost — no usage to bill.
+	if costFloat == 0 {
+		return 0
+	}
 	quota := int(math.Round(costFloat * common.QuotaPerUnit))
 	createdAt := entry.CreationTime / 1_000_000
 	other := map[string]interface{}{
-		"billing_source":      "poe_log_sync",
-		"cost_points":         entry.CostPoints,
-		"cost_usd":            entry.CostUsd,
-		"cache_tokens":        entry.CacheTokens,
-		"cache_write_tokens":  entry.CacheWriteTokens,
-		"query_id":            entry.QueryId,
-		"usage_type":          entry.UsageType,
+		"billing_source":     "poe_log_sync",
+		"cost_points":        entry.CostPoints,
+		"cost_usd":           entry.CostUsd,
+		"cache_tokens":       entry.CacheTokens,
+		"cache_write_tokens": entry.CacheWriteTokens,
+		"query_id":           entry.QueryId,
+		"usage_type":         entry.UsageType,
 	}
 	return model.RecordPoeConsumeLog(model.RecordPoeConsumeLogParams{
 		ChannelId:        channelId,

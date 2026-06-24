@@ -109,6 +109,7 @@ const OPERATIONS_SECTIONS = [
           'poe_log_setting.sync_interval': settings['poe_log_setting.sync_interval'] ?? 300,
           'poe_log_setting.key_deduplicate': settings['poe_log_setting.key_deduplicate'] ?? true,
           'poe_log_setting.free_models': settings['poe_log_setting.free_models'] ?? [],
+          'poe_log_setting.sync_to_consume_log': settings['poe_log_setting.sync_to_consume_log'] ?? true,
         }}
       />
     ),

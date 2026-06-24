@@ -51,6 +51,7 @@ const poeLogSchema = z.object({
       .min(1, 'Interval must be at least 1 second'),
     key_deduplicate: z.boolean(),
     free_models: z.string(),
+    sync_to_consume_log: z.boolean(),
   }),
 })
 
@@ -63,6 +64,7 @@ type PoeLogSettingsSectionProps = {
     'poe_log_setting.sync_interval': number
     'poe_log_setting.key_deduplicate': boolean
     'poe_log_setting.free_models': string[] | string
+    'poe_log_setting.sync_to_consume_log': boolean
   }
 }
 
@@ -71,6 +73,7 @@ type NormalizedPoeLogValues = {
   'poe_log_setting.sync_interval': number
   'poe_log_setting.key_deduplicate': boolean
   'poe_log_setting.free_models': string[]
+  'poe_log_setting.sync_to_consume_log': boolean
 }
 
 function areNormalizedValuesEqual(
@@ -97,6 +100,7 @@ const buildFormDefaults = (
     free_models: Array.isArray(defaults['poe_log_setting.free_models'])
       ? (defaults['poe_log_setting.free_models'] as string[]).join(', ')
       : (defaults['poe_log_setting.free_models'] as string) || '',
+    sync_to_consume_log: defaults['poe_log_setting.sync_to_consume_log'],
   },
 })
 
@@ -111,6 +115,8 @@ const normalizeDefaults = (
   )
     ? (defaults['poe_log_setting.free_models'] as string[])
     : [],
+  'poe_log_setting.sync_to_consume_log':
+    defaults['poe_log_setting.sync_to_consume_log'],
 })
 
 const normalizeFormValues = (
@@ -119,6 +125,8 @@ const normalizeFormValues = (
   'poe_log_setting.enabled': values.poe_log_setting.enabled,
   'poe_log_setting.sync_interval': values.poe_log_setting.sync_interval,
   'poe_log_setting.key_deduplicate': values.poe_log_setting.key_deduplicate,
+  'poe_log_setting.sync_to_consume_log':
+    values.poe_log_setting.sync_to_consume_log,
   'poe_log_setting.free_models': values.poe_log_setting.free_models
     .split(',')
     .map((model) => model.trim())
@@ -221,6 +229,29 @@ export function PoeLogSettingsSection(props: PoeLogSettingsSectionProps) {
                     <FormLabel>{t('Key deduplication')}</FormLabel>
                     <FormDescription>
                       {t('When enabled, channels sharing the same API key only fetch history once, avoiding duplicate API calls. The results are assigned to all channels sharing that key.')}
+                    </FormDescription>
+                  </SettingsSwitchContent>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                </SettingsSwitchItem>
+              )}
+            />
+          </div>
+
+          <div className='grid gap-6 md:grid-cols-2'>
+            <FormField
+              control={form.control}
+              name='poe_log_setting.sync_to_consume_log'
+              render={({ field }) => (
+                <SettingsSwitchItem>
+                  <SettingsSwitchContent>
+                    <FormLabel>{t('Sync to consume log')}</FormLabel>
+                    <FormDescription>
+                      {t('When enabled, each synced Poe log entry also creates a consume log record for billing. Disable to only store Poe logs without generating consume log entries.')}
                     </FormDescription>
                   </SettingsSwitchContent>
                   <FormControl>

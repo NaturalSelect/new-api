@@ -311,6 +311,7 @@ export type OperationsSettings = {
   'poe_log_setting.sync_interval': number
   'poe_log_setting.key_deduplicate': boolean
   'poe_log_setting.free_models': string[]
+  'poe_log_setting.sync_to_consume_log': boolean
 }
 
 export type SecuritySettings = {

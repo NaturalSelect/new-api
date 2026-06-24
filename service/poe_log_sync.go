@@ -546,6 +546,9 @@ func extractBreakdownTokens(breakdown map[string]string, key string) int {
 
 // recordPoeConsumeLogFromEntry creates a Log entry from a PoeLog entry and returns the Log ID.
 func recordPoeConsumeLogFromEntry(entry *model.PoeLog, channelId int) int {
+	if !operation_setting.IsPoeLogSyncToConsumeLogEnabled() {
+		return 0
+	}
 	costFloat, _ := strconv.ParseFloat(entry.CostUsd, 64)
 	// NOTE: Skip syncing Poe logs with zero cost — no usage to bill.
 	if costFloat == 0 {

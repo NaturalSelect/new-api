@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -30,6 +29,7 @@ type PoeLog struct {
 	CompletionTokens int    `json:"completion_tokens" gorm:"default:0"`
 	CacheTokens      int    `json:"cache_tokens" gorm:"default:0"`       // cache read (Cache discount)
 	CacheWriteTokens int    `json:"cache_write_tokens" gorm:"default:0"` // cache write (Cache write)
+	LogId            int    `json:"log_id" gorm:"default:0;index"`
 	ChannelName      string `json:"channel_name" gorm:"-"`
 	SyncedAt         int64  `json:"synced_at" gorm:"default:0"` // unix timestamp when this record was synced
 }
@@ -64,9 +64,24 @@ func BulkCreatePoeLogsIgnoreDuplicates(entries []*PoeLog) (int64, error) {
 	return result.RowsAffected, nil
 }
 
-// NOTE: ClearPoeLogs deletes PoeLog records and related sync state for re-syncing.
-// NOTE: When channelId is 0, all records are deleted; otherwise only the given channel is deleted.
+// NOTE: ClearPoeLogs deletes PoeLog records and related Log entries, then resets sync state.
+// When channelId is 0, all records are deleted; otherwise only the given channel is deleted.
 func ClearPoeLogs(channelId int) (int64, error) {
+	// NOTE: Collect log_id values from PoeLog entries being deleted so we can
+	// also remove the corresponding Log entries (which may be in a different database).
+	var logIds []int
+	idQuery := DB.Model(&PoeLog{})
+	if channelId != 0 {
+		idQuery = idQuery.Where("channel_id = ?", channelId)
+	}
+	idQuery.Where("log_id > 0").Pluck("log_id", &logIds)
+
+	if len(logIds) > 0 {
+		if err := LOG_DB.Where("id IN ?", logIds).Delete(&Log{}).Error; err != nil {
+			common.SysError(fmt.Sprintf("clear poe log: delete related Log entries failed: %v", err))
+		}
+	}
+
 	tx := DB.Where("1=1")
 	if channelId != 0 {
 		tx = tx.Where("channel_id = ?", channelId)
@@ -228,118 +243,6 @@ func GetPoeLogSyncState(channelId int) (PoeLogSyncState, error) {
 		return PoeLogSyncState{ChannelId: channelId}, nil
 	}
 	return state, err
-}
-
-// LogPoeQuotaData writes PoeLog data into the quota_data cache used by the dashboard.
-// This mirrors LogQuotaData but for Poe-sourced records, so dashboard reads from the
-// pre-aggregated quota_data table instead of doing full table scans on poe_logs.
-func LogPoeQuotaData(channelId int, modelName string, costPoints int, createdAt int64, tokenUsed int) {
-	if !common.DataExportEnabled {
-		return
-	}
-	// NOTE: Only record Poe cost points here. Real token counts are already
-	// NOTE: written to quota_data by RecordConsumeLog's internal LogQuotaData call,
-	// NOTE: so we must not double-count tokens or request count.
-	_ = tokenUsed // NOTE: kept for API compatibility, intentionally unused
-	LogQuotaDataPointsOnly(0, "", modelName, costPoints, createdAt)
-}
-
-var poeChannelIdsCache struct {
-	sync.RWMutex
-	m map[string][]int
-}
-
-func init() {
-	poeChannelIdsCache.m = make(map[string][]int)
-}
-
-// getChannelIdsByUsername looks up channel IDs owned by a user through their tokens.
-// Results are cached to avoid repeated JOINs on every dashboard request.
-func getChannelIdsByUsername(username string) ([]int, error) {
-	poeChannelIdsCache.RLock()
-	if ids, ok := poeChannelIdsCache.m[username]; ok {
-		poeChannelIdsCache.RUnlock()
-		return ids, nil
-	}
-	poeChannelIdsCache.RUnlock()
-
-	var channelIds []int
-	err := DB.Model(&Channel{}).
-		Joins("JOIN tokens ON tokens.channel_id = channels.id").
-		Where("tokens.name = ?", username).
-		Distinct("channels.id").
-		Pluck("channels.id", &channelIds).Error
-	if err != nil {
-		return nil, err
-	}
-
-	poeChannelIdsCache.Lock()
-	poeChannelIdsCache.m[username] = channelIds
-	poeChannelIdsCache.Unlock()
-
-	return channelIds, nil
-}
-
-func InvalidatePoeChannelIdsCache() {
-	poeChannelIdsCache.Lock()
-	poeChannelIdsCache.m = make(map[string][]int)
-	poeChannelIdsCache.Unlock()
-}
-
-// PoeLogTokenDistributionData mirrors TokenDistributionData for PoeLog aggregation.
-type PoeLogTokenDistributionData struct {
-	CreatedAt        int64  `json:"created_at" gorm:"column:created_at"`
-	ModelName        string `json:"model_name" gorm:"column:model_name"`
-	InputTokens      int64  `json:"input_tokens" gorm:"column:total_prompt_tokens"`
-	OutputTokens     int64  `json:"output_tokens" gorm:"column:total_completion_tokens"`
-	CacheReadTokens  int64  `json:"cache_read_tokens" gorm:"column:total_cache_tokens"`
-	CacheWriteTokens int64  `json:"cache_write_tokens" gorm:"column:total_cache_write_tokens"`
-	Count            int    `json:"count" gorm:"column:cnt"`
-}
-
-// GetPoeLogTokenDistribution aggregates PoeLog records into hourly buckets by bot_name,
-// returning data compatible with the token distribution format used by dashboard charts.
-func GetPoeLogTokenDistribution(startTimestamp, endTimestamp int64, username string) ([]*PoeLogTokenDistributionData, error) {
-	tx := DB.Model(&PoeLog{})
-	if startTimestamp != 0 {
-		tx = tx.Where("creation_time >= ?", startTimestamp*1_000_000)
-	}
-	if endTimestamp != 0 {
-		tx = tx.Where("creation_time <= ?", endTimestamp*1_000_000)
-	}
-	if username != "" {
-		channelIds, err := getChannelIdsByUsername(username)
-		if err != nil {
-			return nil, err
-		}
-		if len(channelIds) == 0 {
-			return nil, nil
-		}
-		tx = tx.Where("channel_id IN ?", channelIds)
-	}
-
-	hourBucket := fmt.Sprintf("(%s / 1000000 / 3600 * 3600)", poeCreationTimeCol())
-	var results []*PoeLogTokenDistributionData
-	err := tx.
-		Select("bot_name AS model_name, " +
-			hourBucket + " AS created_at, " +
-			"SUM(prompt_tokens) AS total_prompt_tokens, " +
-			"SUM(completion_tokens) AS total_completion_tokens, " +
-			"SUM(cache_tokens) AS total_cache_tokens, " +
-			"SUM(cache_write_tokens) AS total_cache_write_tokens, " +
-			"COUNT(*) AS cnt").
-		Group("bot_name, " + hourBucket).
-		Find(&results).Error
-	return results, err
-}
-
-// poeCreationTimeCol returns the quoted column name for creation_time,
-// which is needed for PostgreSQL-compatible integer division in GROUP BY.
-func poeCreationTimeCol() string {
-	if common.UsingPostgreSQL {
-		return `"creation_time"`
-	}
-	return "`creation_time`"
 }
 
 func MigratePoeLogBotNameLower() error {

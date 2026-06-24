@@ -317,6 +317,59 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 	}
 }
 
+// RecordPoeConsumeLogParams holds parameters for creating a Log entry from PoeLog sync data.
+type RecordPoeConsumeLogParams struct {
+	ChannelId        int
+	ModelName        string
+	Quota            int
+	PromptTokens     int
+	CompletionTokens int
+	CreatedAt        int64
+	Other            map[string]interface{}
+}
+
+// RecordPoeConsumeLog creates a Log entry for a PoeLog sync record without requiring
+// *gin.Context. It also populates quota_data for the dashboard via LogQuotaData.
+// The log entry is attributed to the root user since PoeLog billing is a system-level cost.
+// Returns the created Log entry's ID for back-reference from PoeLog.LogId.
+func RecordPoeConsumeLog(params RecordPoeConsumeLogParams) int {
+	if !common.LogConsumeEnabled {
+		return 0
+	}
+	// NOTE: Attribute PoeLog billing to the root user so dashboard per-user views
+	// can display Poe costs correctly instead of orphaned entries with userId=0.
+	rootUser := GetRootUser()
+	userId := 0
+	username := ""
+	if rootUser != nil {
+		userId = rootUser.Id
+		username = rootUser.Username
+	}
+	log := &Log{
+		UserId:           userId,
+		Username:         username,
+		CreatedAt:        params.CreatedAt,
+		Type:             LogTypeConsume,
+		Content:          "",
+		PromptTokens:     params.PromptTokens,
+		CompletionTokens: params.CompletionTokens,
+		ModelName:        params.ModelName,
+		Quota:            params.Quota,
+		ChannelId:        params.ChannelId,
+		Other:            common.MapToJsonStr(params.Other),
+	}
+	if err := LOG_DB.Create(log).Error; err != nil {
+		common.SysLog("failed to record poe consume log: " + err.Error())
+		return 0
+	}
+	if common.DataExportEnabled {
+		gopool.Go(func() {
+			LogQuotaData(userId, username, params.ModelName, params.Quota, params.CreatedAt, params.PromptTokens+params.CompletionTokens)
+		})
+	}
+	return log.Id
+}
+
 func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, startIdx int, num int, channel int, group string, requestId string, upstreamRequestId string) (logs []*Log, total int64, err error) {
 	var tx *gorm.DB
 	if logType == LogTypeUnknown {

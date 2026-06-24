@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"math"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -205,10 +206,22 @@ func syncPoeChannelsWithKeyDedup(ctx context.Context, channels []*model.Channel)
 				logger.LogWarn(ctx, fmt.Sprintf("poe log sync (key dedup): update sync state for channel_id=%d failed: %v", ch.Id, err))
 			}
 			if inserted > 0 {
-				for _, entry := range channelEntries {
-					createdAt := entry.CreationTime/1_000_000 - (entry.CreationTime / 1_000_000 % 3600)
-					tokenUsed := entry.PromptTokens + entry.CompletionTokens + entry.CacheTokens + entry.CacheWriteTokens
-					model.LogPoeQuotaData(ch.Id, entry.BotName, entry.CostPoints, createdAt, tokenUsed)
+				// NOTE: Query back newly inserted entries to get their DB-assigned IDs.
+				// Only entries with log_id=0 are ones we haven't yet created Log entries for.
+				queryIds := make([]string, 0, len(channelEntries))
+				for _, e := range channelEntries {
+					queryIds = append(queryIds, e.QueryId)
+				}
+				var newEntries []*model.PoeLog
+				if err := model.DB.Where("query_id IN ? AND log_id = 0", queryIds).Find(&newEntries).Error; err != nil {
+					logger.LogWarn(ctx, fmt.Sprintf("poe log sync (key dedup): channel_id=%d query back new entries failed: %v", ch.Id, err))
+				} else {
+					for _, entry := range newEntries {
+						logId := recordPoeConsumeLogFromEntry(entry, ch.Id)
+						if logId > 0 {
+							model.DB.Model(&model.PoeLog{}).Where("id = ?", entry.Id).Update("log_id", logId)
+						}
+					}
 				}
 				logger.LogInfo(ctx, fmt.Sprintf("poe log sync (key dedup): channel_id=%d name=%s synced %d new entries", ch.Id, ch.Name, inserted))
 			}
@@ -345,10 +358,22 @@ func syncPoeChannelLogs(ctx context.Context, channel *model.Channel) error {
 	}
 
 	if inserted > 0 {
-		for _, entry := range entries {
-			createdAt := entry.CreationTime/1_000_000 - (entry.CreationTime / 1_000_000 % 3600)
-			tokenUsed := entry.PromptTokens + entry.CompletionTokens + entry.CacheTokens + entry.CacheWriteTokens
-			model.LogPoeQuotaData(channel.Id, entry.BotName, entry.CostPoints, createdAt, tokenUsed)
+		// NOTE: Query back newly inserted entries to get their DB-assigned IDs.
+		// Only entries with log_id=0 are ones we haven't yet created Log entries for.
+		queryIds := make([]string, 0, len(entries))
+		for _, e := range entries {
+			queryIds = append(queryIds, e.QueryId)
+		}
+		var newEntries []*model.PoeLog
+		if err := model.DB.Where("query_id IN ? AND log_id = 0", queryIds).Find(&newEntries).Error; err != nil {
+			logger.LogWarn(ctx, fmt.Sprintf("poe log sync: channel_id=%d query back new entries failed: %v", channel.Id, err))
+		} else {
+			for _, entry := range newEntries {
+				logId := recordPoeConsumeLogFromEntry(entry, channel.Id)
+				if logId > 0 {
+					model.DB.Model(&model.PoeLog{}).Where("id = ?", entry.Id).Update("log_id", logId)
+				}
+			}
 		}
 	}
 
@@ -517,4 +542,29 @@ func extractBreakdownTokens(breakdown map[string]string, key string) int {
 		return 0
 	}
 	return n
+}
+
+// recordPoeConsumeLogFromEntry creates a Log entry from a PoeLog entry and returns the Log ID.
+func recordPoeConsumeLogFromEntry(entry *model.PoeLog, channelId int) int {
+	costFloat, _ := strconv.ParseFloat(entry.CostUsd, 64)
+	quota := int(math.Round(costFloat * common.QuotaPerUnit))
+	createdAt := entry.CreationTime / 1_000_000
+	other := map[string]interface{}{
+		"billing_source":      "poe_log_sync",
+		"cost_points":         entry.CostPoints,
+		"cost_usd":            entry.CostUsd,
+		"cache_tokens":        entry.CacheTokens,
+		"cache_write_tokens":  entry.CacheWriteTokens,
+		"query_id":            entry.QueryId,
+		"usage_type":          entry.UsageType,
+	}
+	return model.RecordPoeConsumeLog(model.RecordPoeConsumeLogParams{
+		ChannelId:        channelId,
+		ModelName:        entry.BotName,
+		Quota:            quota,
+		PromptTokens:     entry.PromptTokens,
+		CompletionTokens: entry.CompletionTokens,
+		CreatedAt:        createdAt,
+		Other:            other,
+	})
 }

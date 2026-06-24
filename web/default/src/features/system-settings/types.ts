@@ -31,7 +31,7 @@ export type SystemOptionsResponse = {
 
 export type UpdateOptionRequest = {
   key: string
-  value: string | boolean | number
+  value: string | boolean | number | string[]
 }
 
 export type UpdateOptionResponse = {
@@ -310,6 +310,7 @@ export type OperationsSettings = {
   'poe_log_setting.enabled': boolean
   'poe_log_setting.sync_interval': number
   'poe_log_setting.key_deduplicate': boolean
+  'poe_log_setting.free_models': string[]
 }
 
 export type SecuritySettings = {

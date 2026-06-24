@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -8,8 +9,8 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
-	"github.com/samber/lo"
 	"github.com/gin-gonic/gin"
+	"github.com/samber/lo"
 )
 
 // GetAllPoeLogs returns a paginated list of Poe log entries.
@@ -92,5 +93,29 @@ func TriggerPoeLogSync(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "sync completed",
+	})
+}
+
+// NOTE: ClearPoeLogs clears Poe log entries to allow re-syncing from scratch.
+// NOTE: When channel_id is 0 or omitted, all Poe logs are cleared.
+func ClearPoeLogs(c *gin.Context) {
+	var req struct {
+		ChannelId int `json:"channel_id" form:"channel_id"`
+	}
+	if err := c.ShouldBind(&req); err != nil {
+		common.ApiError(c, fmt.Errorf("invalid request: %w", err))
+		return
+	}
+	deleted, err := model.ClearPoeLogs(req.ChannelId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "cleared",
+		"data": gin.H{
+			"deleted": deleted,
+		},
 	})
 }

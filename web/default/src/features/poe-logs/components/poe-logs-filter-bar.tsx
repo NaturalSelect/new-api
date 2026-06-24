@@ -17,11 +17,24 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useIsFetching, useQueryClient } from '@tanstack/react-query'
+import { useIsFetching, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import { type Table } from '@tanstack/react-table'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { useIsAdmin } from '@/hooks/use-admin'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
+import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
   Select,
@@ -37,6 +50,7 @@ import {
   LogsFilterInput,
   LogsFilterToolbar,
 } from '@/features/usage-logs/components/logs-filter-toolbar'
+import { clearPoeLogs } from '../api'
 import type { PoeLogsFilters } from '../types'
 import { PoeLogsStats } from './poe-logs-stats'
 
@@ -80,6 +94,7 @@ export function PoeLogsFilterBar<TData>(props: PoeLogsFilterBarProps<TData>) {
   const searchParams = route.useSearch()
   const isAdmin = useIsAdmin()
   const fetchingLogs = useIsFetching({ queryKey: ['poe-logs'] })
+  const [clearDialogOpen, setClearDialogOpen] = useState(false)
   const [filters, setFilters] = useState<PoeLogsFilters>(() => {
     const { start, end } = getDefaultTimeRange()
     return {
@@ -163,6 +178,26 @@ export function PoeLogsFilterBar<TData>(props: PoeLogsFilterBarProps<TData>) {
     queryClient.invalidateQueries({ queryKey: ['poe-logs'] })
     queryClient.invalidateQueries({ queryKey: ['poe-logs-stats'] })
   }, [navigate, queryClient, searchParams.page_size])
+
+  const clearLogsMutation = useMutation({
+    mutationFn: clearPoeLogs,
+    onSuccess: (result) => {
+      if (!result.success) {
+        toast.error(t('Failed to clear logs'))
+        return
+      }
+
+      toast.success(
+        t('Cleared {{count}} logs', { count: result.data?.deleted ?? 0 })
+      )
+      setClearDialogOpen(false)
+      queryClient.invalidateQueries({ queryKey: ['poe-logs'] })
+      queryClient.invalidateQueries({ queryKey: ['poe-logs-stats'] })
+    },
+    onError: () => {
+      toast.error(t('Failed to clear logs'))
+    },
+  })
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -264,13 +299,54 @@ export function PoeLogsFilterBar<TData>(props: PoeLogsFilterBarProps<TData>) {
       </Select>
     </LogsFilterField>
   )
+  const poeLogsStats = (
+    <div className='flex flex-wrap items-center gap-2'>
+      <PoeLogsStats />
+      <AlertDialog open={clearDialogOpen} onOpenChange={setClearDialogOpen}>
+        <AlertDialogTrigger
+          render={
+            <Button
+              type='button'
+              variant='destructive'
+              disabled={clearLogsMutation.isPending}
+            />
+          }
+        >
+          {t('Clear Logs')}
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('Clear All Poe Logs')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t(
+                'This will delete all synced Poe log entries. The next sync will re-fetch them from scratch. This action cannot be undone.'
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={clearLogsMutation.isPending}>
+              {t('Cancel')}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              type='button'
+              variant='destructive'
+              onClick={() => clearLogsMutation.mutate(0)}
+              disabled={clearLogsMutation.isPending}
+            >
+              {t('Clear')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  )
 
   if (!isAdmin) return null
 
   return (
     <LogsFilterToolbar
       table={props.table}
-      stats={<PoeLogsStats />}
+      stats={poeLogsStats}
       primaryFilters={
         <>
           {dateRangeFilter}

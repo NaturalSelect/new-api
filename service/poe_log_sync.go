@@ -439,12 +439,13 @@ func fetchPoeFreeModels(ctx context.Context, channel *model.Channel) map[string]
 		baseURL = "https://api.poe.com"
 	}
 	apiKey := strings.TrimSpace(channel.Key)
+	configFreeModels := operation_setting.GetPoeFreeModels()
 
 	url := baseURL + "/v1/models"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		logger.LogWarn(ctx, fmt.Sprintf("poe log sync: fetch models build request failed: %v", err))
-		return nil
+		return configFreeModels
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Accept", "application/json")
@@ -456,32 +457,32 @@ func fetchPoeFreeModels(ctx context.Context, channel *model.Channel) map[string]
 	client, err := NewProxyHttpClient(proxyURL)
 	if err != nil {
 		logger.LogWarn(ctx, fmt.Sprintf("poe log sync: fetch models create http client failed: %v", err))
-		return nil
+		return configFreeModels
 	}
 
 	resp, err := client.Do(req)
 	if err != nil {
 		logger.LogWarn(ctx, fmt.Sprintf("poe log sync: fetch models request failed: %v", err))
-		return nil
+		return configFreeModels
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		logger.LogWarn(ctx, fmt.Sprintf("poe log sync: fetch models HTTP %d: %s", resp.StatusCode, string(body)))
-		return nil
+		return configFreeModels
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		logger.LogWarn(ctx, fmt.Sprintf("poe log sync: fetch models read body failed: %v", err))
-		return nil
+		return configFreeModels
 	}
 
 	var result poeModelsResponse
 	if err := common.Unmarshal(body, &result); err != nil {
 		logger.LogWarn(ctx, fmt.Sprintf("poe log sync: fetch models unmarshal failed: %v", err))
-		return nil
+		return configFreeModels
 	}
 
 	freeSet := make(map[string]bool, len(result.Data))
@@ -489,6 +490,10 @@ func fetchPoeFreeModels(ctx context.Context, channel *model.Channel) map[string]
 		if isPoeFreeModel(m) {
 			freeSet[strings.ToLower(m.Id)] = true
 		}
+	}
+	// NOTE: Merge manually configured Poe free models with API-discovered free models.
+	for name := range configFreeModels {
+		freeSet[name] = true
 	}
 	return freeSet
 }

@@ -62,3 +62,10 @@ export async function triggerPoeLogSync(
   const res = await api.post('/api/poe_log/sync', { channel_id: channelId })
   return res.data
 }
+
+export async function clearPoeLogs(
+  channelId: number = 0
+): Promise<{ success: boolean; message: string; data?: { deleted: number } }> {
+  const res = await api.post('/api/poe_log/clear', { channel_id: channelId })
+  return res.data
+}

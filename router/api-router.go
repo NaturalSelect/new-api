@@ -354,6 +354,7 @@ func SetApiRouter(router *gin.Engine) {
 			poeLogRoute.GET("/", controller.GetAllPoeLogs)
 			poeLogRoute.GET("/stat", controller.GetPoeLogStats)
 			poeLogRoute.POST("/sync", controller.TriggerPoeLogSync)
+			poeLogRoute.POST("/clear", controller.ClearPoeLogs)
 		}
 
 		vendorRoute := apiRouter.Group("/vendors")

@@ -45,8 +45,12 @@ import { safeNumberFieldProps } from '../utils/numeric-field'
 const poeLogSchema = z.object({
   poe_log_setting: z.object({
     enabled: z.boolean(),
-    sync_interval: z.coerce.number().int().min(1, 'Interval must be at least 1 second'),
+    sync_interval: z.coerce
+      .number()
+      .int()
+      .min(1, 'Interval must be at least 1 second'),
     key_deduplicate: z.boolean(),
+    free_models: z.string(),
   }),
 })
 
@@ -58,6 +62,7 @@ type PoeLogSettingsSectionProps = {
     'poe_log_setting.enabled': boolean
     'poe_log_setting.sync_interval': number
     'poe_log_setting.key_deduplicate': boolean
+    'poe_log_setting.free_models': string[] | string
   }
 }
 
@@ -65,6 +70,21 @@ type NormalizedPoeLogValues = {
   'poe_log_setting.enabled': boolean
   'poe_log_setting.sync_interval': number
   'poe_log_setting.key_deduplicate': boolean
+  'poe_log_setting.free_models': string[]
+}
+
+function areNormalizedValuesEqual(
+  value: NormalizedPoeLogValues[keyof NormalizedPoeLogValues],
+  baseline: NormalizedPoeLogValues[keyof NormalizedPoeLogValues]
+): boolean {
+  if (Array.isArray(value) && Array.isArray(baseline)) {
+    return (
+      value.length === baseline.length &&
+      value.every((model, index) => model === baseline[index])
+    )
+  }
+
+  return value === baseline
 }
 
 const buildFormDefaults = (
@@ -74,6 +94,9 @@ const buildFormDefaults = (
     enabled: defaults['poe_log_setting.enabled'],
     sync_interval: defaults['poe_log_setting.sync_interval'],
     key_deduplicate: defaults['poe_log_setting.key_deduplicate'],
+    free_models: Array.isArray(defaults['poe_log_setting.free_models'])
+      ? (defaults['poe_log_setting.free_models'] as string[]).join(', ')
+      : (defaults['poe_log_setting.free_models'] as string) || '',
   },
 })
 
@@ -83,6 +106,11 @@ const normalizeDefaults = (
   'poe_log_setting.enabled': defaults['poe_log_setting.enabled'],
   'poe_log_setting.sync_interval': defaults['poe_log_setting.sync_interval'],
   'poe_log_setting.key_deduplicate': defaults['poe_log_setting.key_deduplicate'],
+  'poe_log_setting.free_models': Array.isArray(
+    defaults['poe_log_setting.free_models']
+  )
+    ? (defaults['poe_log_setting.free_models'] as string[])
+    : [],
 })
 
 const normalizeFormValues = (
@@ -91,28 +119,30 @@ const normalizeFormValues = (
   'poe_log_setting.enabled': values.poe_log_setting.enabled,
   'poe_log_setting.sync_interval': values.poe_log_setting.sync_interval,
   'poe_log_setting.key_deduplicate': values.poe_log_setting.key_deduplicate,
+  'poe_log_setting.free_models': values.poe_log_setting.free_models
+    .split(',')
+    .map((model) => model.trim())
+    .filter((model) => model !== ''),
 })
 
-export function PoeLogSettingsSection({
-  defaultValues,
-}: PoeLogSettingsSectionProps) {
+export function PoeLogSettingsSection(props: PoeLogSettingsSectionProps) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
 
   const form = useForm<PoeLogFormInput, unknown, PoeLogFormValues>({
     resolver: zodResolver(poeLogSchema),
-    defaultValues: buildFormDefaults(defaultValues),
+    defaultValues: buildFormDefaults(props.defaultValues),
   })
 
-  useResetForm(form, buildFormDefaults(defaultValues))
+  useResetForm(form, buildFormDefaults(props.defaultValues))
 
   const onSubmit = async (values: PoeLogFormValues) => {
     const normalized = normalizeFormValues(values)
-    const baseline = normalizeDefaults(defaultValues)
+    const baseline = normalizeDefaults(props.defaultValues)
 
     const updates = (
       Object.keys(normalized) as Array<keyof NormalizedPoeLogValues>
-    ).filter((key) => normalized[key] !== baseline[key])
+    ).filter((key) => !areNormalizedValuesEqual(normalized[key], baseline[key]))
 
     if (updates.length === 0) return
 
@@ -196,6 +226,30 @@ export function PoeLogSettingsSection({
                     />
                   </FormControl>
                 </SettingsSwitchItem>
+              )}
+            />
+          </div>
+
+          <div className='grid gap-6 md:grid-cols-2'>
+            <FormField
+              control={form.control}
+              name='poe_log_setting.free_models'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Free Models')}</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder={t('e.g. GPT-3.5-Turbo, Claude-Instant')}
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    {t(
+                      'Comma-separated list of model names treated as free (no points charged). These are merged with models auto-detected from the Poe API.'
+                    )}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
               )}
             />
           </div>

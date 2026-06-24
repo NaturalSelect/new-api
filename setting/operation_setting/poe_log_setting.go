@@ -1,11 +1,16 @@
 package operation_setting
 
-import "github.com/QuantumNous/new-api/setting/config"
+import (
+	"strings"
+
+	"github.com/QuantumNous/new-api/setting/config"
+)
 
 type PoeLogSetting struct {
-	Enabled        bool `json:"enabled"`
-	SyncInterval   int  `json:"sync_interval"`   // seconds
-	KeyDeduplicate bool `json:"key_deduplicate"` // deduplicate API keys across channels
+	Enabled        bool     `json:"enabled"`
+	SyncInterval   int      `json:"sync_interval"`   // seconds
+	KeyDeduplicate bool     `json:"key_deduplicate"` // deduplicate API keys across channels
+	FreeModels     []string `json:"free_models"`     // manually configured free model names
 }
 
 var poeLogSetting = PoeLogSetting{
@@ -35,4 +40,19 @@ func GetPoeLogSyncIntervalSeconds() int {
 
 func IsPoeLogKeyDeduplicate() bool {
 	return poeLogSetting.KeyDeduplicate
+}
+
+// NOTE: GetPoeFreeModels returns configured free model names as a lowercase lookup set.
+func GetPoeFreeModels() map[string]bool {
+	if len(poeLogSetting.FreeModels) == 0 {
+		return nil
+	}
+	set := make(map[string]bool, len(poeLogSetting.FreeModels))
+	for _, m := range poeLogSetting.FreeModels {
+		m = strings.ToLower(strings.TrimSpace(m))
+		if m != "" {
+			set[m] = true
+		}
+	}
+	return set
 }

@@ -64,6 +64,30 @@ func BulkCreatePoeLogsIgnoreDuplicates(entries []*PoeLog) (int64, error) {
 	return result.RowsAffected, nil
 }
 
+// NOTE: ClearPoeLogs deletes PoeLog records and related sync state for re-syncing.
+// NOTE: When channelId is 0, all records are deleted; otherwise only the given channel is deleted.
+func ClearPoeLogs(channelId int) (int64, error) {
+	tx := DB.Where("1=1")
+	if channelId != 0 {
+		tx = tx.Where("channel_id = ?", channelId)
+	}
+	result := tx.Delete(&PoeLog{})
+	if result.Error != nil {
+		return 0, result.Error
+	}
+
+	stateTx := DB.Where("1=1")
+	if channelId != 0 {
+		stateTx = stateTx.Where("channel_id = ?", channelId)
+	}
+	if err := stateTx.Delete(&PoeLogSyncState{}).Error; err != nil {
+		// NOTE: Logs are already deleted; keep clear successful and only record sync-state reset failure.
+		common.SysError(fmt.Sprintf("clear poe log sync state failed: %v", err))
+	}
+
+	return result.RowsAffected, nil
+}
+
 // QueryPoeLogsParams holds filter parameters for querying PoeLog records.
 type QueryPoeLogsParams struct {
 	ChannelId      int
@@ -170,7 +194,7 @@ func GetPoeLogStats(channelId int, startTimestamp, endTimestamp int64, paidOnly 
 
 	return PoeLogStats{
 		TotalPoints:           r.TotalPoints,
-		TotalUsd:             fmt.Sprintf("%.6f", r.TotalCostUsd),
+		TotalUsd:              fmt.Sprintf("%.6f", r.TotalCostUsd),
 		Count:                 r.Count,
 		TotalPromptTokens:     r.TotalPromptTokens,
 		TotalCompletionTokens: r.TotalCompletionTokens,

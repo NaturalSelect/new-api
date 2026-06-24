@@ -68,6 +68,7 @@ const defaultOperationsSettings: OperationsSettings = {
   'poe_log_setting.enabled': false,
   'poe_log_setting.sync_interval': 300,
   'poe_log_setting.key_deduplicate': true,
+  'poe_log_setting.free_models': [],
 }
 
 export function OperationsSettings() {

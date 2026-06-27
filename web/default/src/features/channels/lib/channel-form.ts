@@ -199,6 +199,7 @@ export const channelFormSchema = z
     allow_speed: z.boolean().optional(), // Anthropic: speed mode control
     claude_beta_query: z.boolean().optional(), // Anthropic: beta query passthrough
     claude_code_disguise: z.boolean().optional(), // NOTE: Claude Code CLI request disguise
+    codex_disguise: z.boolean().optional(), // NOTE: Codex CLI request disguise
     auto_cache_control: z.boolean().optional(), // NOTE: Automatic prompt cache control
     // Upstream model update settings (stored in settings JSON)
     upstream_model_update_check_enabled: z.boolean().optional(),
@@ -322,6 +323,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   allow_speed: false,
   claude_beta_query: false,
   claude_code_disguise: false,
+  codex_disguise: false,
   auto_cache_control: false,
   upstream_model_update_check_enabled: false,
   upstream_model_update_auto_sync_enabled: false,
@@ -382,6 +384,7 @@ export function transformChannelToFormDefaults(
   let allowSpeed = false
   let claudeBetaQuery = false
   let claudeCodeDisguise = false
+  let codexDisguise = false
   let autoCacheControl = false
   let upstreamModelUpdateCheckEnabled = false
   let upstreamModelUpdateAutoSyncEnabled = false
@@ -402,6 +405,7 @@ export function transformChannelToFormDefaults(
       allowSpeed = parsed.allow_speed === true
       claudeBetaQuery = parsed.claude_beta_query === true
       claudeCodeDisguise = parsed.claude_code_disguise === true
+      codexDisguise = parsed.codex_disguise === true
       autoCacheControl = parsed.auto_cache_control === true
       upstreamModelUpdateCheckEnabled =
         parsed.upstream_model_update_check_enabled === true
@@ -460,6 +464,7 @@ export function transformChannelToFormDefaults(
     allow_speed: allowSpeed,
     claude_beta_query: claudeBetaQuery,
     claude_code_disguise: claudeCodeDisguise,
+    codex_disguise: codexDisguise,
     auto_cache_control:
       [1, 14, 58, 59].includes(channel.type) && autoCacheControl,
     allow_safety_identifier: allowSafetyIdentifier,
@@ -574,6 +579,13 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
     if ('allow_speed' in settingsObj) delete settingsObj.allow_speed
     if ('claude_beta_query' in settingsObj) delete settingsObj.claude_beta_query
     if ('claude_code_disguise' in settingsObj) delete settingsObj.claude_code_disguise
+  }
+
+  // NOTE: OpenAI channel: codex_disguise toggle
+  if (formData.type === 1) {
+    settingsObj.codex_disguise = formData.codex_disguise === true
+  } else {
+    if ('codex_disguise' in settingsObj) delete settingsObj.codex_disguise
   }
 
   // NOTE: OpenAI/Anthropic-compatible channels: automatic prompt cache control

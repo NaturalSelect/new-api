@@ -221,6 +221,7 @@ function hasAdvancedSettingsValues(values: ChannelFormValues): boolean {
     values.free_models_list?.trim() ||
     values.claude_beta_query ||
     values.claude_code_disguise ||
+    values.codex_disguise ||
     values.auto_cache_control ||
     values.upstream_model_update_check_enabled ||
     values.upstream_model_update_auto_sync_enabled ||
@@ -3221,6 +3222,31 @@ export function ChannelMutateDrawer({
                                   <FormDescription>
                                     {t(
                                       'Force format response to OpenAI standard (OpenAI channel only)'
+                                    )}
+                                  </FormDescription>
+                                </div>
+                                <FormControl>
+                                  <Switch
+                                    checked={field.value}
+                                    onCheckedChange={field.onChange}
+                                  />
+                                </FormControl>
+                              </FormItem>
+                            )}
+                          />
+                        )}
+
+                        {currentType === 1 && (
+                          <FormField
+                            control={form.control}
+                            name='codex_disguise'
+                            render={({ field }) => (
+                              <FormItem className='flex items-center justify-between px-4 py-3'>
+                                <div className='space-y-0.5'>
+                                  <FormLabel>{t('Codex disguise')}</FormLabel>
+                                  <FormDescription>
+                                    {t(
+                                      'Disguise requests as Codex CLI (codex_cli_rs) to bypass upstream identity checks'
                                     )}
                                   </FormDescription>
                                 </div>

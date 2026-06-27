@@ -30,6 +30,7 @@ type ChannelOtherSettings struct {
 	OpenRouterEnterprise                  *bool         `json:"openrouter_enterprise,omitempty"`
 	ClaudeBetaQuery                       bool          `json:"claude_beta_query,omitempty"`         // Claude 渠道是否强制追加 ?beta=true
 	ClaudeCodeDisguise                    bool          `json:"claude_code_disguise,omitempty"`      // NOTE: 是否将请求伪装成 Claude Code CLI
+	CodexDisguise                         bool          `json:"codex_disguise,omitempty"`            // NOTE: 是否将请求伪装成 Codex CLI (codex_cli_rs)
 	AutoCacheControl                      bool          `json:"auto_cache_control,omitempty"`        // NOTE: 是否自动注入提示缓存控制（Claude cache_control / OpenAI prompt_cache_retention）
 	AllowServiceTier                      bool          `json:"allow_service_tier,omitempty"`        // 是否允许 service_tier 透传（默认过滤以避免额外计费）
 	AllowInferenceGeo                     bool          `json:"allow_inference_geo,omitempty"`       // 是否允许 inference_geo 透传（仅 Claude，默认过滤以满足数据驻留合规

@@ -267,6 +267,8 @@ func (a *Adaptor) SetupRequestHeader(c *gin.Context, header *http.Header, info *
 			header.Set("X-OpenRouter-Title", "New API")
 		}
 	}
+	// NOTE: Apply Codex CLI disguise if enabled on this channel.
+	ApplyCodexDisguiseHeaders(c, header, info)
 	return nil
 }
 

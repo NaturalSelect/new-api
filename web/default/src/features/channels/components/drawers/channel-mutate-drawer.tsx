@@ -220,6 +220,7 @@ function hasAdvancedSettingsValues(values: ChannelFormValues): boolean {
     values.system_prompt_override ||
     values.free_models_list?.trim() ||
     values.claude_beta_query ||
+    values.claude_code_disguise ||
     values.auto_cache_control ||
     values.upstream_model_update_check_enabled ||
     values.upstream_model_update_auto_sync_enabled ||
@@ -3138,6 +3139,31 @@ export function ChannelMutateDrawer({
                                         <FormDescription>
                                           {t(
                                             'Pass through the anthropic-beta header for beta features'
+                                          )}
+                                        </FormDescription>
+                                      </div>
+                                      <FormControl>
+                                        <Switch
+                                          checked={field.value}
+                                          onCheckedChange={field.onChange}
+                                        />
+                                      </FormControl>
+                                    </FormItem>
+                                  )}
+                                />
+
+                                <FormField
+                                  control={form.control}
+                                  name='claude_code_disguise'
+                                  render={({ field }) => (
+                                    <FormItem className='flex items-center justify-between gap-3 px-4 py-3'>
+                                      <div className='space-y-0.5'>
+                                        <FormLabel className='text-sm'>
+                                          {t('Claude Code disguise')}
+                                        </FormLabel>
+                                        <FormDescription>
+                                          {t(
+                                            'Disguise requests as Claude Code CLI to bypass upstream identity checks'
                                           )}
                                         </FormDescription>
                                       </div>

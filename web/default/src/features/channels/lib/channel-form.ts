@@ -198,6 +198,7 @@ export const channelFormSchema = z
     allow_inference_geo: z.boolean().optional(), // OpenAI/Anthropic: inference geography
     allow_speed: z.boolean().optional(), // Anthropic: speed mode control
     claude_beta_query: z.boolean().optional(), // Anthropic: beta query passthrough
+    claude_code_disguise: z.boolean().optional(), // NOTE: Claude Code CLI request disguise
     auto_cache_control: z.boolean().optional(), // NOTE: Automatic prompt cache control
     // Upstream model update settings (stored in settings JSON)
     upstream_model_update_check_enabled: z.boolean().optional(),
@@ -320,6 +321,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   allow_inference_geo: false,
   allow_speed: false,
   claude_beta_query: false,
+  claude_code_disguise: false,
   auto_cache_control: false,
   upstream_model_update_check_enabled: false,
   upstream_model_update_auto_sync_enabled: false,
@@ -379,6 +381,7 @@ export function transformChannelToFormDefaults(
   let allowInferenceGeo = false
   let allowSpeed = false
   let claudeBetaQuery = false
+  let claudeCodeDisguise = false
   let autoCacheControl = false
   let upstreamModelUpdateCheckEnabled = false
   let upstreamModelUpdateAutoSyncEnabled = false
@@ -398,6 +401,7 @@ export function transformChannelToFormDefaults(
       allowInferenceGeo = parsed.allow_inference_geo === true
       allowSpeed = parsed.allow_speed === true
       claudeBetaQuery = parsed.claude_beta_query === true
+      claudeCodeDisguise = parsed.claude_code_disguise === true
       autoCacheControl = parsed.auto_cache_control === true
       upstreamModelUpdateCheckEnabled =
         parsed.upstream_model_update_check_enabled === true
@@ -455,6 +459,7 @@ export function transformChannelToFormDefaults(
     allow_inference_geo: allowInferenceGeo,
     allow_speed: allowSpeed,
     claude_beta_query: claudeBetaQuery,
+    claude_code_disguise: claudeCodeDisguise,
     auto_cache_control:
       [1, 14, 58, 59].includes(channel.type) && autoCacheControl,
     allow_safety_identifier: allowSafetyIdentifier,
@@ -559,14 +564,16 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
       delete settingsObj.allow_inference_geo
   }
 
-  // Anthropic-compatible channels: claude_beta_query, allow_inference_geo, allow_speed
+   // Anthropic-compatible channels: claude_beta_query, allow_inference_geo, allow_speed
   if ([14, 59].includes(formData.type)) {
     settingsObj.allow_inference_geo = formData.allow_inference_geo === true
     settingsObj.allow_speed = formData.allow_speed === true
     settingsObj.claude_beta_query = formData.claude_beta_query === true
+    settingsObj.claude_code_disguise = formData.claude_code_disguise === true
   } else {
     if ('allow_speed' in settingsObj) delete settingsObj.allow_speed
     if ('claude_beta_query' in settingsObj) delete settingsObj.claude_beta_query
+    if ('claude_code_disguise' in settingsObj) delete settingsObj.claude_code_disguise
   }
 
   // NOTE: OpenAI/Anthropic-compatible channels: automatic prompt cache control

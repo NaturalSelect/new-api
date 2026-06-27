@@ -25,6 +25,7 @@ func (a *Adaptor) ConvertGeminiRequest(*gin.Context, *relaycommon.RelayInfo, *dt
 }
 
 func (a *Adaptor) ConvertClaudeRequest(c *gin.Context, info *relaycommon.RelayInfo, request *dto.ClaudeRequest) (any, error) {
+	ApplyClaudeCodeDisguiseBody(c, request, info)
 	return request, nil
 }
 
@@ -77,6 +78,7 @@ func CommonClaudeHeadersOperation(c *gin.Context, req *http.Header, info *relayc
 		req.Set("anthropic-beta", anthropicBeta)
 	}
 	model_setting.GetClaudeSettings().WriteHeaders(info.OriginModelName, req)
+	ApplyClaudeCodeDisguiseHeaders(c, req, info)
 }
 
 func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *relaycommon.RelayInfo) error {
@@ -95,7 +97,16 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 	if request == nil {
 		return nil, errors.New("request is nil")
 	}
-	return RequestOpenAI2ClaudeMessage(c, *request)
+	claudeReq, err := RequestOpenAI2ClaudeMessage(c, *request)
+	if err != nil {
+		return nil, err
+	}
+	// NOTE: OpenAI-format clients also need Claude Code disguise applied to the
+	// converted ClaudeRequest body, otherwise the system prompt / metadata
+	// injections only take effect for native Claude-format callers. This path is
+	// the one used by channel connectivity tests and most OpenAI-SDK callers.
+	ApplyClaudeCodeDisguiseBody(c, claudeReq, info)
+	return claudeReq, nil
 }
 
 func (a *Adaptor) ConvertRerankRequest(c *gin.Context, relayMode int, request dto.RerankRequest) (any, error) {

@@ -153,6 +153,24 @@ func injectClaudeCodeSystem(request *dto.ClaudeRequest) {
 // used as a deterministic seed so the same input always maps to the same
 // derived identifier across requests. Only when there is no seed at all
 // (metadata absent/empty) a fresh random identifier is generated.
+// setMetadataUserID overwrites only the user_id key in request.Metadata,
+// preserving any other metadata fields that may already exist.
+func setMetadataUserID(request *dto.ClaudeRequest, userID string) {
+	metadataMap := make(map[string]any)
+	if len(request.Metadata) > 0 {
+		if err := common.Unmarshal(request.Metadata, &metadataMap); err != nil {
+			// NOTE: unparseable metadata — start fresh with only user_id
+			metadataMap = make(map[string]any)
+		}
+	}
+	metadataMap["user_id"] = userID
+	data, err := common.Marshal(metadataMap)
+	if err != nil {
+		return
+	}
+	request.Metadata = data
+}
+
 func ensureClaudeCodeMetadataUserID(request *dto.ClaudeRequest) {
 	if len(request.Metadata) > 0 {
 		var meta dto.ClaudeMetadata
@@ -162,20 +180,13 @@ func ensureClaudeCodeMetadataUserID(request *dto.ClaudeRequest) {
 		// NOTE: existing user_id present but malformed — derive deterministically from it
 		if err := common.Unmarshal(request.Metadata, &meta); err == nil && meta.UserId != "" {
 			derived := deriveLegacyClaudeCodeUserID(meta.UserId)
-			data, err := common.Marshal(dto.ClaudeMetadata{UserId: derived})
-			if err == nil {
-				request.Metadata = data
-			}
+			setMetadataUserID(request, derived)
 			return
 		}
 	}
 	// NOTE: no metadata/no usable seed — fall back to a fresh random identifier
 	userID := generateLegacyClaudeCodeUserID()
-	data, err := common.Marshal(dto.ClaudeMetadata{UserId: userID})
-	if err != nil {
-		return
-	}
-	request.Metadata = data
+	setMetadataUserID(request, userID)
 }
 
 // generateLegacyClaudeCodeUserID produces a fresh random legacy-format Claude

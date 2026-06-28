@@ -366,6 +366,48 @@ func TestGenerateLegacyClaudeCodeUserID_Unique(t *testing.T) {
 	assert.NotEqual(t, id1, id2)
 }
 
+// 8k. TestSetMetadataUserID_PreservesOtherFields — replacing user_id keeps other metadata keys
+func TestSetMetadataUserID_PreservesOtherFields(t *testing.T) {
+	// NOTE: original metadata has both user_id (malformed) and a custom field
+	original := map[string]any{
+		"user_id":     "client-uid-42",
+		"custom_key":  "important-data",
+		"other_field": 123,
+	}
+	origData, err := common.Marshal(original)
+	require.NoError(t, err)
+
+	c, _ := gin.CreateTestContext(nil)
+	req := &dto.ClaudeRequest{Metadata: origData}
+	ApplyClaudeCodeDisguiseBody(c, req, makeRelayInfo(true))
+
+	// NOTE: user_id must be replaced with a valid Claude Code format
+	var meta dto.ClaudeMetadata
+	require.NoError(t, common.Unmarshal(req.Metadata, &meta))
+	assert.Regexp(t, regexp.MustCompile(`^user_[a-fA-F0-9]{64}_account__session_[a-fA-F0-9-]{36}$`), meta.UserId)
+	assert.NotEqual(t, "client-uid-42", meta.UserId)
+
+	// NOTE: other metadata fields must be preserved
+	var rawMap map[string]any
+	require.NoError(t, common.Unmarshal(req.Metadata, &rawMap))
+	assert.Equal(t, "important-data", rawMap["custom_key"])
+	assert.Equal(t, float64(123), rawMap["other_field"])
+}
+
+// 8l. TestSetMetadataUserID_PreservesOtherFields_EmptyMetadata — no clobber when starting fresh
+func TestSetMetadataUserID_PreservesOtherFields_EmptyMetadata(t *testing.T) {
+	c, _ := gin.CreateTestContext(nil)
+	req := &dto.ClaudeRequest{} // empty metadata
+	ApplyClaudeCodeDisguiseBody(c, req, makeRelayInfo(true))
+
+	var rawMap map[string]any
+	require.NoError(t, common.Unmarshal(req.Metadata, &rawMap))
+	// NOTE: only user_id should exist
+	assert.Len(t, rawMap, 1)
+	_, hasUID := rawMap["user_id"]
+	assert.True(t, hasUID)
+}
+
 // Extra: nil info should not panic
 func TestApplyClaudeCodeDisguiseHeaders_NilInfo(t *testing.T) {
 	c, _ := gin.CreateTestContext(nil)

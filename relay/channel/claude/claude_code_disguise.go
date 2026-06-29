@@ -56,6 +56,38 @@ func isValidClaudeCodeUserID(userID string) bool {
 	return claudeCodeLegacyUserIDRe.MatchString(userID)
 }
 
+// parseClaudeCodeUserID parses a metadata.user_id string in either legacy or JSON
+// format and returns the extracted components. Returns ok=false if parsing fails.
+func parseClaudeCodeUserID(userID string) (deviceID, accountUUID, sessionID string, ok bool) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return "", "", "", false
+	}
+	// JSON format
+	if userID[0] == '{' {
+		var j claudeCodeJSONUserID
+		if err := common.UnmarshalJsonStr(userID, &j); err != nil {
+			return "", "", "", false
+		}
+		if j.DeviceID == "" || j.SessionID == "" {
+			return "", "", "", false
+		}
+		return j.DeviceID, j.AccountUUID, j.SessionID, true
+	}
+	// Legacy format
+	matches := claudeCodeLegacyUserIDRe.FindStringSubmatch(userID)
+	if matches == nil {
+		return "", "", "", false
+	}
+	return matches[1], matches[2], matches[3], true
+}
+
+// formatLegacyClaudeCodeUserID builds a legacy-format metadata.user_id from components.
+// Format: user_{deviceID}_account_{accountUUID}_session_{sessionID}
+func formatLegacyClaudeCodeUserID(deviceID, accountUUID, sessionID string) string {
+	return "user_" + deviceID + "_account_" + accountUUID + "_session_" + sessionID
+}
+
 // ApplyClaudeCodeDisguiseHeaders injects Claude Code CLI headers when the channel setting is enabled.
 func ApplyClaudeCodeDisguiseHeaders(c *gin.Context, req *http.Header, info *relaycommon.RelayInfo) {
 	if info == nil || info.ChannelOtherSettings.ClaudeCodeDisguise == false {
@@ -171,16 +203,36 @@ func setMetadataUserID(request *dto.ClaudeRequest, userID string) {
 	request.Metadata = data
 }
 
+// ensureClaudeCodeMetadataUserID overwrites metadata.user_id with a validly
+// formatted Claude Code identifier in the legacy concatenated format, which
+// matches our disguise UA version (claude-cli/2.1.50, < 2.1.78).
+//
+// If an existing user_id can be parsed (either legacy or JSON format), its
+// components are extracted and re-formatted in legacy format. This normalizes
+// JSON-format user_ids to legacy format to avoid a JSON-user_id + legacy-UA
+// mismatch that upstream could detect.
+//
+// A non-empty but malformed user_id (e.g. from a plain OpenAI client) would
+// fail upstream Claude Code identity checks, so it is replaced with a
+// deterministically derived legacy identifier.
+//
+// Replayability: when an existing (malformed) user_id must be rewritten, it is
+// used as a deterministic seed so the same input always maps to the same
+// derived identifier across requests. When the existing user_id is parseable,
+// re-formatting is also deterministic. Only when there is no seed at all
+// (metadata absent/empty) a fresh random identifier is generated.
 func ensureClaudeCodeMetadataUserID(request *dto.ClaudeRequest) {
 	if len(request.Metadata) > 0 {
 		var meta dto.ClaudeMetadata
-		if err := common.Unmarshal(request.Metadata, &meta); err == nil && isValidClaudeCodeUserID(meta.UserId) {
-			return
-		}
-		// NOTE: existing user_id present but malformed — derive deterministically from it
 		if err := common.Unmarshal(request.Metadata, &meta); err == nil && meta.UserId != "" {
-			derived := deriveLegacyClaudeCodeUserID(meta.UserId)
-			setMetadataUserID(request, derived)
+			// NOTE: existing user_id present — try to parse and re-format in legacy
+			if deviceID, accountUUID, sessionID, ok := parseClaudeCodeUserID(meta.UserId); ok {
+				// Valid format — normalize to legacy (matching our UA version 2.1.50)
+				setMetadataUserID(request, formatLegacyClaudeCodeUserID(deviceID, accountUUID, sessionID))
+				return
+			}
+			// Malformed — derive deterministically from the raw value
+			setMetadataUserID(request, deriveLegacyClaudeCodeUserID(meta.UserId))
 			return
 		}
 	}

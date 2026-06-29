@@ -126,6 +126,7 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 		StopSequences: nil,
 		Temperature:   textRequest.Temperature,
 		Tools:         claudeTools,
+		Metadata:      textRequest.Metadata,
 	}
 	if maxTokens := textRequest.GetMaxTokens(); maxTokens > 0 {
 		claudeRequest.MaxTokens = common.GetPointer(maxTokens)

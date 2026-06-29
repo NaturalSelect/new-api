@@ -190,10 +190,12 @@ func TestApplyClaudeCodeDisguiseBody_MetadataHasInvalidUserId(t *testing.T) {
 	assert.Regexp(t, regexp.MustCompile(`^user_[a-fA-F0-9]{64}_account__session_[a-fA-F0-9-]{36}$`), meta2.UserId)
 }
 
-// 8c. TestApplyClaudeCodeDisguiseBody_MetadataHasValidJSONUserId — new JSON user_id retained
+// 8c. TestApplyClaudeCodeDisguiseBody_MetadataHasValidJSONUserId — JSON user_id normalized to legacy
 func TestApplyClaudeCodeDisguiseBody_MetadataHasValidJSONUserId(t *testing.T) {
 	c, _ := gin.CreateTestContext(nil)
-	validJSON := `{"device_id":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","account_uuid":"","session_id":"12345678-1234-1234-1234-123456789012"}`
+	device := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	session := "12345678-1234-1234-1234-123456789012"
+	validJSON := `{"device_id":"` + device + `","account_uuid":"","session_id":"` + session + `"}`
 	existingMeta, _ := common.Marshal(dto.ClaudeMetadata{UserId: validJSON})
 	request := &dto.ClaudeRequest{
 		Metadata: existingMeta,
@@ -205,7 +207,55 @@ func TestApplyClaudeCodeDisguiseBody_MetadataHasValidJSONUserId(t *testing.T) {
 	var meta2 dto.ClaudeMetadata
 	err := common.Unmarshal(request.Metadata, &meta2)
 	require.NoError(t, err)
-	assert.Equal(t, validJSON, meta2.UserId) // NOTE: valid JSON format preserved
+	// NOTE: JSON format must be normalized to legacy format (matching UA 2.1.50)
+	expectedLegacy := "user_" + device + "_account__session_" + session
+	assert.Equal(t, expectedLegacy, meta2.UserId)
+	assert.Regexp(t, regexp.MustCompile(`^user_[a-fA-F0-9]{64}_account_[a-fA-F0-9-]*_session_[a-fA-F0-9-]{36}$`), meta2.UserId)
+}
+
+// 8c2. TestApplyClaudeCodeDisguiseBody_MetadataHasValidJSONUserIdWithAccount — JSON with account_uuid converted to legacy
+func TestApplyClaudeCodeDisguiseBody_MetadataHasValidJSONUserIdWithAccount(t *testing.T) {
+	c, _ := gin.CreateTestContext(nil)
+	device := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	account := "11111111-2222-3333-4444-555555555555"
+	session := "12345678-1234-1234-1234-123456789012"
+	validJSON := `{"device_id":"` + device + `","account_uuid":"` + account + `","session_id":"` + session + `"}`
+	existingMeta, _ := common.Marshal(dto.ClaudeMetadata{UserId: validJSON})
+	request := &dto.ClaudeRequest{
+		Metadata: existingMeta,
+	}
+	info := makeRelayInfo(true)
+
+	ApplyClaudeCodeDisguiseBody(c, request, info)
+
+	var meta2 dto.ClaudeMetadata
+	err := common.Unmarshal(request.Metadata, &meta2)
+	require.NoError(t, err)
+	// NOTE: JSON format normalized to legacy, account_uuid preserved
+	expectedLegacy := "user_" + device + "_account_" + account + "_session_" + session
+	assert.Equal(t, expectedLegacy, meta2.UserId)
+}
+
+// 8c3. TestApplyClaudeCodeDisguiseBody_MetadataHasValidLegacyUserIdWithAccount — legacy with account preserved
+func TestApplyClaudeCodeDisguiseBody_MetadataHasValidLegacyUserIdWithAccount(t *testing.T) {
+	c, _ := gin.CreateTestContext(nil)
+	device := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	account := "11111111-2222-3333-4444-555555555555"
+	session := "12345678-1234-1234-1234-123456789012"
+	valid := "user_" + device + "_account_" + account + "_session_" + session
+	existingMeta, _ := common.Marshal(dto.ClaudeMetadata{UserId: valid})
+	request := &dto.ClaudeRequest{
+		Metadata: existingMeta,
+	}
+	info := makeRelayInfo(true)
+
+	ApplyClaudeCodeDisguiseBody(c, request, info)
+
+	var meta2 dto.ClaudeMetadata
+	err := common.Unmarshal(request.Metadata, &meta2)
+	require.NoError(t, err)
+	// NOTE: legacy format re-formatted to same string
+	assert.Equal(t, valid, meta2.UserId)
 }
 
 // 8d. TestApplyClaudeCodeDisguiseBody_MetadataHasInvalidJSONUserId — JSON missing session_id replaced

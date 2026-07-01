@@ -1,5 +1,8 @@
 package dto
 
+// MaxRetryOn429 渠道 429 原地重试的最大次数
+const MaxRetryOn429 = 5
+
 type ChannelSettings struct {
 	ForceFormat            bool     `json:"force_format,omitempty"`
 	ThinkingToContent      bool     `json:"thinking_to_content,omitempty"`
@@ -8,6 +11,7 @@ type ChannelSettings struct {
 	SystemPrompt           string   `json:"system_prompt,omitempty"`
 	SystemPromptOverride   bool     `json:"system_prompt_override,omitempty"`
 	FreeModels             []string `json:"free_models,omitempty"`
+	RetryOn429             int      `json:"retry_on_429,omitempty"`
 }
 
 type VertexKeyType string

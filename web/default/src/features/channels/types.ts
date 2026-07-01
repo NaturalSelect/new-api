@@ -89,6 +89,7 @@ export interface ChannelSettings {
   system_prompt?: string
   system_prompt_override?: boolean
   free_models?: string[]
+  retry_on_429?: number
 }
 
 export interface ChannelOtherSettings {

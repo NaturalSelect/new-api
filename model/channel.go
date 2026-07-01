@@ -1021,6 +1021,9 @@ func (channel *Channel) ValidateSettings() error {
 			return err
 		}
 	}
+	if channelParams.RetryOn429 < 0 || channelParams.RetryOn429 > dto.MaxRetryOn429 {
+		return fmt.Errorf("retry_on_429 must be between 0 and %d", dto.MaxRetryOn429)
+	}
 	return nil
 }
 

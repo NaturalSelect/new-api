@@ -32,6 +32,9 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// retryOn429Backoff 渠道 429 原地重试之间的固定退避时长
+const retryOn429Backoff = time.Second
+
 func relayHandler(c *gin.Context, info *relaycommon.RelayInfo) *types.NewAPIError {
 	var err *types.NewAPIError
 	switch info.RelayMode {
@@ -197,32 +200,52 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		}
 
 		addUsedChannel(c, channel.Id)
-		bodyStorage, bodyErr := common.GetBodyStorage(c)
-		if bodyErr != nil {
-			// Ensure consistent 413 for oversized bodies even when error occurs later (e.g., retry path)
-			if common.IsRequestBodyTooLargeError(bodyErr) || errors.Is(bodyErr, common.ErrRequestBodyTooLarge) {
-				newAPIError = types.NewErrorWithStatusCode(bodyErr, types.ErrorCodeReadRequestBodyFailed, http.StatusRequestEntityTooLarge, types.ErrOptionWithSkipRetry())
-			} else {
-				newAPIError = types.NewErrorWithStatusCode(bodyErr, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+		inPlaceMax := channel.GetSetting().RetryOn429
+		var bodyStorage common.BodyStorage
+		var bodyErr error
+
+		for inPlaceAttempt := 0; ; inPlaceAttempt++ {
+			bodyStorage, bodyErr = common.GetBodyStorage(c)
+			if bodyErr != nil {
+				// Ensure consistent 413 for oversized bodies even when error occurs later (e.g., retry path)
+				if common.IsRequestBodyTooLargeError(bodyErr) || errors.Is(bodyErr, common.ErrRequestBodyTooLarge) {
+					newAPIError = types.NewErrorWithStatusCode(bodyErr, types.ErrorCodeReadRequestBodyFailed, http.StatusRequestEntityTooLarge, types.ErrOptionWithSkipRetry())
+				} else {
+					newAPIError = types.NewErrorWithStatusCode(bodyErr, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+				}
+				break
+			}
+			c.Request.Body = io.NopCloser(bodyStorage)
+
+			switch relayFormat {
+			case types.RelayFormatOpenAIRealtime:
+				newAPIError = relay.WssHelper(c, relayInfo)
+			case types.RelayFormatClaude:
+				newAPIError = relay.ClaudeHelper(c, relayInfo)
+			case types.RelayFormatGemini:
+				newAPIError = geminiRelayHandler(c, relayInfo)
+			default:
+				newAPIError = relayHandler(c, relayInfo)
+			}
+
+			if newAPIError == nil {
+				relayInfo.LastError = nil
+				return
+			}
+
+			if newAPIError.StatusCode == http.StatusTooManyRequests && inPlaceAttempt < inPlaceMax {
+				logger.LogInfo(c, fmt.Sprintf("渠道 #%d 返回 429，原地重试 %d/%d", channel.Id, inPlaceAttempt+1, inPlaceMax))
+				select {
+				case <-time.After(retryOn429Backoff):
+				case <-c.Request.Context().Done():
+				}
+				continue
 			}
 			break
 		}
-		c.Request.Body = io.NopCloser(bodyStorage)
-
-		switch relayFormat {
-		case types.RelayFormatOpenAIRealtime:
-			newAPIError = relay.WssHelper(c, relayInfo)
-		case types.RelayFormatClaude:
-			newAPIError = relay.ClaudeHelper(c, relayInfo)
-		case types.RelayFormatGemini:
-			newAPIError = geminiRelayHandler(c, relayInfo)
-		default:
-			newAPIError = relayHandler(c, relayInfo)
-		}
-
-		if newAPIError == nil {
-			relayInfo.LastError = nil
-			return
+		// NOTE: bodyErr != nil 说明 GetBodyStorage 失败(如 413)，需同时跳出外层循环
+		if bodyErr != nil {
+			break
 		}
 
 		newAPIError = service.NormalizeViolationFeeError(newAPIError)
@@ -535,18 +558,41 @@ func RelayTask(c *gin.Context) {
 		}
 
 		addUsedChannel(c, channel.Id)
-		bodyStorage, bodyErr := common.GetBodyStorage(c)
-		if bodyErr != nil {
-			if common.IsRequestBodyTooLargeError(bodyErr) || errors.Is(bodyErr, common.ErrRequestBodyTooLarge) {
-				taskErr = service.TaskErrorWrapperLocal(bodyErr, "read_request_body_failed", http.StatusRequestEntityTooLarge)
-			} else {
-				taskErr = service.TaskErrorWrapperLocal(bodyErr, "read_request_body_failed", http.StatusBadRequest)
+		inPlaceMax := channel.GetSetting().RetryOn429
+		var bodyStorage common.BodyStorage
+		var bodyErr error
+
+		for inPlaceAttempt := 0; ; inPlaceAttempt++ {
+			bodyStorage, bodyErr = common.GetBodyStorage(c)
+			if bodyErr != nil {
+				if common.IsRequestBodyTooLargeError(bodyErr) || errors.Is(bodyErr, common.ErrRequestBodyTooLarge) {
+					taskErr = service.TaskErrorWrapperLocal(bodyErr, "read_request_body_failed", http.StatusRequestEntityTooLarge)
+				} else {
+					taskErr = service.TaskErrorWrapperLocal(bodyErr, "read_request_body_failed", http.StatusBadRequest)
+				}
+				break
+			}
+			c.Request.Body = io.NopCloser(bodyStorage)
+
+			result, taskErr = relay.RelayTaskSubmit(c, relayInfo)
+			if taskErr == nil {
+				break
+			}
+
+			if taskErr.StatusCode == http.StatusTooManyRequests && inPlaceAttempt < inPlaceMax {
+				logger.LogInfo(c, fmt.Sprintf("渠道 #%d 返回 429，Task 原地重试 %d/%d", channel.Id, inPlaceAttempt+1, inPlaceMax))
+				select {
+				case <-time.After(retryOn429Backoff):
+				case <-c.Request.Context().Done():
+				}
+				continue
 			}
 			break
 		}
-		c.Request.Body = io.NopCloser(bodyStorage)
-
-		result, taskErr = relay.RelayTaskSubmit(c, relayInfo)
+		// NOTE: bodyErr != nil 说明 GetBodyStorage 失败(如 413)，需同时跳出外层循环
+		if bodyErr != nil {
+			break
+		}
 		if taskErr == nil {
 			break
 		}

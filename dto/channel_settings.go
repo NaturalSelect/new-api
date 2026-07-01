@@ -1,7 +1,7 @@
 package dto
 
 // MaxRetryOn429 渠道 429 原地重试的最大次数
-const MaxRetryOn429 = 5
+const MaxRetryOn429 = 50
 
 type ChannelSettings struct {
 	ForceFormat            bool     `json:"force_format,omitempty"`

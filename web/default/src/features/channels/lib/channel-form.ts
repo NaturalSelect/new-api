@@ -185,7 +185,7 @@ export const channelFormSchema = z
     system_prompt: z.string().optional(),
     system_prompt_override: z.boolean().optional(),
     free_models_list: z.string().optional(),
-    retry_on_429: z.number().int().min(0).max(5).optional(),
+    retry_on_429: z.number().int().min(0).max(50).optional(),
     // Type-specific settings (stored in settings JSON)
     is_enterprise_account: z.boolean().optional(), // OpenRouter specific
     vertex_key_type: z.enum(['json', 'api_key']).optional(), // Vertex AI specific

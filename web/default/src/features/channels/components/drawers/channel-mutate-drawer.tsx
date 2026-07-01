@@ -3422,14 +3422,14 @@ export function ChannelMutateDrawer({
                                   {t('Retry on 429')}
                                 </FormLabel>
                                 <FormDescription>
-                                  {t('In-place retry count when upstream returns 429 (0 = disabled, max 5)')}
+                                  {t('In-place retry count when upstream returns 429 (0 = disabled, max 50)')}
                                 </FormDescription>
                               </div>
                               <FormControl>
                                 <Input
                                   type='number'
                                   min={0}
-                                  max={5}
+                                  max={50}
                                   step={1}
                                   className='w-20'
                                   value={field.value ?? 0}

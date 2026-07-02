@@ -498,7 +498,7 @@ func updateAllChannelsBalance() error {
 			continue
 		} else {
 			// err is nil & balance <= 0 means quota is used up
-			if balance <= 0 {
+			if balance <= 0 && common.AutoBanChannelOnZeroBalance {
 				service.DisableChannel(*types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, "", channel.GetAutoBan()), model.ChannelDisableReasonBalance)
 			}
 		}

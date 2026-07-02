@@ -1585,6 +1585,7 @@
     "成功兑换额度：": "Montant de l'échange réussi :",
     "成功后切换亲和": "Changer l'affinité en cas de succès",
     "成功时自动启用通道": "Activer le canal en cas de succès",
+    "余额为零时自动禁用通道": "Désactiver le canal lorsque le solde est nul",
     "我已了解禁用两步验证将永久删除所有相关设置和备用码，此操作不可撤销": "J'ai compris que la désactivation de l'authentification à deux facteurs supprimera définitivement tous les paramètres et codes de sauvegarde associés, cette opération ne peut pas être annulée",
     "我已阅读并同意": "J'ai lu et j'accepte",
     "我的订阅": "Mes abonnements",

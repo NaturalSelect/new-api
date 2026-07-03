@@ -416,9 +416,11 @@ func TestGenerateLegacyClaudeCodeUserID_Unique(t *testing.T) {
 	assert.NotEqual(t, id1, id2)
 }
 
-// 8k. TestSetMetadataUserID_PreservesOtherFields — replacing user_id keeps other metadata keys
-func TestSetMetadataUserID_PreservesOtherFields(t *testing.T) {
-	// NOTE: original metadata has both user_id (malformed) and a custom field
+// 8k. TestSetMetadataUserID_StripsOtherFields — disguise must expose only user_id
+func TestSetMetadataUserID_StripsOtherFields(t *testing.T) {
+	// NOTE: original metadata has both user_id (malformed) and a custom field.
+	// When disguise is enabled, only user_id may be sent upstream — anything
+	// else could leak identifying signals and expose the disguise.
 	original := map[string]any{
 		"user_id":     "client-uid-42",
 		"custom_key":  "important-data",
@@ -437,11 +439,14 @@ func TestSetMetadataUserID_PreservesOtherFields(t *testing.T) {
 	assert.Regexp(t, regexp.MustCompile(`^user_[a-fA-F0-9]{64}_account__session_[a-fA-F0-9-]{36}$`), meta.UserId)
 	assert.NotEqual(t, "client-uid-42", meta.UserId)
 
-	// NOTE: other metadata fields must be preserved
+	// NOTE: other metadata fields must be stripped — only user_id survives
 	var rawMap map[string]any
 	require.NoError(t, common.Unmarshal(req.Metadata, &rawMap))
-	assert.Equal(t, "important-data", rawMap["custom_key"])
-	assert.Equal(t, float64(123), rawMap["other_field"])
+	assert.Len(t, rawMap, 1)
+	_, hasUID := rawMap["user_id"]
+	assert.True(t, hasUID)
+	assert.NotContains(t, rawMap, "custom_key")
+	assert.NotContains(t, rawMap, "other_field")
 }
 
 // 8l. TestSetMetadataUserID_PreservesOtherFields_EmptyMetadata — no clobber when starting fresh

@@ -185,18 +185,14 @@ func injectClaudeCodeSystem(request *dto.ClaudeRequest) {
 // used as a deterministic seed so the same input always maps to the same
 // derived identifier across requests. Only when there is no seed at all
 // (metadata absent/empty) a fresh random identifier is generated.
-// setMetadataUserID overwrites only the user_id key in request.Metadata,
-// preserving any other metadata fields that may already exist.
+//
+// setMetadataUserID rebuilds request.Metadata with ONLY user_id, discarding
+// any other metadata fields. When Claude Code disguise is enabled, the request
+// must look exactly like a genuine claude-cli request, which carries only
+// user_id in metadata — keeping extra fields could leak identifying signals
+// (e.g. proxy-specific keys) and expose the disguise.
 func setMetadataUserID(request *dto.ClaudeRequest, userID string) {
-	metadataMap := make(map[string]any)
-	if len(request.Metadata) > 0 {
-		if err := common.Unmarshal(request.Metadata, &metadataMap); err != nil {
-			// NOTE: unparseable metadata — start fresh with only user_id
-			metadataMap = make(map[string]any)
-		}
-	}
-	metadataMap["user_id"] = userID
-	data, err := common.Marshal(metadataMap)
+	data, err := common.Marshal(dto.ClaudeMetadata{UserId: userID})
 	if err != nil {
 		return
 	}

@@ -200,7 +200,10 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		}
 
 		addUsedChannel(c, channel.Id)
-		inPlaceMax := channel.GetSetting().RetryOn429
+		// NOTE: 首选渠道经 getChannel 返回的是裸 Channel（无 Setting），
+		// 直接 channel.GetSetting().RetryOn429 会得到零值，导致 429 原地重试永不触发。
+		// 中间件（distributor / SetupContextForSelectedChannel）已把渠道设置写入 context，从 context 读取即可。
+		inPlaceMax := channelInPlace429Max(c, channel)
 		var bodyStorage common.BodyStorage
 		var bodyErr error
 
@@ -235,6 +238,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 			if newAPIError.StatusCode == http.StatusTooManyRequests && inPlaceAttempt < inPlaceMax {
 				logger.LogInfo(c, fmt.Sprintf("渠道 #%d 返回 429，原地重试 %d/%d", channel.Id, inPlaceAttempt+1, inPlaceMax))
+				record429RetryConsumeLog(c, relayInfo, channel, inPlaceAttempt, inPlaceMax, common.LocalLogPreview(newAPIError.Error()))
 				select {
 				case <-time.After(retryOn429Backoff):
 				case <-c.Request.Context().Done():
@@ -342,6 +346,54 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 		return nil, newAPIError
 	}
 	return channel, nil
+}
+
+// channelInPlace429Max 取得当前渠道的 429 原地重试上限。
+// 优先使用中间件写入 context 的渠道设置（首选渠道在 getChannel 中是裸 Channel，没有 Setting）；
+// 若 context 中没有（如 channel test 等无 distributor 的路径），回退到 channel.GetSetting()。
+func channelInPlace429Max(c *gin.Context, channel *model.Channel) int {
+	if cs, ok := common.GetContextKeyType[dto.ChannelSettings](c, constant.ContextKeyChannelSetting); ok {
+		return cs.RetryOn429
+	}
+	return channel.GetSetting().RetryOn429
+}
+
+// record429RetryConsumeLog 在 429 触发原地重试时，向使用日志（consume log）写入一条失败记录，
+// 便于在「使用日志」面板查看 429 限流与重试情况。Quota 记为 0（限流未消耗额度）。
+func record429RetryConsumeLog(c *gin.Context, info *relaycommon.RelayInfo, channel *model.Channel, inPlaceAttempt, inPlaceMax int, message string) {
+	if !common.LogConsumeEnabled {
+		return
+	}
+	content := fmt.Sprintf("渠道 #%d 返回 429，原地重试 %d/%d：%s", channel.Id, inPlaceAttempt+1, inPlaceMax, message)
+	other := map[string]interface{}{
+		"status_code":  http.StatusTooManyRequests,
+		"channel_id":   channel.Id,
+		"channel_name": channel.Name,
+		"channel_type": channel.Type,
+		"is_429_retry": true,
+		"retry_index":  inPlaceAttempt + 1,
+		"retry_max":    inPlaceMax,
+		"request_path": func() string {
+			if c.Request != nil && c.Request.URL != nil {
+				return c.Request.URL.Path
+			}
+			return ""
+		}(),
+	}
+	model.RecordConsumeLog(c, info.UserId, model.RecordConsumeLogParams{
+		ChannelId:        channel.Id,
+		PromptTokens:     0,
+		CompletionTokens: 0,
+		ModelName:        info.OriginModelName,
+		TokenName:        c.GetString("token_name"),
+		Quota:            0,
+		Content:          content,
+		TokenId:          info.TokenId,
+		UseTimeSeconds:   int(time.Since(info.StartTime).Seconds()),
+		IsStream:         info.IsStream,
+		Group:            info.UsingGroup,
+		Other:            other,
+	})
 }
 
 func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) bool {
@@ -558,7 +610,10 @@ func RelayTask(c *gin.Context) {
 		}
 
 		addUsedChannel(c, channel.Id)
-		inPlaceMax := channel.GetSetting().RetryOn429
+		// NOTE: 首选渠道经 getChannel 返回的是裸 Channel（无 Setting），
+		// 直接 channel.GetSetting().RetryOn429 会得到零值，导致 429 原地重试永不触发。
+		// 中间件（distributor / SetupContextForSelectedChannel）已把渠道设置写入 context，从 context 读取即可。
+		inPlaceMax := channelInPlace429Max(c, channel)
 		var bodyStorage common.BodyStorage
 		var bodyErr error
 
@@ -581,6 +636,11 @@ func RelayTask(c *gin.Context) {
 
 			if taskErr.StatusCode == http.StatusTooManyRequests && inPlaceAttempt < inPlaceMax {
 				logger.LogInfo(c, fmt.Sprintf("渠道 #%d 返回 429，Task 原地重试 %d/%d", channel.Id, inPlaceAttempt+1, inPlaceMax))
+				_429Msg := taskErr.Message
+				if _429Msg == "" && taskErr.Error != nil {
+					_429Msg = taskErr.Error.Error()
+				}
+				record429RetryConsumeLog(c, relayInfo, channel, inPlaceAttempt, inPlaceMax, common.LocalLogPreview(_429Msg))
 				select {
 				case <-time.After(retryOn429Backoff):
 				case <-c.Request.Context().Done():

@@ -134,6 +134,24 @@ function renderQuotaCompat(rawQuota: number, digits = 4): string {
   return symbol + fixed
 }
 
+function addTooltipDimensionTotal(
+  array: TooltipLineItem[],
+  tt: TFunction,
+  formatValue: (value: number) => string
+): TooltipLineItem[] {
+  let sum = 0
+  for (let i = 0; i < array.length; i++) {
+    const v = Number(array[i].value) || 0
+    sum += v
+    array[i].value = formatValue(v)
+  }
+  array.unshift({
+    key: tt('Total:'),
+    value: formatValue(sum),
+  })
+  return array
+}
+
 /**
  * Process and aggregate chart data
  */
@@ -942,6 +960,18 @@ export function processTokenDistributionChartData(
             },
           ],
         },
+        dimension: {
+          content: [
+            {
+              key: (datum: Record<string, unknown>) =>
+                `${datum?.Model as string} · ${datum?.Dimension as string}`,
+              value: (datum: Record<string, unknown>) =>
+                Number(datum?.rawValue) || 0,
+            },
+          ],
+          updateContent: (array: TooltipLineItem[]) =>
+            addTooltipDimensionTotal(array, tt, formatInt),
+        },
       },
       background: { fill: 'transparent' },
       animation: true,
@@ -965,6 +995,18 @@ export function processTokenDistributionChartData(
                 formatInt(Number(datum?.rawValue) || 0),
             },
           ],
+        },
+        dimension: {
+          content: [
+            {
+              key: (datum: Record<string, unknown>) =>
+                `${datum?.Model as string} · ${datum?.Dimension as string}`,
+              value: (datum: Record<string, unknown>) =>
+                Number(datum?.rawValue) || 0,
+            },
+          ],
+          updateContent: (array: TooltipLineItem[]) =>
+            addTooltipDimensionTotal(array, tt, formatInt),
         },
       },
       area: {

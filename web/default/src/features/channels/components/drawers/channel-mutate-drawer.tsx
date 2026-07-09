@@ -102,7 +102,9 @@ import {
 import { JsonEditor } from '@/components/json-editor'
 import { MultiSelect } from '@/components/multi-select'
 import {
+  PasswordVerificationDialog,
   SecureVerificationDialog,
+  usePasswordVerification,
   useSecureVerification,
 } from '@/features/auth/secure-verification'
 import {
@@ -347,6 +349,15 @@ export function ChannelMutateDrawer({
     setCode: setVerificationCode,
     switchMethod: switchVerificationMethod,
   } = useSecureVerification()
+
+  const {
+    open: passwordVerificationOpen,
+    loading: passwordVerificationLoading,
+    error: passwordVerificationError,
+    withPasswordVerification,
+    submit: submitPasswordVerification,
+    cancel: cancelPasswordVerification,
+  } = usePasswordVerification()
 
   useEffect(() => {
     if (!open) {
@@ -697,18 +708,27 @@ export function ChannelMutateDrawer({
     if (!channelId) return
 
     try {
-      await withVerification(fetchChannelKey, {
-        preferredMethod: 'passkey',
-        title: 'Verify to view channel key',
-        description:
-          'Use Passkey or 2FA to confirm your identity before revealing this channel key.',
-      })
+      // NOTE: 密码验证包裹在 2FA 验证之外。后端中间件顺序为「密码 → 2FA」，
+      // 因此密码校验先触发；通过后再由 withVerification 处理 2FA/Passkey（若启用）。
+      await withPasswordVerification(() =>
+        withVerification(fetchChannelKey, {
+          preferredMethod: 'passkey',
+          title: 'Verify to view channel key',
+          description:
+            'Use Passkey or 2FA to confirm your identity before revealing this channel key.',
+        })
+      )
     } catch (error) {
       if (error instanceof Error) {
         toast.error(error.message)
       }
     }
-  }, [channelId, withVerification, fetchChannelKey])
+  }, [
+    channelId,
+    withPasswordVerification,
+    withVerification,
+    fetchChannelKey,
+  ])
 
   const handleRefreshCodexCredential = useCallback(async () => {
     if (!channelId) return
@@ -3633,6 +3653,19 @@ export function ChannelMutateDrawer({
         onCancel={cancelVerification}
         onCodeChange={setVerificationCode}
         onMethodChange={switchVerificationMethod}
+      />
+
+      <PasswordVerificationDialog
+        open={passwordVerificationOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            cancelPasswordVerification()
+          }
+        }}
+        loading={passwordVerificationLoading}
+        error={passwordVerificationError}
+        onSubmit={submitPasswordVerification}
+        onCancel={cancelPasswordVerification}
       />
 
       {/* Missing Models Confirmation Dialog */}

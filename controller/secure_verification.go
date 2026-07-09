@@ -17,6 +17,8 @@ const (
 	secureVerificationMethodSessionKey = "secure_verified_method"
 	secureVerificationMethod2FA        = "2fa"
 	secureVerificationMethodPasskey    = "passkey"
+	// PasswordVerificationSessionKey means the user has passed login-password re-verification.
+	PasswordVerificationSessionKey = "password_verified_at"
 	// PasskeyReadySessionKey means WebAuthn finished and /api/verify can finalize step-up verification.
 	PasskeyReadySessionKey = "secure_passkey_ready_at"
 	// SecureVerificationTimeout 验证有效期（秒）
@@ -28,6 +30,11 @@ const (
 type UniversalVerifyRequest struct {
 	Method string `json:"method"` // "2fa" 或 "passkey"
 	Code   string `json:"code,omitempty"`
+}
+
+// PasswordVerifyRequest 登录密码验证请求
+type PasswordVerifyRequest struct {
+	Password string `json:"password"`
 }
 
 type VerificationStatusResponse struct {
@@ -176,4 +183,78 @@ func consumePasskeyReady(c *gin.Context) (bool, error) {
 		return false, nil
 	}
 	return true, nil
+}
+
+// VerifyPassword 登录密码验证
+// 用于查看渠道密钥等敏感操作前的二次密码确认，验证成功后在 session 中记录时间戳。
+// NOTE: 与 2FA/Passkey 的通用验证相互独立，二者可同时启用（需依次通过密码与 2FA 校验）。
+func VerifyPassword(c *gin.Context) {
+	userId := c.GetInt("id")
+	if userId == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"success": false,
+			"message": "未登录",
+		})
+		return
+	}
+
+	var req PasswordVerifyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiError(c, fmt.Errorf("参数错误: %v", err))
+		return
+	}
+
+	if req.Password == "" {
+		common.ApiError(c, fmt.Errorf("密码不能为空"))
+		return
+	}
+
+	user, err := model.GetUserById(userId, true)
+	if err != nil {
+		common.ApiError(c, fmt.Errorf("获取用户信息失败: %v", err))
+		return
+	}
+
+	if user.Status != common.UserStatusEnabled {
+		common.ApiError(c, fmt.Errorf("该用户已被禁用"))
+		return
+	}
+
+	// 用户未设置密码（如仅通过 OAuth 登录）时无法通过密码验证
+	if user.Password == "" {
+		common.ApiError(c, fmt.Errorf("当前账号未设置登录密码，无法进行密码验证"))
+		return
+	}
+
+	if !common.ValidatePasswordAndHash(req.Password, user.Password) {
+		common.ApiError(c, fmt.Errorf("密码错误"))
+		return
+	}
+
+	now, err := setPasswordVerificationSession(c)
+	if err != nil {
+		common.ApiError(c, fmt.Errorf("保存验证状态失败: %v", err))
+		return
+	}
+
+	model.RecordLog(userId, model.LogTypeSystem, "密码验证成功 (查看渠道密钥)")
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "验证成功",
+		"data": gin.H{
+			"verified":   true,
+			"expires_at": now + SecureVerificationTimeout,
+		},
+	})
+}
+
+func setPasswordVerificationSession(c *gin.Context) (int64, error) {
+	session := sessions.Default(c)
+	now := time.Now().Unix()
+	session.Set(PasswordVerificationSessionKey, now)
+	if err := session.Save(); err != nil {
+		return 0, err
+	}
+	return now, nil
 }

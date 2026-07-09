@@ -100,6 +100,28 @@ async function verifyTwoFA(code?: string | null): Promise<void> {
 }
 
 /**
+ * Perform login-password re-verification. Used by the channel key view flow
+ * when the admin has enabled "Require Password for Channel Key".
+ * Sets a short-lived session so subsequent channel-key requests pass the gate.
+ */
+export async function verifyPassword(password: string): Promise<void> {
+  const trimmed = password?.trim()
+  if (!trimmed) {
+    throw new Error('Please enter your password')
+  }
+
+  const res = await api.post(
+    '/api/verify_password',
+    { password: trimmed },
+    { skipBusinessError: true, skipErrorHandler: true }
+  )
+
+  if (!res.data?.success) {
+    throw new Error(res.data?.message || 'Password verification failed')
+  }
+}
+
+/**
  * Perform Passkey verification flow.
  */
 async function verifyPasskey(): Promise<void> {

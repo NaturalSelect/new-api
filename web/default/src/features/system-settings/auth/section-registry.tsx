@@ -23,6 +23,7 @@ import { BotProtectionSection } from './bot-protection-section'
 import { CustomOAuthSection } from './custom-oauth/custom-oauth-section'
 import { OAuthSection } from './oauth-section'
 import { PasskeySection } from './passkey-section'
+import { SecureVerificationSection } from './secure-verification-section'
 
 const AUTH_SECTIONS = [
   {
@@ -95,6 +96,20 @@ const AUTH_SECTIONS = [
             | 'discouraged',
           'passkey.attachment_preference':
             settings['passkey.attachment_preference'],
+        }}
+      />
+    ),
+  },
+  {
+    id: 'secure-verification',
+    titleKey: 'Secure Verification',
+    build: (settings: AuthSettings) => (
+      <SecureVerificationSection
+        defaultValues={{
+          'secure_verification.require_for_channel_key':
+            settings['secure_verification.require_for_channel_key'],
+          'secure_verification.require_password_for_channel_key':
+            settings['secure_verification.require_password_for_channel_key'],
         }}
       />
     ),

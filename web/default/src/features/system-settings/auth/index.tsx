@@ -66,6 +66,8 @@ const defaultAuthSettings: AuthSettings = {
   'passkey.allow_insecure_origin': false,
   'passkey.user_verification': 'preferred',
   'passkey.attachment_preference': '',
+  'secure_verification.require_for_channel_key': true,
+  'secure_verification.require_password_for_channel_key': false,
 }
 
 export function AuthSettings() {

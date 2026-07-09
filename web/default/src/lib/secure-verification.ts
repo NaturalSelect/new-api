@@ -48,6 +48,28 @@ export function isVerificationRequiredError(
 }
 
 /**
+ * Determine whether an Axios error indicates login-password re-verification is required.
+ */
+export function isPasswordVerificationRequiredError(
+  error: unknown
+): error is AxiosError {
+  if (!error || typeof error !== 'object') return false
+  const axiosError = error as AxiosError<{ code?: string }>
+  if (axiosError.response?.status !== 403) return false
+
+  const code = axiosError.response?.data?.code
+  if (!code) return false
+
+  const passwordCodes = new Set([
+    'PASSWORD_VERIFICATION_REQUIRED',
+    'PASSWORD_VERIFICATION_EXPIRED',
+    'PASSWORD_VERIFICATION_INVALID',
+  ])
+
+  return passwordCodes.has(code)
+}
+
+/**
  * Extract verification requirement info from an Axios error.
  */
 export function extractVerificationInfo(

@@ -19,4 +19,6 @@ For commercial licensing, please contact support@quantumnous.com
 export * from './api'
 export * from './types'
 export * from './hooks/use-secure-verification'
+export * from './hooks/use-password-verification'
 export * from './components/secure-verification-dialog'
+export * from './components/password-verification-dialog'

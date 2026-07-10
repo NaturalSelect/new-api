@@ -664,6 +664,92 @@ func getTokenDistributionAggregated(startTimestamp int64, endTimestamp int64, us
 	return result, nil
 }
 
+// KeyDistributionData is the per-key consumption aggregate rendered on the Key
+// statistics dashboard: one row per token_id + token_name + model_name group.
+type KeyDistributionData struct {
+	TokenId      int    `json:"token_id"`
+	TokenName    string `json:"token_name"`
+	ModelName    string `json:"model_name"`
+	InputTokens  int    `json:"input_tokens"`
+	OutputTokens int    `json:"output_tokens"`
+	TotalTokens  int    `json:"total_tokens"`
+	Count        int    `json:"count"`
+}
+
+// keyDistributionFilter narrows getKeyDistributionAggregated to either a specific user
+// (self view, enforced by server-side user_id) or an optional username (admin view).
+type keyDistributionFilter struct {
+	UserId   int
+	Username string
+}
+
+// GetKeyDistribution aggregates consume logs by token_id + token_name + model_name for
+// the admin dashboard. username is optional and, when set, narrows the result to a
+// single user (mirrors GetTokenDistribution's admin username filter).
+func GetKeyDistribution(startTimestamp int64, endTimestamp int64, username string) ([]*KeyDistributionData, error) {
+	return getKeyDistributionAggregated(startTimestamp, endTimestamp, keyDistributionFilter{Username: username})
+}
+
+// GetSelfKeyDistribution aggregates consume logs for a single user, identified by the
+// server-side user id from the request context — never a client-supplied
+// username/user parameter.
+func GetSelfKeyDistribution(userId int, startTimestamp int64, endTimestamp int64) ([]*KeyDistributionData, error) {
+	return getKeyDistributionAggregated(startTimestamp, endTimestamp, keyDistributionFilter{UserId: userId})
+}
+
+// NOTE: getKeyDistributionAggregated reads token_id/token_name straight from the logs
+// NOTE: snapshot (no JOIN against tokens), so deleted keys still show up in historical
+// NOTE: stats. Aggregation runs as a single GROUP BY/SUM/COUNT query in the database —
+// NOTE: input/output are summed separately and combined in Go to keep the SQL portable
+// NOTE: across SQLite, MySQL >= 5.7.8 and PostgreSQL >= 9.6.
+func getKeyDistributionAggregated(startTimestamp int64, endTimestamp int64, filter keyDistributionFilter) ([]*KeyDistributionData, error) {
+	tx := LOG_DB.Table("logs").Where("type = ?", LogTypeConsume)
+	if startTimestamp != 0 {
+		tx = tx.Where("created_at >= ?", startTimestamp)
+	}
+	if endTimestamp != 0 {
+		tx = tx.Where("created_at <= ?", endTimestamp)
+	}
+	if filter.UserId != 0 {
+		tx = tx.Where("user_id = ?", filter.UserId)
+	}
+	if filter.Username != "" {
+		tx = tx.Where("username = ?", filter.Username)
+	}
+
+	result := make([]*KeyDistributionData, 0)
+	err := tx.Select("token_id, token_name, model_name, sum(prompt_tokens) as input_tokens, sum(completion_tokens) as output_tokens, count(*) as count").
+		Group("token_id, token_name, model_name").
+		Find(&result).Error
+	if err != nil {
+		return nil, err
+	}
+
+	for _, item := range result {
+		item.TotalTokens = item.InputTokens + item.OutputTokens
+	}
+
+	sortKeyDistributionData(result)
+	return result, nil
+}
+
+// sortKeyDistributionData orders rows by total_tokens desc, with a fully deterministic
+// secondary sort (token_id, model_name, token_name) so ties render consistently.
+func sortKeyDistributionData(data []*KeyDistributionData) {
+	sort.SliceStable(data, func(i, j int) bool {
+		if data[i].TotalTokens != data[j].TotalTokens {
+			return data[i].TotalTokens > data[j].TotalTokens
+		}
+		if data[i].TokenId != data[j].TokenId {
+			return data[i].TokenId < data[j].TokenId
+		}
+		if data[i].ModelName != data[j].ModelName {
+			return data[i].ModelName < data[j].ModelName
+		}
+		return data[i].TokenName < data[j].TokenName
+	})
+}
+
 func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, channel int, group string) (stat Stat, err error) {
 	tx := LOG_DB.Table("logs").Select("sum(quota) quota")
 

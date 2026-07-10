@@ -63,6 +63,10 @@ interface ModelsFilterProps {
   filters: DashboardFilters
   onFilterChange: (filters: DashboardFilters) => void
   onReset: () => void
+  /** Override the dialog title (defaults to the models-section copy). */
+  title?: string
+  /** Override the dialog description (defaults to the models-section copy). */
+  description?: string
 }
 
 const SectionDivider = ({ label }: { label: string }) => (
@@ -170,11 +174,14 @@ export function ModelsFilter(props: ModelsFilterProps) {
       </DialogTrigger>
       <DialogContent className='flex max-h-[calc(100dvh-2rem)] flex-col max-sm:h-dvh max-sm:w-screen max-sm:max-w-none max-sm:rounded-none max-sm:p-4 sm:max-w-lg'>
         <DialogHeader>
-          <DialogTitle>{t('Filter Dashboard Models')}</DialogTitle>
+          <DialogTitle>
+            {props.title ?? t('Filter Dashboard Models')}
+          </DialogTitle>
           <DialogDescription>
-            {t(
-              'Set filters to customize your dashboard statistics and charts.'
-            )}
+            {props.description ??
+              t(
+                'Set filters to customize your dashboard statistics and charts.'
+              )}
           </DialogDescription>
         </DialogHeader>
 

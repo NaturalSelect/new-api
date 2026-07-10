@@ -132,6 +132,16 @@ export interface ProcessedTokenDistributionChartData {
   totalTokensDisplay: string
 }
 
+export interface KeyDistributionDataItem {
+  token_id: number
+  token_name: string
+  model_name: string
+  input_tokens: number
+  output_tokens: number
+  total_tokens: number
+  count: number
+}
+
 // ============================================================================
 // Announcement Types
 // ============================================================================

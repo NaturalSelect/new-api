@@ -18,11 +18,11 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
 import type {
+  KeyDistributionDataItem,
   QuotaDataItem,
   TokenDistributionDataItem,
   UptimeGroupResult,
 } from './types'
-
 
 // ============================================================================
 // Dashboard APIs
@@ -66,6 +66,25 @@ export async function getTokenDistribution(
   const res = await api.get<{
     success: boolean
     data: TokenDistributionDataItem[]
+  }>(endpoint, { params })
+  return res.data
+}
+
+export async function getKeyDistribution(
+  params: {
+    start_timestamp: number
+    end_timestamp: number
+    default_time?: string
+    username?: string
+  },
+  isAdmin = false
+) {
+  const endpoint = isAdmin
+    ? '/api/data/key-distribution'
+    : '/api/data/key-distribution/self'
+  const res = await api.get<{
+    success: boolean
+    data: KeyDistributionDataItem[]
   }>(endpoint, { params })
   return res.data
 }

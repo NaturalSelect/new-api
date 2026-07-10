@@ -16,8 +16,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState, useCallback, useMemo, lazy, Suspense, useEffect } from 'react'
-
+import {
+  useState,
+  useCallback,
+  useMemo,
+  lazy,
+  Suspense,
+  useEffect,
+} from 'react'
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/auth-store'
@@ -27,9 +33,9 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { SectionPageLayout } from '@/components/layout'
 import { FadeIn } from '@/components/page-transition'
+import { getTokenDistribution } from './api'
 import { ModelsChartPreferences } from './components/models/models-chart-preferences'
 import { ModelsFilter } from './components/models/models-filter-dialog'
-import { getTokenDistribution } from './api'
 import { OverviewDashboard } from './components/overview/overview-dashboard'
 import { DEFAULT_TIME_GRANULARITY } from './constants'
 import {
@@ -80,6 +86,12 @@ const LazyPerformanceOverview = lazy(() =>
 const LazyUserCharts = lazy(() =>
   import('./components/users/user-charts').then((m) => ({
     default: m.UserCharts,
+  }))
+)
+
+const LazyKeyTable = lazy(() =>
+  import('./components/keys/key-table').then((m) => ({
+    default: m.KeyTable,
   }))
 )
 
@@ -143,6 +155,9 @@ const SECTION_META: Record<DashboardSectionId, { titleKey: string }> = {
   models: {
     titleKey: 'Model Call Analytics',
   },
+  keys: {
+    titleKey: 'Key Statistics',
+  },
   users: {
     titleKey: 'User Analytics',
   },
@@ -161,7 +176,8 @@ export function Dashboard() {
   const [tokenDistributionData, setTokenDistributionData] = useState<
     TokenDistributionDataItem[]
   >([])
-  const [tokenDistributionLoading, setTokenDistributionLoading] = useState(false)
+  const [tokenDistributionLoading, setTokenDistributionLoading] =
+    useState(false)
   const [chartPreferences, setChartPreferences] =
     useState<DashboardChartPreferences>(() => getSavedChartPreferences())
   const [chartPreferencesRevision, setChartPreferencesRevision] = useState(0)
@@ -270,6 +286,15 @@ export function Dashboard() {
           onReset={handleResetFilters}
         />
       </>
+    ) : activeSection === 'keys' ? (
+      <ModelsFilter
+        preferences={chartPreferences}
+        filters={modelFilters}
+        onFilterChange={handleFilterChange}
+        onReset={handleResetFilters}
+        title={t('Filter Dashboard Keys')}
+        description={t('Set filters to customize your key statistics.')}
+      />
     ) : null
 
   return (
@@ -355,6 +380,13 @@ export function Dashboard() {
             <FadeIn>
               <Suspense fallback={<ModelChartsFallback />}>
                 <LazyUserCharts />
+              </Suspense>
+            </FadeIn>
+          )}
+          {activeSection === 'keys' && (
+            <FadeIn>
+              <Suspense fallback={<ModelChartsFallback />}>
+                <LazyKeyTable filters={modelFilters} />
               </Suspense>
             </FadeIn>
           )}

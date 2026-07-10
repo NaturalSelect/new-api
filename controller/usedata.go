@@ -101,3 +101,45 @@ func GetSelfTokenDistribution(c *gin.Context) {
 		"data":    dates,
 	})
 }
+
+// GetKeyDistribution returns the site-wide per-key (token_id + token_name + model_name)
+// consumption stats for the admin dashboard. username is optional and, when provided,
+// narrows the result to a single user — mirroring GetTokenDistribution's admin filter.
+func GetKeyDistribution(c *gin.Context) {
+	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
+	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
+	username := c.Query("username")
+
+	data, err := model.GetKeyDistribution(startTimestamp, endTimestamp, username)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    data,
+	})
+}
+
+// GetSelfKeyDistribution returns the per-key consumption stats for the current user.
+// The user is always taken from the server-side auth context (never a client-supplied
+// username/user query parameter) so a caller can never view another user's stats.
+func GetSelfKeyDistribution(c *gin.Context) {
+	userId := c.GetInt("id")
+	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
+	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
+
+	data, err := model.GetSelfKeyDistribution(userId, startTimestamp, endTimestamp)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    data,
+	})
+}

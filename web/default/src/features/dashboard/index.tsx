@@ -89,9 +89,9 @@ const LazyUserCharts = lazy(() =>
   }))
 )
 
-const LazyKeyTable = lazy(() =>
-  import('./components/keys/key-table').then((m) => ({
-    default: m.KeyTable,
+const LazyKeyCharts = lazy(() =>
+  import('./components/keys/key-charts').then((m) => ({
+    default: m.KeyCharts,
   }))
 )
 
@@ -386,7 +386,7 @@ export function Dashboard() {
           {activeSection === 'keys' && (
             <FadeIn>
               <Suspense fallback={<ModelChartsFallback />}>
-                <LazyKeyTable filters={modelFilters} />
+                <LazyKeyCharts filters={modelFilters} />
               </Suspense>
             </FadeIn>
           )}

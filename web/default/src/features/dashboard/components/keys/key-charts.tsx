@@ -55,63 +55,87 @@ interface KeyChartsProps {
   filters?: DashboardFilters
 }
 
-type AggregatedKeyItem = {
-  token_id: number
-  token_name: string
-  input_tokens: number
-  output_tokens: number
-  total_tokens: number
-  count: number
+// Max models shown as distinct series before the rest fold into "Other"
+const MAX_KEY_MODELS = 20
+
+type KeyRankLabels = {
+  title: string
+  otherLabel: string
+  totalLabel: string
 }
 
-function aggregateByKey(data: KeyDistributionDataItem[]): AggregatedKeyItem[] {
-  const map = new Map<number, AggregatedKeyItem>()
-  for (const item of data) {
-    const input = Number(item.input_tokens) || 0
-    const output = Number(item.output_tokens) || 0
-    const total = Number(item.total_tokens) || 0
-    const count = Number(item.count) || 0
-    const existing = map.get(item.token_id)
-    if (existing) {
-      // XX: prefer first non-empty token_name for the key label
-      if (!existing.token_name && item.token_name) {
-        existing.token_name = item.token_name
-      }
-      existing.input_tokens += input
-      existing.output_tokens += output
-      existing.total_tokens += total
-      existing.count += count
-    } else {
-      map.set(item.token_id, {
-        token_id: item.token_id,
-        token_name: item.token_name ?? '',
-        input_tokens: input,
-        output_tokens: output,
-        total_tokens: total,
-        count,
-      })
-    }
-  }
-  return Array.from(map.values())
+type KeyAggregate = {
+  token_id: number
+  token_name: string
+  total: number
+  models: Map<string, number>
 }
 
 function buildKeyRankSpec(
-  aggregated: AggregatedKeyItem[],
+  data: KeyDistributionDataItem[],
   metric: KeyMetric,
-  title: string
+  labels: KeyRankLabels
 ) {
   const formatInt = (value: number) =>
     Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(value)
 
-  const sorted = [...aggregated].sort((a, b) => b[metric] - a[metric])
+  // Global per-model totals (across all keys) keep the top-N model set —
+  // and therefore the legend/color set — stable across every key row.
+  const modelTotals = new Map<string, number>()
+  for (const item of data) {
+    const model = item.model_name || 'Unknown'
+    modelTotals.set(
+      model,
+      (modelTotals.get(model) || 0) + (Number(item[metric]) || 0)
+    )
+  }
+  const rankedModels = Array.from(modelTotals.entries()).sort(
+    (a, b) => b[1] - a[1]
+  )
+  const topModels = new Set(
+    rankedModels.slice(0, MAX_KEY_MODELS).map(([model]) => model)
+  )
 
-  const values = sorted.map((item) => ({
-    Key: item.token_name ? item.token_name : `Key #${item.token_id}`,
-    Value: item[metric],
-  }))
+  // Aggregate the selected metric per (key, model bucket); non-top models fold
+  // into the "Other" series so the legend stays readable.
+  const keyMap = new Map<number, KeyAggregate>()
+  for (const item of data) {
+    const value = Number(item[metric]) || 0
+    const model = item.model_name || 'Unknown'
+    const bucket = topModels.has(model) ? model : labels.otherLabel
+    let agg = keyMap.get(item.token_id)
+    if (!agg) {
+      agg = {
+        token_id: item.token_id,
+        token_name: item.token_name ?? '',
+        total: 0,
+        models: new Map(),
+      }
+      keyMap.set(item.token_id, agg)
+    }
+    // XX: prefer first non-empty token_name for the key label
+    if (!agg.token_name && item.token_name) agg.token_name = item.token_name
+    agg.total += value
+    agg.models.set(bucket, (agg.models.get(bucket) || 0) + value)
+  }
 
-  const needsScroll = values.length > CHART_VISIBLE_ITEMS
-  const endRatio = needsScroll ? CHART_VISIBLE_ITEMS / values.length : 1
+  // Order keys by their total of the selected metric (descending); the band
+  // axis follows data order, so highest-usage keys render first.
+  const sortedKeys = Array.from(keyMap.values()).sort(
+    (a, b) => b.total - a.total
+  )
+
+  const values: Array<{ Key: string; Model: string; Value: number }> = []
+  for (const key of sortedKeys) {
+    const label = key.token_name ? key.token_name : `Key #${key.token_id}`
+    for (const [model, value] of key.models) {
+      values.push({ Key: label, Model: model, Value: value })
+    }
+  }
+
+  const uniqueKeyCount = sortedKeys.length
+  const needsScroll = uniqueKeyCount > CHART_VISIBLE_ITEMS
+  const endRatio = needsScroll ? CHART_VISIBLE_ITEMS / uniqueKeyCount : 1
 
   return {
     type: 'bar',
@@ -119,12 +143,13 @@ function buildKeyRankSpec(
     data: [{ id: 'keyRankData', values }],
     xField: 'Value',
     yField: 'Key',
-    seriesField: 'Key',
-    title: { visible: true, text: title },
+    seriesField: 'Model',
+    stack: true,
+    title: { visible: true, text: labels.title },
+    legends: { visible: true, selectMode: 'single' },
     bar: { state: { hover: { stroke: '#000', lineWidth: 1 } } },
-    label: {
+    totalLabel: {
       visible: true,
-      position: 'outside',
       formatMethod: (value: number) => formatInt(value),
       style: { fontSize: 11 },
     },
@@ -136,11 +161,33 @@ function buildKeyRankSpec(
       mark: {
         content: [
           {
-            key: (datum: Record<string, unknown>) => datum?.Key,
+            key: (datum: Record<string, unknown>) => datum?.Model,
             value: (datum: Record<string, unknown>) =>
               formatInt(Number(datum?.Value) || 0),
           },
         ],
+      },
+      dimension: {
+        content: [
+          {
+            key: (datum: Record<string, unknown>) => datum?.Model,
+            value: (datum: Record<string, unknown>) =>
+              Number(datum?.Value) || 0,
+          },
+        ],
+        updateContent: (
+          array: Array<{ key: string; value: string | number }>
+        ) => {
+          array.sort((a, b) => (Number(b.value) || 0) - (Number(a.value) || 0))
+          let sum = 0
+          for (let i = 0; i < array.length; i++) {
+            const v = Number(array[i].value) || 0
+            sum += v
+            array[i].value = formatInt(v)
+          }
+          array.unshift({ key: labels.totalLabel, value: formatInt(sum) })
+          return array
+        },
       },
     },
     ...(needsScroll
@@ -204,25 +251,27 @@ export function KeyCharts(props: KeyChartsProps) {
     updateTheme()
   }, [resolvedTheme])
 
-  const aggregated = useMemo(
-    () => aggregateByKey(isLoading ? [] : (data ?? [])),
-    [data, isLoading]
-  )
+  const rows = useMemo(() => (isLoading ? [] : (data ?? [])), [data, isLoading])
 
   const spec = useMemo(
-    () => buildKeyRankSpec(aggregated, activeMetric, t('Key Usage Ranking')),
-    [aggregated, activeMetric, t]
+    () =>
+      buildKeyRankSpec(rows, activeMetric, {
+        title: t('Key Usage Ranking'),
+        otherLabel: t('Other'),
+        totalLabel: t('Total:'),
+      }),
+    [rows, activeMetric, t]
   )
 
   const chartKey = [
     activeMetric,
     isLoading ? 'loading' : 'ready',
-    aggregated.length,
+    rows.length,
     resolvedTheme,
     customization.preset,
   ].join('-')
 
-  const isEmpty = !isLoading && !isError && aggregated.length === 0
+  const isEmpty = !isLoading && !isError && rows.length === 0
 
   return (
     <div className='overflow-hidden rounded-lg border'>

@@ -101,12 +101,132 @@ func ApplyClaudeCodeDisguiseHeaders(c *gin.Context, req *http.Header, info *rela
 }
 
 // ApplyClaudeCodeDisguiseBody injects Claude Code CLI body fields when the channel setting is enabled.
+// It also moves user system prompt entries into the first user message wrapped in <system-reminder> tags,
+// so that only the Claude Code disguise system prompt remains in the system field.
 func ApplyClaudeCodeDisguiseBody(c *gin.Context, request *dto.ClaudeRequest, info *relaycommon.RelayInfo) {
 	if info == nil || info.ChannelOtherSettings.ClaudeCodeDisguise == false {
 		return
 	}
 	injectClaudeCodeSystem(request)
+	moveUserSystemToFirstUserMessage(request)
 	ensureClaudeCodeMetadataUserID(request)
+}
+
+// moveUserSystemToFirstUserMessage extracts user system prompt entries from request.System,
+// wraps them in <system-reminder> tags, and prepends to the first user message.
+// The Claude Code disguise entry is kept in request.System.
+func moveUserSystemToFirstUserMessage(request *dto.ClaudeRequest) {
+	systemEntries := getTypedSystemEntries(request)
+	if len(systemEntries) == 0 {
+		return
+	}
+
+	// Separate Claude Code entry from user entries
+	var claudeCodeEntries []dto.ClaudeMediaMessage
+	var userSystemTexts []string
+	for _, entry := range systemEntries {
+		if entry.Text != nil && *entry.Text == claudeCodeSystemPromptEntry {
+			claudeCodeEntries = append(claudeCodeEntries, entry)
+		} else if entry.Text != nil && *entry.Text != "" {
+			userSystemTexts = append(userSystemTexts, *entry.Text)
+		}
+	}
+
+	if len(userSystemTexts) == 0 {
+		return
+	}
+
+	// Keep only Claude Code disguise entry in System
+	if len(claudeCodeEntries) > 0 {
+		request.System = claudeCodeEntries
+	} else {
+		request.System = nil
+	}
+
+	// Build <system-reminder> wrapped content
+	wrappedContent := "<system-reminder>\n" + strings.Join(userSystemTexts, "\n") + "\n</system-reminder>"
+
+	if len(request.Messages) == 0 {
+		return
+	}
+
+	// Find and modify the first user message
+	for i, msg := range request.Messages {
+		if msg.Role != "user" {
+			continue
+		}
+
+		switch content := msg.Content.(type) {
+		case string:
+			request.Messages[i].Content = wrappedContent + "\n" + content
+		case []dto.ClaudeMediaMessage:
+			newEntry := dto.ClaudeMediaMessage{
+				Type: "text",
+				Text: common.GetPointer(wrappedContent),
+			}
+			request.Messages[i].Content = append([]dto.ClaudeMediaMessage{newEntry}, content...)
+		default:
+			// Try round-trip conversion for untyped arrays
+			data, err := common.Marshal(content)
+			if err != nil {
+				continue
+			}
+			var typed []dto.ClaudeMediaMessage
+			if err := common.Unmarshal(data, &typed); err != nil {
+				continue
+			}
+			newEntry := dto.ClaudeMediaMessage{
+				Type: "text",
+				Text: common.GetPointer(wrappedContent),
+			}
+			request.Messages[i].Content = append([]dto.ClaudeMediaMessage{newEntry}, typed...)
+		}
+		return
+	}
+
+	// No user message found — prepend one
+	newMessage := dto.ClaudeMessage{
+		Role:    "user",
+		Content: wrappedContent,
+	}
+	request.Messages = append([]dto.ClaudeMessage{newMessage}, request.Messages...)
+}
+
+// getTypedSystemEntries converts request.System (any type) to typed []ClaudeMediaMessage.
+func getTypedSystemEntries(request *dto.ClaudeRequest) []dto.ClaudeMediaMessage {
+	switch sys := request.System.(type) {
+	case nil:
+		return nil
+	case string:
+		if sys == "" {
+			return nil
+		}
+		return []dto.ClaudeMediaMessage{
+			{Type: "text", Text: common.GetPointer(sys)},
+		}
+	case []dto.ClaudeMediaMessage:
+		return sys
+	case []any:
+		data, err := common.Marshal(sys)
+		if err != nil {
+			return nil
+		}
+		var typed []dto.ClaudeMediaMessage
+		if err := common.Unmarshal(data, &typed); err != nil {
+			return nil
+		}
+		return typed
+	default:
+		data, err := common.Marshal(sys)
+		if err != nil {
+			return nil
+		}
+		var typed []dto.ClaudeMediaMessage
+		if err := common.Unmarshal(data, &typed); err != nil {
+			return nil
+		}
+		return typed
+	}
 }
 
 // injectClaudeCodeSystem prepends the Claude Code system prompt entry to request.System.

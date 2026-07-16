@@ -115,7 +115,12 @@ func ApplyClaudeCodeDisguiseBody(c *gin.Context, request *dto.ClaudeRequest, inf
 // moveUserSystemToFirstUserMessage extracts user system prompt entries from request.System,
 // wraps them in <system-reminder> tags, and prepends to the first user message.
 // The Claude Code disguise entry is kept in request.System.
+// If there are no messages to inject into, user system entries remain in System unchanged.
 func moveUserSystemToFirstUserMessage(request *dto.ClaudeRequest) {
+	if len(request.Messages) == 0 {
+		return
+	}
+
 	systemEntries := getTypedSystemEntries(request)
 	if len(systemEntries) == 0 {
 		return
@@ -136,21 +141,11 @@ func moveUserSystemToFirstUserMessage(request *dto.ClaudeRequest) {
 		return
 	}
 
-	// Keep only Claude Code disguise entry in System
-	if len(claudeCodeEntries) > 0 {
-		request.System = claudeCodeEntries
-	} else {
-		request.System = nil
-	}
-
 	// Build <system-reminder> wrapped content
 	wrappedContent := "<system-reminder>\n" + strings.Join(userSystemTexts, "\n") + "\n</system-reminder>"
 
-	if len(request.Messages) == 0 {
-		return
-	}
-
-	// Find and modify the first user message
+	// Inject into the first user message, or prepend a new user message
+	injected := false
 	for i, msg := range request.Messages {
 		if msg.Role != "user" {
 			continue
@@ -181,15 +176,25 @@ func moveUserSystemToFirstUserMessage(request *dto.ClaudeRequest) {
 			}
 			request.Messages[i].Content = append([]dto.ClaudeMediaMessage{newEntry}, typed...)
 		}
-		return
+		injected = true
+		break
 	}
 
-	// No user message found — prepend one
-	newMessage := dto.ClaudeMessage{
-		Role:    "user",
-		Content: wrappedContent,
+	if !injected {
+		// No user message found — prepend one
+		newMessage := dto.ClaudeMessage{
+			Role:    "user",
+			Content: wrappedContent,
+		}
+		request.Messages = append([]dto.ClaudeMessage{newMessage}, request.Messages...)
 	}
-	request.Messages = append([]dto.ClaudeMessage{newMessage}, request.Messages...)
+
+	// Only remove user entries from System after successful injection
+	if len(claudeCodeEntries) > 0 {
+		request.System = claudeCodeEntries
+	} else {
+		request.System = nil
+	}
 }
 
 // getTypedSystemEntries converts request.System (any type) to typed []ClaudeMediaMessage.
@@ -344,10 +349,16 @@ func ensureClaudeCodeMetadataUserID(request *dto.ClaudeRequest) {
 			// NOTE: existing user_id present — try to parse and re-format in legacy
 			if deviceID, accountUUID, sessionID, ok := parseClaudeCodeUserID(meta.UserId); ok {
 				// Valid format — normalize to legacy (matching our UA version 2.1.50)
-				setMetadataUserID(request, formatLegacyClaudeCodeUserID(deviceID, accountUUID, sessionID))
-				return
+				legacyID := formatLegacyClaudeCodeUserID(deviceID, accountUUID, sessionID)
+				// Validate the formatted result — JSON components may not produce a valid
+				// legacy string (e.g. device_id shorter than 64 hex chars). If invalid,
+				// fall through to deterministic derivation instead of emitting a malformed ID.
+				if claudeCodeLegacyUserIDRe.MatchString(legacyID) {
+					setMetadataUserID(request, legacyID)
+					return
+				}
 			}
-			// Malformed — derive deterministically from the raw value
+			// Malformed or invalid after conversion — derive deterministically from the raw value
 			setMetadataUserID(request, deriveLegacyClaudeCodeUserID(meta.UserId))
 			return
 		}

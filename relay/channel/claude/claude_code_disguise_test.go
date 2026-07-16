@@ -478,3 +478,104 @@ func TestApplyClaudeCodeDisguiseBody_NilInfo(t *testing.T) {
 	ApplyClaudeCodeDisguiseBody(c, request, makeRelayInfoNil())
 	assert.Equal(t, "hello", request.System) // unchanged
 }
+
+// 11. TestMoveUserSystemToFirstUserMessage — user system prompt moved to first user message
+func TestMoveUserSystemToFirstUserMessage_StringContent(t *testing.T) {
+	c, _ := gin.CreateTestContext(nil)
+	request := &dto.ClaudeRequest{
+		System: "user custom system prompt",
+		Messages: []dto.ClaudeMessage{
+			{Role: "user", Content: "hello"},
+		},
+	}
+	info := makeRelayInfo(true)
+
+	ApplyClaudeCodeDisguiseBody(c, request, info)
+
+	// System should only contain the Claude Code disguise entry
+	arr, ok := request.System.([]dto.ClaudeMediaMessage)
+	require.True(t, ok)
+	require.Len(t, arr, 1)
+	assert.Equal(t, claudeCodeSystemPromptEntry, *arr[0].Text)
+
+	// First user message should contain the wrapped system prompt
+	content, ok := request.Messages[0].Content.(string)
+	require.True(t, ok)
+	assert.Contains(t, content, "<system-reminder>")
+	assert.Contains(t, content, "user custom system prompt")
+	assert.Contains(t, content, "</system-reminder>")
+	assert.Contains(t, content, "hello")
+}
+
+// 11b. TestMoveUserSystemToFirstUserMessage_NoMessages — no messages, system preserved
+func TestMoveUserSystemToFirstUserMessage_NoMessages(t *testing.T) {
+	c, _ := gin.CreateTestContext(nil)
+	request := &dto.ClaudeRequest{
+		System: "user custom system prompt",
+	}
+	info := makeRelayInfo(true)
+
+	ApplyClaudeCodeDisguiseBody(c, request, info)
+
+	// System should keep both entries since there are no messages to inject into
+	arr, ok := request.System.([]dto.ClaudeMediaMessage)
+	require.True(t, ok)
+	require.Len(t, arr, 2)
+	assert.Equal(t, claudeCodeSystemPromptEntry, *arr[0].Text)
+	assert.Equal(t, "user custom system prompt", *arr[1].Text)
+}
+
+// 11c. TestMoveUserSystemToFirstUserMessage_MultipleSystemEntries — multiple system entries merged
+func TestMoveUserSystemToFirstUserMessage_MultipleSystemEntries(t *testing.T) {
+	c, _ := gin.CreateTestContext(nil)
+	text1 := "prompt part 1"
+	text2 := "prompt part 2"
+	request := &dto.ClaudeRequest{
+		System: []dto.ClaudeMediaMessage{
+			{Type: "text", Text: &text1},
+			{Type: "text", Text: &text2},
+		},
+		Messages: []dto.ClaudeMessage{
+			{Role: "user", Content: "hi"},
+		},
+	}
+	info := makeRelayInfo(true)
+
+	ApplyClaudeCodeDisguiseBody(c, request, info)
+
+	// System should only contain the Claude Code entry
+	arr, ok := request.System.([]dto.ClaudeMediaMessage)
+	require.True(t, ok)
+	require.Len(t, arr, 1)
+	assert.Equal(t, claudeCodeSystemPromptEntry, *arr[0].Text)
+
+	// First user message should contain both prompts wrapped
+	content, ok := request.Messages[0].Content.(string)
+	require.True(t, ok)
+	assert.Contains(t, content, "prompt part 1")
+	assert.Contains(t, content, "prompt part 2")
+	assert.Contains(t, content, "<system-reminder>")
+}
+
+// 12. TestEnsureClaudeCodeMetadataUserID_InvalidJSONComponents — JSON with short device_id derived instead of formatted
+func TestEnsureClaudeCodeMetadataUserID_InvalidJSONComponents(t *testing.T) {
+	c, _ := gin.CreateTestContext(nil)
+	// JSON format that parses but device_id is too short for legacy format
+	invalidJSON := `{"device_id":"abc123","account_uuid":"","session_id":"12345678-1234-1234-1234-123456789012"}`
+	existingMeta, _ := common.Marshal(dto.ClaudeMetadata{UserId: invalidJSON})
+	request := &dto.ClaudeRequest{
+		Metadata: existingMeta,
+	}
+	info := makeRelayInfo(true)
+
+	ApplyClaudeCodeDisguiseBody(c, request, info)
+
+	var meta dto.ClaudeMetadata
+	err := common.Unmarshal(request.Metadata, &meta)
+	require.NoError(t, err)
+	// Should be derived (deterministic) instead of using invalid short device_id
+	assert.Regexp(t, regexp.MustCompile(`^user_[a-fA-F0-9]{64}_account__session_[a-fA-F0-9-]{36}$`), meta.UserId)
+	// Should be deterministic from the original JSON string
+	expected := deriveLegacyClaudeCodeUserID(invalidJSON)
+	assert.Equal(t, expected, meta.UserId)
+}

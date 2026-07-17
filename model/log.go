@@ -769,7 +769,10 @@ func getKeyDistributionAggregated(startTimestamp int64, endTimestamp int64, filt
 
 	result := make([]*KeyDistributionData, 0, len(aggregates))
 	for _, item := range aggregates {
-		item.TotalTokens = item.InputTokens + item.OutputTokens
+		// NOTE: cache_read is intentionally excluded — it's already counted inside
+		// InputTokens (OpenAI's prompt_tokens includes cached tokens), matching the
+		// total semantics used by GetTokenDistribution's frontend chart.
+		item.TotalTokens = item.InputTokens + item.OutputTokens + item.CacheWriteTokens
 		result = append(result, item)
 	}
 

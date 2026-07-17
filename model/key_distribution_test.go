@@ -211,7 +211,7 @@ func TestGetKeyDistribution_DeletedKeyStillReturned(t *testing.T) {
 	require.Equal(t, "deleted-key", result[0].TokenName)
 }
 
-// total_tokens must equal input+output, and default sort is by total_tokens desc.
+// total_tokens must equal input+output+cache_write, and default sort is by total_tokens desc.
 func TestGetKeyDistribution_TotalTokensAndSortOrder(t *testing.T) {
 	truncateTables(t)
 
@@ -227,7 +227,7 @@ func TestGetKeyDistribution_TotalTokensAndSortOrder(t *testing.T) {
 	require.Equal(t, 12, result[1].TokenId) // 100
 	require.Equal(t, 10, result[2].TokenId) // 20
 	for _, item := range result {
-		require.Equal(t, item.InputTokens+item.OutputTokens, item.TotalTokens)
+		require.Equal(t, item.InputTokens+item.OutputTokens+item.CacheWriteTokens, item.TotalTokens)
 	}
 }
 
@@ -272,9 +272,9 @@ func TestGetKeyDistribution_SumsCacheTokensFromOther(t *testing.T) {
 	item := result[0]
 	require.Equal(t, 50, item.CacheReadTokens)
 	require.Equal(t, 15, item.CacheWriteTokens)
-	// total_tokens stays input+output only; cache tokens are additional/informational
-	// and must not change the existing sort-key semantics.
-	require.Equal(t, item.InputTokens+item.OutputTokens, item.TotalTokens)
+	// total_tokens includes cache_write (real extra token spend) but excludes
+	// cache_read, which is already counted inside InputTokens.
+	require.Equal(t, item.InputTokens+item.OutputTokens+item.CacheWriteTokens, item.TotalTokens)
 }
 
 // Cache write falls back to cache_creation_tokens / cache_creation_tokens_5m+1h when

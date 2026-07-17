@@ -46,7 +46,7 @@ type KeyMetric =
 const KEY_METRIC_OPTIONS: { value: KeyMetric; labelKey: string }[] = [
   { value: 'total_tokens', labelKey: 'Total Tokens' },
   { value: 'count', labelKey: 'Call Count' },
-  { value: 'input_tokens', labelKey: 'Input Tokens' },
+  { value: 'input_tokens', labelKey: 'Input (Cache Miss)' },
   { value: 'output_tokens', labelKey: 'Output Tokens' },
   { value: 'cache_read_tokens', labelKey: 'Input (Cache Hit)' },
   { value: 'cache_write_tokens', labelKey: 'Cache Write' },
@@ -79,6 +79,19 @@ type KeyAggregate = {
   models: Map<string, number>
 }
 
+// getMetricValue resolves the display value for a metric tab. input_tokens shows
+// the cache-miss portion (input - cache_read), mirroring the Token Distribution
+// chart, so the four category tabs (input/output/cache_read/cache_write) sum
+// exactly to total_tokens instead of double-counting cache_read.
+function getMetricValue(item: KeyDistributionDataItem, metric: KeyMetric) {
+  if (metric === 'input_tokens') {
+    const input = Number(item.input_tokens) || 0
+    const cacheRead = Number(item.cache_read_tokens) || 0
+    return Math.max(input - cacheRead, 0)
+  }
+  return Number(item[metric]) || 0
+}
+
 function buildKeyRankSpec(
   data: KeyDistributionDataItem[],
   metric: KeyMetric,
@@ -94,7 +107,7 @@ function buildKeyRankSpec(
     const model = item.model_name || 'Unknown'
     modelTotals.set(
       model,
-      (modelTotals.get(model) || 0) + (Number(item[metric]) || 0)
+      (modelTotals.get(model) || 0) + getMetricValue(item, metric)
     )
   }
   const rankedModels = Array.from(modelTotals.entries()).sort(
@@ -108,7 +121,7 @@ function buildKeyRankSpec(
   // into the "Other" series so the legend stays readable.
   const keyMap = new Map<number, KeyAggregate>()
   for (const item of data) {
-    const value = Number(item[metric]) || 0
+    const value = getMetricValue(item, metric)
     const model = item.model_name || 'Unknown'
     const bucket = topModels.has(model) ? model : labels.otherLabel
     let agg = keyMap.get(item.token_id)

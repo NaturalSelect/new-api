@@ -124,6 +124,9 @@ func tencentStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *htt
 
 	if err := scanner.Err(); err != nil {
 		common.SysLog("error reading stream: " + err.Error())
+		helper.SendStreamError(c, info.RelayFormat, err)
+		service.CloseResponseBodyGracefully(resp)
+		return service.ResponseText2Usage(c, responseText, info.UpstreamModelName, info.GetEstimatePromptTokens()), nil
 	}
 
 	helper.Done(c)

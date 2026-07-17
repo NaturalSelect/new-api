@@ -1485,6 +1485,9 @@ func GeminiChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *
 		return true
 	})
 
+	if info.StreamStatus.IsScannerError() {
+		return usage, nil
+	}
 	if err != nil {
 		return usage, err
 	}

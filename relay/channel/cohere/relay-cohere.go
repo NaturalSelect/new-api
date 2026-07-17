@@ -101,11 +101,13 @@ func cohereStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 	})
 	dataChan := make(chan string)
 	stopChan := make(chan bool)
+	var scanErr error
 	go func() {
 		for scanner.Scan() {
 			data := scanner.Text()
 			dataChan <- data
 		}
+		scanErr = scanner.Err()
 		stopChan <- true
 	}()
 	helper.SetEventStreamHeaders(c)
@@ -162,7 +164,11 @@ func cohereStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 			c.Render(-1, common.CustomEvent{Data: "data: " + string(jsonStr)})
 			return true
 		case <-stopChan:
-			c.Render(-1, common.CustomEvent{Data: "data: [DONE]"})
+			if scanErr != nil {
+				helper.SendStreamError(c, info.RelayFormat, scanErr)
+			} else {
+				c.Render(-1, common.CustomEvent{Data: "data: [DONE]"})
+			}
 			return false
 		}
 	})

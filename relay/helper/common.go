@@ -121,6 +121,24 @@ func Done(c *gin.Context) {
 	_ = StringData(c, "[DONE]")
 }
 
+// SendStreamError writes a downstream-format-aware SSE error event when the
+// upstream stream read fails (e.g. bufio.Scanner error), so the failure is not
+// silently swallowed. format should be the original client request format
+// (info.RelayFormat), not the upstream conversion format.
+func SendStreamError(c *gin.Context, format types.RelayFormat, err error) {
+	apiErr := types.NewOpenAIError(err, types.ErrorCodeReadResponseBodyFailed, http.StatusBadGateway)
+	switch format {
+	case types.RelayFormatClaude:
+		_ = ClaudeData(c, dto.ClaudeResponse{
+			Type:  "error",
+			Error: apiErr.ToClaudeError(),
+		})
+	default:
+		_ = ObjectData(c, gin.H{"error": apiErr.ToOpenAIError()})
+		Done(c)
+	}
+}
+
 func WssString(c *gin.Context, ws *websocket.Conn, str string) error {
 	if ws == nil {
 		logger.LogError(c, "websocket connection is nil")

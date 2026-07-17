@@ -138,7 +138,11 @@ func cozeChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *ht
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
+		helper.SendStreamError(c, info.RelayFormat, err)
+		if usage.TotalTokens == 0 {
+			usage = service.ResponseText2Usage(c, responseText, info.UpstreamModelName, c.GetInt("coze_input_count"))
+		}
+		return usage, nil
 	}
 	helper.Done(c)
 

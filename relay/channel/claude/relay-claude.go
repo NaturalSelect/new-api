@@ -884,6 +884,9 @@ func ClaudeStreamHandler(c *gin.Context, resp *http.Response, info *relaycommon.
 			sr.Stop(err)
 		}
 	})
+	if info.StreamStatus.IsScannerError() {
+		return claudeInfo.Usage, nil
+	}
 	if err != nil {
 		return nil, err
 	}

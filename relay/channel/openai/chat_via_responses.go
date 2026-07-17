@@ -511,6 +511,10 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 		}
 	})
 
+	if info.StreamStatus.IsScannerError() {
+		return usage, nil
+	}
+
 	if streamErr != nil {
 		return nil, streamErr
 	}

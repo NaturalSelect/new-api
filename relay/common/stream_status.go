@@ -85,6 +85,13 @@ func (s *StreamStatus) TotalErrorCount() int {
 	return s.ErrorCount
 }
 
+func (s *StreamStatus) IsScannerError() bool {
+	if s == nil {
+		return false
+	}
+	return s.EndReason == StreamEndReasonScannerErr
+}
+
 func (s *StreamStatus) IsNormalEnd() bool {
 	if s == nil {
 		return true

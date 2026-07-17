@@ -1,6 +1,7 @@
 package helper
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -627,6 +629,101 @@ func TestStreamScannerHandler_StreamStatus_PreInitialized(t *testing.T) {
 
 	assert.Equal(t, relaycommon.StreamEndReasonDone, info.StreamStatus.EndReason)
 	assert.Equal(t, 1, info.StreamStatus.TotalErrorCount())
+}
+
+func TestStreamScannerHandler_ScannerError_OpenAIFormat(t *testing.T) {
+	t.Parallel()
+
+	pr, pw := io.Pipe()
+	go func() {
+		fmt.Fprint(pw, "data: {\"id\":0,\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n")
+		pw.CloseWithError(errors.New("upstream reset"))
+	}()
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	oldTimeout := constant.StreamingTimeout
+	constant.StreamingTimeout = 30
+	t.Cleanup(func() {
+		constant.StreamingTimeout = oldTimeout
+	})
+
+	resp := &http.Response{Body: pr}
+	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}}
+
+	StreamScannerHandler(c, resp, info, func(data string, sr *StreamResult) {})
+
+	assert.Equal(t, relaycommon.StreamEndReasonScannerErr, info.StreamStatus.EndReason)
+
+	body := recorder.Body.String()
+	assert.Contains(t, body, `"error"`)
+	assert.Contains(t, body, "upstream reset")
+	assert.Contains(t, body, "[DONE]")
+}
+
+func TestStreamScannerHandler_ScannerError_ClaudeFormat(t *testing.T) {
+	t.Parallel()
+
+	pr, pw := io.Pipe()
+	go func() {
+		fmt.Fprint(pw, "data: {\"id\":0,\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n")
+		pw.CloseWithError(errors.New("upstream reset"))
+	}()
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	oldTimeout := constant.StreamingTimeout
+	constant.StreamingTimeout = 30
+	t.Cleanup(func() {
+		constant.StreamingTimeout = oldTimeout
+	})
+
+	resp := &http.Response{Body: pr}
+	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}, RelayFormat: types.RelayFormatClaude}
+
+	StreamScannerHandler(c, resp, info, func(data string, sr *StreamResult) {})
+
+	assert.Equal(t, relaycommon.StreamEndReasonScannerErr, info.StreamStatus.EndReason)
+
+	body := recorder.Body.String()
+	assert.Contains(t, body, "event: error")
+	assert.Contains(t, body, `"type":"error"`)
+	assert.Contains(t, body, "upstream reset")
+}
+
+func TestSendStreamError_OpenAIFormat(t *testing.T) {
+	t.Parallel()
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	SendStreamError(c, types.RelayFormatOpenAI, errors.New("boom"))
+
+	body := recorder.Body.String()
+	assert.Contains(t, body, `"error"`)
+	assert.Contains(t, body, "boom")
+	assert.Contains(t, body, "[DONE]")
+}
+
+func TestSendStreamError_ClaudeFormat(t *testing.T) {
+	t.Parallel()
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	SendStreamError(c, types.RelayFormatClaude, errors.New("boom"))
+
+	body := recorder.Body.String()
+	assert.Contains(t, body, "event: error")
+	assert.Contains(t, body, `"type":"error"`)
+	assert.Contains(t, body, "boom")
+	assert.NotContains(t, body, "[DONE]")
 }
 
 func TestStreamScannerHandler_PingInterleavesWithSlowUpstream(t *testing.T) {

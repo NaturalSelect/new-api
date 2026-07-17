@@ -176,6 +176,7 @@ func ollamaStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 	}
 	if err := scanner.Err(); err != nil && err != io.EOF {
 		logger.LogError(c, "ollama stream scan error: "+err.Error())
+		helper.SendStreamError(c, info.RelayFormat, err)
 	}
 	return usage, nil
 }

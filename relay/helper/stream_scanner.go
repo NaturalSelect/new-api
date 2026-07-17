@@ -263,6 +263,9 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 			if err != io.EOF {
 				logger.LogError(c, "scanner error: "+err.Error())
 				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonScannerErr, err)
+				writeMutex.Lock()
+				SendStreamError(c, info.RelayFormat, err)
+				writeMutex.Unlock()
 			}
 		}
 		info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonEOF, nil)

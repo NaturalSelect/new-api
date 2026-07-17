@@ -162,6 +162,7 @@ func zhipuStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.
 	dataChan := make(chan string)
 	metaChan := make(chan string)
 	stopChan := make(chan bool)
+	var scanErr error
 	go func() {
 		for scanner.Scan() {
 			data := scanner.Text()
@@ -180,6 +181,7 @@ func zhipuStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.
 				}
 			}
 		}
+		scanErr = scanner.Err()
 		stopChan <- true
 	}()
 	helper.SetEventStreamHeaders(c)
@@ -211,7 +213,11 @@ func zhipuStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.
 			c.Render(-1, common.CustomEvent{Data: "data: " + string(jsonResponse)})
 			return true
 		case <-stopChan:
-			c.Render(-1, common.CustomEvent{Data: "data: [DONE]"})
+			if scanErr != nil {
+				helper.SendStreamError(c, info.RelayFormat, scanErr)
+			} else {
+				c.Render(-1, common.CustomEvent{Data: "data: [DONE]"})
+			}
 			return false
 		}
 	})

@@ -155,6 +155,8 @@
     "Key deduplication": "密钥去重",
     "Sync to consume log": "同步到消费日志",
     "When enabled, each synced Poe log entry also creates a consume log record for billing. Disable to only store Poe logs without generating consume log entries.": "开启后，每条同步的 Poe 日志会同时创建一条消费日志用于计费。关闭后仅存储 Poe 日志，不生成消费日志记录。",
+    "Sync token usage": "同步 Token 用量",
+    "When enabled, token counts (prompt, completion, cache) are extracted from Poe cost breakdown and stored. Disable to sync only cost data without token counts.": "开启后，会从 Poe 费用明细中提取 Token 用量（输入、输出、缓存）并存储。关闭后仅同步费用数据，不记录 Token 用量。",
     "This will delete all synced Poe log entries. The next sync will re-fetch them from scratch. This action cannot be undone.": "这将删除所有已同步的 Poe 日志记录。下次同步将从头重新获取它们。此操作无法撤销。",
     "When enabled, channels sharing the same API key only fetch history once, avoiding duplicate API calls. The results are assigned to all channels sharing that key.": "启用后，共享同一 API 密钥的渠道仅获取一次历史，避免重复 API 调用。结果会分配给共享该密钥的所有渠道。",
     "active": "活跃",

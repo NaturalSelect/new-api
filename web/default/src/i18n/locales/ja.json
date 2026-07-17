@@ -155,6 +155,8 @@
     "Key deduplication": "キー重複排除",
     "Sync to consume log": "Sync to consume log",
     "When enabled, each synced Poe log entry also creates a consume log record for billing. Disable to only store Poe logs without generating consume log entries.": "When enabled, each synced Poe log entry also creates a consume log record for billing. Disable to only store Poe logs without generating consume log entries.",
+    "Sync token usage": "トークン使用量を同期",
+    "When enabled, token counts (prompt, completion, cache) are extracted from Poe cost breakdown and stored. Disable to sync only cost data without token counts.": "有効にすると、Poe のコスト内訳からトークン数（プロンプト、完了、キャッシュ）が抽出・保存されます。無効にすると、トークン数なしでコストデータのみ同期されます。",
     "This will delete all synced Poe log entries. The next sync will re-fetch them from scratch. This action cannot be undone.": "同期済みの Poe ログエントリをすべて削除します。次回の同期では最初から再取得されます。この操作は元に戻せません。",
     "When enabled, channels sharing the same API key only fetch history once, avoiding duplicate API calls. The results are assigned to all channels sharing that key.": "有効にすると、同じ API キーを共有するチャネルは履歴を1回だけ取得し、重複する API 呼び出しを回避します。結果はそのキーを共有するすべてのチャネルに割り当てられます。",
     "active": "有効",

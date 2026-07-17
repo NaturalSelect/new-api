@@ -71,6 +71,7 @@ const defaultOperationsSettings: OperationsSettings = {
   'poe_log_setting.key_deduplicate': true,
   'poe_log_setting.free_models': [],
   'poe_log_setting.sync_to_consume_log': true,
+  'poe_log_setting.sync_tokens': true,
 }
 
 export function OperationsSettings() {

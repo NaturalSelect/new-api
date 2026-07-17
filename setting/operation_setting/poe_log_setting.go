@@ -7,11 +7,12 @@ import (
 )
 
 type PoeLogSetting struct {
-	Enabled           bool     `json:"enabled"`
-	SyncInterval      int      `json:"sync_interval"`        // seconds
-	KeyDeduplicate    bool     `json:"key_deduplicate"`      // deduplicate API keys across channels
-	FreeModels        []string `json:"free_models"`          // manually configured free model names
-	SyncToConsumeLog  bool     `json:"sync_to_consume_log"`  // sync PoeLog entries to consume log
+	Enabled          bool     `json:"enabled"`
+	SyncInterval     int      `json:"sync_interval"`       // seconds
+	KeyDeduplicate   bool     `json:"key_deduplicate"`     // deduplicate API keys across channels
+	FreeModels       []string `json:"free_models"`         // manually configured free model names
+	SyncToConsumeLog bool     `json:"sync_to_consume_log"` // sync PoeLog entries to consume log
+	SyncTokens       bool     `json:"sync_tokens"`         // extract and store token usage during sync
 }
 
 var poeLogSetting = PoeLogSetting{
@@ -19,6 +20,7 @@ var poeLogSetting = PoeLogSetting{
 	SyncInterval:     300,
 	KeyDeduplicate:   true,
 	SyncToConsumeLog: true,
+	SyncTokens:       true,
 }
 
 func init() {
@@ -46,6 +48,10 @@ func IsPoeLogKeyDeduplicate() bool {
 
 func IsPoeLogSyncToConsumeLogEnabled() bool {
 	return poeLogSetting.SyncToConsumeLog
+}
+
+func IsPoeLogSyncTokensEnabled() bool {
+	return poeLogSetting.SyncTokens
 }
 
 // NOTE: GetPoeFreeModels returns configured free model names as a lowercase lookup set.

@@ -52,6 +52,7 @@ const poeLogSchema = z.object({
     key_deduplicate: z.boolean(),
     free_models: z.string(),
     sync_to_consume_log: z.boolean(),
+    sync_tokens: z.boolean(),
   }),
 })
 
@@ -65,6 +66,7 @@ type PoeLogSettingsSectionProps = {
     'poe_log_setting.key_deduplicate': boolean
     'poe_log_setting.free_models': string[] | string
     'poe_log_setting.sync_to_consume_log': boolean
+    'poe_log_setting.sync_tokens': boolean
   }
 }
 
@@ -74,6 +76,7 @@ type NormalizedPoeLogValues = {
   'poe_log_setting.key_deduplicate': boolean
   'poe_log_setting.free_models': string[]
   'poe_log_setting.sync_to_consume_log': boolean
+  'poe_log_setting.sync_tokens': boolean
 }
 
 function areNormalizedValuesEqual(
@@ -101,6 +104,7 @@ const buildFormDefaults = (
       ? (defaults['poe_log_setting.free_models'] as string[]).join(', ')
       : (defaults['poe_log_setting.free_models'] as string) || '',
     sync_to_consume_log: defaults['poe_log_setting.sync_to_consume_log'],
+    sync_tokens: defaults['poe_log_setting.sync_tokens'],
   },
 })
 
@@ -117,6 +121,7 @@ const normalizeDefaults = (
     : [],
   'poe_log_setting.sync_to_consume_log':
     defaults['poe_log_setting.sync_to_consume_log'],
+  'poe_log_setting.sync_tokens': defaults['poe_log_setting.sync_tokens'],
 })
 
 const normalizeFormValues = (
@@ -127,6 +132,7 @@ const normalizeFormValues = (
   'poe_log_setting.key_deduplicate': values.poe_log_setting.key_deduplicate,
   'poe_log_setting.sync_to_consume_log':
     values.poe_log_setting.sync_to_consume_log,
+  'poe_log_setting.sync_tokens': values.poe_log_setting.sync_tokens,
   'poe_log_setting.free_models': values.poe_log_setting.free_models
     .split(',')
     .map((model) => model.trim())
@@ -252,6 +258,29 @@ export function PoeLogSettingsSection(props: PoeLogSettingsSectionProps) {
                     <FormLabel>{t('Sync to consume log')}</FormLabel>
                     <FormDescription>
                       {t('When enabled, each synced Poe log entry also creates a consume log record for billing. Disable to only store Poe logs without generating consume log entries.')}
+                    </FormDescription>
+                  </SettingsSwitchContent>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                </SettingsSwitchItem>
+              )}
+            />
+          </div>
+
+          <div className='grid gap-6 md:grid-cols-2'>
+            <FormField
+              control={form.control}
+              name='poe_log_setting.sync_tokens'
+              render={({ field }) => (
+                <SettingsSwitchItem>
+                  <SettingsSwitchContent>
+                    <FormLabel>{t('Sync token usage')}</FormLabel>
+                    <FormDescription>
+                      {t('When enabled, token counts (prompt, completion, cache) are extracted from Poe cost breakdown and stored. Disable to sync only cost data without token counts.')}
                     </FormDescription>
                   </SettingsSwitchContent>
                   <FormControl>

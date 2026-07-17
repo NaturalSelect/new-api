@@ -242,6 +242,7 @@ func keySuffix(key string, n int) string {
 // This is used by the key-dedup path where entries are shared across channels.
 func fetchPoeLogEntries(ctx context.Context, channel *model.Channel) ([]*model.PoeLog, error) {
 	freeModels := fetchPoeFreeModels(ctx, channel)
+	syncTokens := operation_setting.IsPoeLogSyncTokensEnabled()
 
 	baseURL := strings.TrimSuffix(channel.GetBaseURL(), "/")
 	if baseURL == "" {
@@ -289,6 +290,13 @@ outer:
 					breakdownJSON = string(b)
 				}
 			}
+			var promptTokens, completionTokens, cacheTokens, cacheWriteTokens int
+			if syncTokens {
+				promptTokens = extractBreakdownTokens(item.CostBreakdown, "Input")
+				completionTokens = extractBreakdownTokens(item.CostBreakdown, "Output")
+				cacheTokens = extractBreakdownTokens(item.CostBreakdown, "Cache discount")
+				cacheWriteTokens = extractBreakdownTokens(item.CostBreakdown, "Cache write")
+			}
 			collected = append(collected, &model.PoeLog{
 				QueryId:          item.QueryId,
 				BotName:          strings.ToLower(item.BotName),
@@ -300,10 +308,10 @@ outer:
 				ApiKeyName:       item.ApiKeyName,
 				ChatName:         item.ChatName,
 				CanvasTabName:    item.CanvasTabName,
-				PromptTokens:     extractBreakdownTokens(item.CostBreakdown, "Input"),
-				CompletionTokens: extractBreakdownTokens(item.CostBreakdown, "Output"),
-				CacheTokens:      extractBreakdownTokens(item.CostBreakdown, "Cache discount"),
-				CacheWriteTokens: extractBreakdownTokens(item.CostBreakdown, "Cache write"),
+				PromptTokens:     promptTokens,
+				CompletionTokens: completionTokens,
+				CacheTokens:      cacheTokens,
+				CacheWriteTokens: cacheWriteTokens,
 			})
 		}
 

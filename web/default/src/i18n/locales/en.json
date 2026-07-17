@@ -155,6 +155,8 @@
     "Key deduplication": "Key deduplication",
     "Sync to consume log": "Sync to consume log",
     "When enabled, each synced Poe log entry also creates a consume log record for billing. Disable to only store Poe logs without generating consume log entries.": "When enabled, each synced Poe log entry also creates a consume log record for billing. Disable to only store Poe logs without generating consume log entries.",
+    "Sync token usage": "Sync token usage",
+    "When enabled, token counts (prompt, completion, cache) are extracted from Poe cost breakdown and stored. Disable to sync only cost data without token counts.": "When enabled, token counts (prompt, completion, cache) are extracted from Poe cost breakdown and stored. Disable to sync only cost data without token counts.",
     "This will delete all synced Poe log entries. The next sync will re-fetch them from scratch. This action cannot be undone.": "This will delete all synced Poe log entries. The next sync will re-fetch them from scratch. This action cannot be undone.",
     "When enabled, channels sharing the same API key only fetch history once, avoiding duplicate API calls. The results are assigned to all channels sharing that key.": "When enabled, channels sharing the same API key only fetch history once, avoiding duplicate API calls. The results are assigned to all channels sharing that key.",
     "active": "active",

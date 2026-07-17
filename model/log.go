@@ -667,13 +667,26 @@ func getTokenDistributionAggregated(startTimestamp int64, endTimestamp int64, us
 // KeyDistributionData is the per-key consumption aggregate rendered on the Key
 // statistics dashboard: one row per token_id + token_name + model_name group.
 type KeyDistributionData struct {
-	TokenId      int    `json:"token_id"`
-	TokenName    string `json:"token_name"`
-	ModelName    string `json:"model_name"`
-	InputTokens  int    `json:"input_tokens"`
-	OutputTokens int    `json:"output_tokens"`
-	TotalTokens  int    `json:"total_tokens"`
-	Count        int    `json:"count"`
+	TokenId          int    `json:"token_id"`
+	TokenName        string `json:"token_name"`
+	ModelName        string `json:"model_name"`
+	InputTokens      int    `json:"input_tokens"`
+	OutputTokens     int    `json:"output_tokens"`
+	CacheReadTokens  int    `json:"cache_read_tokens"`
+	CacheWriteTokens int    `json:"cache_write_tokens"`
+	TotalTokens      int    `json:"total_tokens"`
+	Count            int    `json:"count"`
+}
+
+// keyDistributionLogRecord is the raw per-log row read from the logs table before
+// Go-side aggregation, mirroring tokenDistributionLogRecord.
+type keyDistributionLogRecord struct {
+	TokenId          int    `json:"token_id"`
+	TokenName        string `json:"token_name"`
+	ModelName        string `json:"model_name"`
+	PromptTokens     int    `json:"prompt_tokens"`
+	CompletionTokens int    `json:"completion_tokens"`
+	Other            string `json:"other"`
 }
 
 // keyDistributionFilter narrows getKeyDistributionAggregated to either a specific user
@@ -699,34 +712,65 @@ func GetSelfKeyDistribution(userId int, startTimestamp int64, endTimestamp int64
 
 // NOTE: getKeyDistributionAggregated reads token_id/token_name straight from the logs
 // NOTE: snapshot (no JOIN against tokens), so deleted keys still show up in historical
-// NOTE: stats. Aggregation runs as a single GROUP BY/SUM/COUNT query in the database —
-// NOTE: input/output are summed separately and combined in Go to keep the SQL portable
-// NOTE: across SQLite, MySQL >= 5.7.8 and PostgreSQL >= 9.6.
+// NOTE: stats. Cache hit/write tokens live only in the logs.other JSON column, so —
+// NOTE: like getTokenDistributionAggregated — rows are read in batches and aggregated
+// NOTE: in Go rather than with a single SQL GROUP BY/SUM.
 func getKeyDistributionAggregated(startTimestamp int64, endTimestamp int64, filter keyDistributionFilter) ([]*KeyDistributionData, error) {
-	tx := LOG_DB.Table("logs").Where("type = ?", LogTypeConsume)
+	base := LOG_DB.Table("logs").Select("token_id, token_name, model_name, prompt_tokens, completion_tokens, other").Where("type = ?", LogTypeConsume)
 	if startTimestamp != 0 {
-		tx = tx.Where("created_at >= ?", startTimestamp)
+		base = base.Where("created_at >= ?", startTimestamp)
 	}
 	if endTimestamp != 0 {
-		tx = tx.Where("created_at <= ?", endTimestamp)
+		base = base.Where("created_at <= ?", endTimestamp)
 	}
 	if filter.UserId != 0 {
-		tx = tx.Where("user_id = ?", filter.UserId)
+		base = base.Where("user_id = ?", filter.UserId)
 	}
 	if filter.Username != "" {
-		tx = tx.Where("username = ?", filter.Username)
+		base = base.Where("username = ?", filter.Username)
 	}
 
-	result := make([]*KeyDistributionData, 0)
-	err := tx.Select("token_id, token_name, model_name, sum(prompt_tokens) as input_tokens, sum(completion_tokens) as output_tokens, count(*) as count").
-		Group("token_id, token_name, model_name").
-		Find(&result).Error
-	if err != nil {
-		return nil, err
+	type aggregateKey struct {
+		TokenId   int
+		TokenName string
+		ModelName string
+	}
+	aggregates := make(map[aggregateKey]*KeyDistributionData)
+
+	const batchSize = 1000
+	for offset := 0; ; offset += batchSize {
+		var batch []keyDistributionLogRecord
+		if err := base.Offset(offset).Limit(batchSize).Find(&batch).Error; err != nil {
+			return nil, err
+		}
+		for _, record := range batch {
+			key := aggregateKey{TokenId: record.TokenId, TokenName: record.TokenName, ModelName: record.ModelName}
+			item, ok := aggregates[key]
+			if !ok {
+				item = &KeyDistributionData{TokenId: record.TokenId, TokenName: record.TokenName, ModelName: record.ModelName}
+				aggregates[key] = item
+			}
+			item.InputTokens += record.PromptTokens
+			item.OutputTokens += record.CompletionTokens
+			item.Count += 1
+
+			if record.Other != "" {
+				otherMap := make(map[string]interface{})
+				if err := common.UnmarshalJsonStr(record.Other, &otherMap); err == nil {
+					item.CacheReadTokens += toIntFromAny(otherMap["cache_tokens"])
+					item.CacheWriteTokens += getCacheWriteTokensFromOther(otherMap)
+				}
+			}
+		}
+		if len(batch) < batchSize {
+			break
+		}
 	}
 
-	for _, item := range result {
+	result := make([]*KeyDistributionData, 0, len(aggregates))
+	for _, item := range aggregates {
 		item.TotalTokens = item.InputTokens + item.OutputTokens
+		result = append(result, item)
 	}
 
 	sortKeyDistributionData(result)

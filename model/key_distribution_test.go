@@ -3,6 +3,8 @@ package model
 import (
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -18,6 +20,25 @@ func createConsumeLog(t *testing.T, userId int, username string, tokenId int, to
 		ModelName:        modelName,
 		PromptTokens:     promptTokens,
 		CompletionTokens: completionTokens,
+	}
+	require.NoError(t, LOG_DB.Create(log).Error)
+}
+
+func createConsumeLogWithOther(t *testing.T, userId int, username string, tokenId int, tokenName string, modelName string, promptTokens int, completionTokens int, createdAt int64, other map[string]interface{}) {
+	t.Helper()
+	otherJson, err := common.Marshal(other)
+	require.NoError(t, err)
+	log := &Log{
+		UserId:           userId,
+		Username:         username,
+		CreatedAt:        createdAt,
+		Type:             LogTypeConsume,
+		TokenId:          tokenId,
+		TokenName:        tokenName,
+		ModelName:        modelName,
+		PromptTokens:     promptTokens,
+		CompletionTokens: completionTokens,
+		Other:            string(otherJson),
 	}
 	require.NoError(t, LOG_DB.Create(log).Error)
 }
@@ -228,6 +249,62 @@ func TestGetKeyDistribution_StableSecondarySort(t *testing.T) {
 	require.Equal(t, 10, result[1].TokenId)
 	require.Equal(t, "gpt-4o", result[1].ModelName)
 	require.Equal(t, 20, result[2].TokenId)
+}
+
+// Cache hit (cache_tokens) and cache write (cache_write_tokens) live in logs.other
+// and must be parsed and summed per key+model, matching GetTokenDistribution.
+func TestGetKeyDistribution_SumsCacheTokensFromOther(t *testing.T) {
+	truncateTables(t)
+
+	createConsumeLogWithOther(t, 1, "alice", 10, "key-a", "gpt-4", 100, 50, 1000, map[string]interface{}{
+		"cache_tokens":       20,
+		"cache_write_tokens": 5,
+	})
+	createConsumeLogWithOther(t, 1, "alice", 10, "key-a", "gpt-4", 100, 50, 1010, map[string]interface{}{
+		"cache_tokens":       30,
+		"cache_write_tokens": 10,
+	})
+
+	result, err := GetKeyDistribution(0, 0, "")
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+
+	item := result[0]
+	require.Equal(t, 50, item.CacheReadTokens)
+	require.Equal(t, 15, item.CacheWriteTokens)
+	// total_tokens stays input+output only; cache tokens are additional/informational
+	// and must not change the existing sort-key semantics.
+	require.Equal(t, item.InputTokens+item.OutputTokens, item.TotalTokens)
+}
+
+// Cache write falls back to cache_creation_tokens / cache_creation_tokens_5m+1h when
+// cache_write_tokens is absent, mirroring getCacheWriteTokensFromOther's fallback chain.
+func TestGetKeyDistribution_CacheWriteFallsBackToCreationTokens(t *testing.T) {
+	truncateTables(t)
+
+	createConsumeLogWithOther(t, 1, "alice", 10, "key-a", "gpt-4", 100, 50, 1000, map[string]interface{}{
+		"cache_creation_tokens_5m": 7,
+		"cache_creation_tokens_1h": 3,
+	})
+
+	result, err := GetKeyDistribution(0, 0, "")
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+	require.Equal(t, 10, result[0].CacheWriteTokens)
+}
+
+// Logs without an other payload (the createConsumeLog helper) must not error
+// and simply contribute zero cache tokens.
+func TestGetKeyDistribution_NoOtherMeansZeroCacheTokens(t *testing.T) {
+	truncateTables(t)
+
+	createConsumeLog(t, 1, "alice", 10, "key-a", "gpt-4", 100, 50, 1000)
+
+	result, err := GetKeyDistribution(0, 0, "")
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+	require.Equal(t, 0, result[0].CacheReadTokens)
+	require.Equal(t, 0, result[0].CacheWriteTokens)
 }
 
 // Empty result must be an empty slice, not nil, so it serializes as `[]`.

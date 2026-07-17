@@ -35,13 +35,21 @@ import type {
   KeyDistributionDataItem,
 } from '@/features/dashboard/types'
 
-type KeyMetric = 'total_tokens' | 'count' | 'input_tokens' | 'output_tokens'
+type KeyMetric =
+  | 'total_tokens'
+  | 'count'
+  | 'input_tokens'
+  | 'output_tokens'
+  | 'cache_read_tokens'
+  | 'cache_write_tokens'
 
 const KEY_METRIC_OPTIONS: { value: KeyMetric; labelKey: string }[] = [
   { value: 'total_tokens', labelKey: 'Total Tokens' },
   { value: 'count', labelKey: 'Call Count' },
   { value: 'input_tokens', labelKey: 'Input Tokens' },
   { value: 'output_tokens', labelKey: 'Output Tokens' },
+  { value: 'cache_read_tokens', labelKey: 'Input (Cache Hit)' },
+  { value: 'cache_write_tokens', labelKey: 'Cache Write' },
 ]
 
 // Max items visible without scrolling

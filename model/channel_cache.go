@@ -139,7 +139,8 @@ func GetRandomSatisfiedChannel(group string, model string, retry int) (*Channel,
 	sort.Sort(sort.Reverse(sort.IntSlice(sortedUniquePriorities)))
 
 	if retry >= len(uniquePriorities) {
-		retry = len(uniquePriorities) - 1
+		// 重试次数超过优先级档位数时，回绕到起始档位继续轮转，避免一直卡在最低优先级档位
+		retry = retry % len(uniquePriorities)
 	}
 	targetPriority := int64(sortedUniquePriorities[retry])
 

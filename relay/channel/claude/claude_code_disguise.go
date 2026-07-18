@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/sha512"
 	"encoding/hex"
+	"encoding/json"
 	"net/http"
 	"regexp"
 	"strings"
@@ -116,6 +117,8 @@ func ApplyClaudeCodeDisguiseBody(c *gin.Context, request *dto.ClaudeRequest, inf
 // wraps them in <system-reminder> tags, and prepends to the first user message.
 // The Claude Code disguise entry is kept in request.System.
 // If there are no messages to inject into, user system entries remain in System unchanged.
+// If any moved entry carried a cache_control marker, it is preserved on the merged block
+// so prompt caching is not silently broken by the move.
 func moveUserSystemToFirstUserMessage(request *dto.ClaudeRequest) {
 	if len(request.Messages) == 0 {
 		return
@@ -129,11 +132,19 @@ func moveUserSystemToFirstUserMessage(request *dto.ClaudeRequest) {
 	// Separate Claude Code entry from user entries
 	var claudeCodeEntries []dto.ClaudeMediaMessage
 	var userSystemTexts []string
+	var mergedCacheControl json.RawMessage
 	for _, entry := range systemEntries {
 		if entry.Text != nil && *entry.Text == claudeCodeSystemPromptEntry {
 			claudeCodeEntries = append(claudeCodeEntries, entry)
 		} else if entry.Text != nil && *entry.Text != "" {
 			userSystemTexts = append(userSystemTexts, *entry.Text)
+			// NOTE: cache_control marks "cache everything up to and including this
+			// block". All user system entries are merged into a single block below,
+			// so the last entry carrying cache_control defines the boundary for the
+			// merged content and takes precedence over earlier ones.
+			if len(entry.CacheControl) > 0 {
+				mergedCacheControl = entry.CacheControl
+			}
 		}
 	}
 
@@ -153,11 +164,21 @@ func moveUserSystemToFirstUserMessage(request *dto.ClaudeRequest) {
 
 		switch content := msg.Content.(type) {
 		case string:
-			request.Messages[i].Content = wrappedContent + "\n" + content
+			if mergedCacheControl != nil {
+				// NOTE: cache_control can only be set on a content block, not on a
+				// plain string message — convert to block form to preserve it.
+				request.Messages[i].Content = []dto.ClaudeMediaMessage{
+					{Type: "text", Text: common.GetPointer(wrappedContent), CacheControl: mergedCacheControl},
+					{Type: "text", Text: common.GetPointer(content)},
+				}
+			} else {
+				request.Messages[i].Content = wrappedContent + "\n" + content
+			}
 		case []dto.ClaudeMediaMessage:
 			newEntry := dto.ClaudeMediaMessage{
-				Type: "text",
-				Text: common.GetPointer(wrappedContent),
+				Type:         "text",
+				Text:         common.GetPointer(wrappedContent),
+				CacheControl: mergedCacheControl,
 			}
 			request.Messages[i].Content = append([]dto.ClaudeMediaMessage{newEntry}, content...)
 		default:
@@ -171,8 +192,9 @@ func moveUserSystemToFirstUserMessage(request *dto.ClaudeRequest) {
 				continue
 			}
 			newEntry := dto.ClaudeMediaMessage{
-				Type: "text",
-				Text: common.GetPointer(wrappedContent),
+				Type:         "text",
+				Text:         common.GetPointer(wrappedContent),
+				CacheControl: mergedCacheControl,
 			}
 			request.Messages[i].Content = append([]dto.ClaudeMediaMessage{newEntry}, typed...)
 		}
@@ -182,9 +204,16 @@ func moveUserSystemToFirstUserMessage(request *dto.ClaudeRequest) {
 
 	if !injected {
 		// No user message found — prepend one
+		var newContent any = wrappedContent
+		if mergedCacheControl != nil {
+			// NOTE: same block-form conversion as above to preserve cache_control.
+			newContent = []dto.ClaudeMediaMessage{
+				{Type: "text", Text: common.GetPointer(wrappedContent), CacheControl: mergedCacheControl},
+			}
+		}
 		newMessage := dto.ClaudeMessage{
 			Role:    "user",
-			Content: wrappedContent,
+			Content: newContent,
 		}
 		request.Messages = append([]dto.ClaudeMessage{newMessage}, request.Messages...)
 	}

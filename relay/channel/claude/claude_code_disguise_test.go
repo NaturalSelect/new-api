@@ -1,6 +1,7 @@
 package claude
 
 import (
+	"encoding/json"
 	"net/http"
 	"regexp"
 	"testing"
@@ -554,6 +555,132 @@ func TestMoveUserSystemToFirstUserMessage_MultipleSystemEntries(t *testing.T) {
 	require.True(t, ok)
 	assert.Contains(t, content, "prompt part 1")
 	assert.Contains(t, content, "prompt part 2")
+	assert.Contains(t, content, "<system-reminder>")
+}
+
+// 11d. TestMoveUserSystemToFirstUserMessage_PreservesCacheControl_StringContent — cache_control
+// on the user system entry must survive the move into the first (string-content) user message.
+func TestMoveUserSystemToFirstUserMessage_PreservesCacheControl_StringContent(t *testing.T) {
+	c, _ := gin.CreateTestContext(nil)
+	cacheControl := json.RawMessage(`{"type":"ephemeral"}`)
+	text := "user custom system prompt"
+	request := &dto.ClaudeRequest{
+		System: []dto.ClaudeMediaMessage{
+			{Type: "text", Text: &text, CacheControl: cacheControl},
+		},
+		Messages: []dto.ClaudeMessage{
+			{Role: "user", Content: "hello"},
+		},
+	}
+	info := makeRelayInfo(true)
+
+	ApplyClaudeCodeDisguiseBody(c, request, info)
+
+	// String content must be converted to block form so cache_control has somewhere to live.
+	blocks, ok := request.Messages[0].Content.([]dto.ClaudeMediaMessage)
+	require.True(t, ok)
+	require.Len(t, blocks, 2)
+	assert.Contains(t, *blocks[0].Text, "<system-reminder>")
+	assert.Contains(t, *blocks[0].Text, "user custom system prompt")
+	assert.JSONEq(t, `{"type":"ephemeral"}`, string(blocks[0].CacheControl))
+	assert.Equal(t, "hello", *blocks[1].Text)
+	assert.Nil(t, blocks[1].CacheControl)
+}
+
+// 11e. TestMoveUserSystemToFirstUserMessage_PreservesCacheControl_ArrayContent — cache_control
+// preserved when the target user message content is already a block array.
+func TestMoveUserSystemToFirstUserMessage_PreservesCacheControl_ArrayContent(t *testing.T) {
+	c, _ := gin.CreateTestContext(nil)
+	cacheControl := json.RawMessage(`{"type":"ephemeral","ttl":"1h"}`)
+	text := "user custom system prompt"
+	existingText := "hi"
+	request := &dto.ClaudeRequest{
+		System: []dto.ClaudeMediaMessage{
+			{Type: "text", Text: &text, CacheControl: cacheControl},
+		},
+		Messages: []dto.ClaudeMessage{
+			{Role: "user", Content: []dto.ClaudeMediaMessage{{Type: "text", Text: &existingText}}},
+		},
+	}
+	info := makeRelayInfo(true)
+
+	ApplyClaudeCodeDisguiseBody(c, request, info)
+
+	blocks, ok := request.Messages[0].Content.([]dto.ClaudeMediaMessage)
+	require.True(t, ok)
+	require.Len(t, blocks, 2)
+	assert.JSONEq(t, `{"type":"ephemeral","ttl":"1h"}`, string(blocks[0].CacheControl))
+}
+
+// 11f. TestMoveUserSystemToFirstUserMessage_MultipleEntries_LastCacheControlWins — when several
+// user system entries are merged into one block, the last cache_control marker wins, matching
+// Anthropic's "cache everything up to this block" semantics.
+func TestMoveUserSystemToFirstUserMessage_MultipleEntries_LastCacheControlWins(t *testing.T) {
+	c, _ := gin.CreateTestContext(nil)
+	text1 := "prompt part 1"
+	text2 := "prompt part 2"
+	cc1 := json.RawMessage(`{"type":"ephemeral","ttl":"5m"}`)
+	cc2 := json.RawMessage(`{"type":"ephemeral","ttl":"1h"}`)
+	request := &dto.ClaudeRequest{
+		System: []dto.ClaudeMediaMessage{
+			{Type: "text", Text: &text1, CacheControl: cc1},
+			{Type: "text", Text: &text2, CacheControl: cc2},
+		},
+		Messages: []dto.ClaudeMessage{
+			{Role: "user", Content: "hi"},
+		},
+	}
+	info := makeRelayInfo(true)
+
+	ApplyClaudeCodeDisguiseBody(c, request, info)
+
+	blocks, ok := request.Messages[0].Content.([]dto.ClaudeMediaMessage)
+	require.True(t, ok)
+	require.Len(t, blocks, 2)
+	assert.JSONEq(t, `{"type":"ephemeral","ttl":"1h"}`, string(blocks[0].CacheControl))
+}
+
+// 11g. TestMoveUserSystemToFirstUserMessage_PreservesCacheControl_NoExistingUserMessage — when no
+// user message exists yet, the newly-prepended message must still carry cache_control.
+func TestMoveUserSystemToFirstUserMessage_PreservesCacheControl_NoExistingUserMessage(t *testing.T) {
+	c, _ := gin.CreateTestContext(nil)
+	cacheControl := json.RawMessage(`{"type":"ephemeral"}`)
+	text := "user custom system prompt"
+	request := &dto.ClaudeRequest{
+		System: []dto.ClaudeMediaMessage{
+			{Type: "text", Text: &text, CacheControl: cacheControl},
+		},
+		Messages: []dto.ClaudeMessage{
+			{Role: "assistant", Content: "prior turn"},
+		},
+	}
+	info := makeRelayInfo(true)
+
+	ApplyClaudeCodeDisguiseBody(c, request, info)
+
+	require.Equal(t, "user", request.Messages[0].Role)
+	blocks, ok := request.Messages[0].Content.([]dto.ClaudeMediaMessage)
+	require.True(t, ok)
+	require.Len(t, blocks, 1)
+	assert.JSONEq(t, `{"type":"ephemeral"}`, string(blocks[0].CacheControl))
+}
+
+// 11h. TestMoveUserSystemToFirstUserMessage_NoCacheControl_KeepsStringConcat — without any
+// cache_control marker, the move keeps the simpler string-concatenation form (no behavior change).
+func TestMoveUserSystemToFirstUserMessage_NoCacheControl_KeepsStringConcat(t *testing.T) {
+	c, _ := gin.CreateTestContext(nil)
+	request := &dto.ClaudeRequest{
+		System: "user custom system prompt",
+		Messages: []dto.ClaudeMessage{
+			{Role: "user", Content: "hello"},
+		},
+	}
+	info := makeRelayInfo(true)
+
+	ApplyClaudeCodeDisguiseBody(c, request, info)
+
+	content, ok := request.Messages[0].Content.(string)
+	require.True(t, ok)
 	assert.Contains(t, content, "<system-reminder>")
 }
 

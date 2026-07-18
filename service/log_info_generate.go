@@ -79,7 +79,20 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	appendBillingInfo(relayInfo, other)
 	appendParamOverrideInfo(relayInfo, other)
 	appendStreamStatus(relayInfo, other)
+	appendUpstreamIdentityInfo(relayInfo, other)
 	return other
+}
+
+func appendUpstreamIdentityInfo(relayInfo *relaycommon.RelayInfo, other map[string]interface{}) {
+	if relayInfo == nil || other == nil {
+		return
+	}
+	if relayInfo.UpstreamPromptCacheKey != "" {
+		other["prompt_cache_key"] = relayInfo.UpstreamPromptCacheKey
+	}
+	if relayInfo.UpstreamMetadataUserID != "" {
+		other["metadata_user_id"] = relayInfo.UpstreamMetadataUserID
+	}
 }
 
 func appendParamOverrideInfo(relayInfo *relaycommon.RelayInfo, other map[string]interface{}) {

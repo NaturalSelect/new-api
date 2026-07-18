@@ -185,6 +185,7 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 				return newAPIErrorFromParamOverride(err)
 			}
 		}
+		relaycommon.ExtractUpstreamIdentity(jsonData, info)
 
 		logger.LogDebug(c, "text request body: %s", jsonData)
 

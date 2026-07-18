@@ -160,6 +160,12 @@ type RelayInfo struct {
 	UseRuntimeHeadersOverride             bool
 	ParamOverrideAudit                    []string
 
+	// UpstreamPromptCacheKey / UpstreamMetadataUserID capture the
+	// prompt_cache_key / metadata.user_id values actually sent to the
+	// upstream provider (after ParamOverride), for use log display.
+	UpstreamPromptCacheKey string
+	UpstreamMetadataUserID string
+
 	// UpstreamRequestBodySize is the byte size of the marshaled upstream request
 	// body. It is set when the body is wrapped in a BodyStorage (see
 	// relay/common/outbound_body.go), so that DoApiRequest can populate
@@ -1208,4 +1214,24 @@ func RemoveGeminiDisabledFields(jsonData []byte) ([]byte, error) {
 		return jsonData, nil
 	}
 	return jsonDataAfter, nil
+}
+
+// ExtractUpstreamIdentity reads prompt_cache_key and metadata.user_id from the
+// final upstream request body (post ParamOverride) and stores them on info for
+// use log display. Values are only set when non-empty; missing/empty values
+// leave the corresponding field untouched.
+func ExtractUpstreamIdentity(jsonData []byte, info *RelayInfo) {
+	if info == nil || len(jsonData) == 0 {
+		return
+	}
+	if key := gjson.GetBytes(jsonData, "prompt_cache_key"); key.Exists() {
+		if v := strings.TrimSpace(key.String()); v != "" {
+			info.UpstreamPromptCacheKey = v
+		}
+	}
+	if userId := gjson.GetBytes(jsonData, "metadata.user_id"); userId.Exists() {
+		if v := strings.TrimSpace(userId.String()); v != "" {
+			info.UpstreamMetadataUserID = v
+		}
+	}
 }

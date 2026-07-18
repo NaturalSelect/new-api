@@ -38,3 +38,45 @@ func TestRelayInfoGetFinalRequestRelayFormatNilReceiver(t *testing.T) {
 	var info *RelayInfo
 	require.Equal(t, types.RelayFormat(""), info.GetFinalRequestRelayFormat())
 }
+
+func TestExtractUpstreamIdentityBothPresent(t *testing.T) {
+	info := &RelayInfo{}
+	ExtractUpstreamIdentity([]byte(`{"prompt_cache_key":"abc","metadata":{"user_id":"xyz"}}`), info)
+
+	require.Equal(t, "abc", info.UpstreamPromptCacheKey)
+	require.Equal(t, "xyz", info.UpstreamMetadataUserID)
+}
+
+func TestExtractUpstreamIdentityOnlyPromptCacheKey(t *testing.T) {
+	info := &RelayInfo{}
+	ExtractUpstreamIdentity([]byte(`{"prompt_cache_key":"abc"}`), info)
+
+	require.Equal(t, "abc", info.UpstreamPromptCacheKey)
+	require.Equal(t, "", info.UpstreamMetadataUserID)
+}
+
+func TestExtractUpstreamIdentityEmptyBody(t *testing.T) {
+	info := &RelayInfo{}
+	ExtractUpstreamIdentity([]byte(`{}`), info)
+
+	require.Equal(t, "", info.UpstreamPromptCacheKey)
+	require.Equal(t, "", info.UpstreamMetadataUserID)
+}
+
+func TestExtractUpstreamIdentityMetadataNotObject(t *testing.T) {
+	info := &RelayInfo{}
+	ExtractUpstreamIdentity([]byte(`{"metadata":"not-an-object"}`), info)
+
+	require.Equal(t, "", info.UpstreamPromptCacheKey)
+	require.Equal(t, "", info.UpstreamMetadataUserID)
+}
+
+func TestExtractUpstreamIdentityNilInfoOrEmptyBody(t *testing.T) {
+	require.NotPanics(t, func() {
+		ExtractUpstreamIdentity([]byte(`{"prompt_cache_key":"abc"}`), nil)
+	})
+
+	info := &RelayInfo{}
+	ExtractUpstreamIdentity(nil, info)
+	require.Equal(t, "", info.UpstreamPromptCacheKey)
+}

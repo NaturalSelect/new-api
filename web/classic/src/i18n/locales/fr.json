@@ -222,6 +222,8 @@
     "Prompt cache hit tokens": "Prompt cache hit tokens",
     "Prompt tokens": "Prompt tokens",
     "Reasoning Effort": "Effort de raisonnement",
+    "Prompt Cache Key": "Clé de cache du prompt",
+    "Metadata User ID": "ID utilisateur des métadonnées",
     "Request ID": "Request ID",
     "RSA 私钥 (沙盒)": "",
     "RSA 私钥 (生产)": "",

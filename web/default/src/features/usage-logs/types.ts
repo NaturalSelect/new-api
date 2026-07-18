@@ -144,6 +144,8 @@ export interface LogOtherData {
   expr_b64?: string
   matched_tier?: string
   reasoning_effort?: string
+  prompt_cache_key?: string
+  metadata_user_id?: string
   image?: boolean
   image_ratio?: number
   image_output?: number

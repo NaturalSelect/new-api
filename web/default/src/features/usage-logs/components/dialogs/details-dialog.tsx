@@ -814,6 +814,22 @@ export function DetailsDialog(props: DetailsDialogProps) {
               />
             )}
 
+            {/* Upstream identity fields */}
+            {other?.prompt_cache_key && (
+              <DetailRow
+                label={t('Prompt Cache Key')}
+                value={other.prompt_cache_key}
+                mono
+              />
+            )}
+            {other?.metadata_user_id && (
+              <DetailRow
+                label={t('Metadata User ID')}
+                value={other.metadata_user_id}
+                mono
+              />
+            )}
+
             {/* System prompt override */}
             {other?.is_system_prompt_overwritten && (
               <DetailRow

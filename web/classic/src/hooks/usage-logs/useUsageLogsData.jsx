@@ -497,6 +497,18 @@ export const useLogsData = () => {
             value: other.reasoning_effort,
           });
         }
+        if (other?.prompt_cache_key) {
+          expandDataLocal.push({
+            key: t('Prompt Cache Key'),
+            value: other.prompt_cache_key,
+          });
+        }
+        if (other?.metadata_user_id) {
+          expandDataLocal.push({
+            key: t('Metadata User ID'),
+            value: other.metadata_user_id,
+          });
+        }
         if (other?.billing_mode === 'tiered_expr' && other?.expr_b64) {
           expandDataLocal.push({
             key: t('计费过程'),

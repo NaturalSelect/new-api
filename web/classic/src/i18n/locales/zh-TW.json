@@ -215,6 +215,8 @@
     "Prompt cache hit tokens": "",
     "Prompt tokens": "",
     "Reasoning Effort": "Reasoning Effort",
+    "Prompt Cache Key": "提示快取金鑰",
+    "Metadata User ID": "元數據使用者ID",
     "Request ID": "",
     "RSA 私钥 (沙盒)": "",
     "RSA 私钥 (生产)": "",

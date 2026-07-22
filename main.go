@@ -123,6 +123,10 @@ func main() {
 	// Poe usage log sync task (every 1 minutes, for Poe channel types)
 	service.StartPoeLogSyncTask()
 
+	// Token stats cache backfill task (backfills TokenStatsCache one historical day
+	// per tick, speeding up Token/Key Distribution dashboard reads)
+	service.StartTokenStatsBackfillTask()
+
 	// Wire task polling adaptor factory (breaks service -> relay import cycle)
 	service.GetTaskAdaptorFunc = func(platform constant.TaskPlatform) service.TaskPollingAdaptor {
 		a := relay.GetTaskAdaptor(platform)

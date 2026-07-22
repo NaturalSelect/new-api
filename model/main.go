@@ -283,6 +283,12 @@ func migrateDB() error {
 		&PerfMetric{},
 		&PoeLog{},
 		&PoeLogSyncState{},
+		// TokenStatsCache is derived from logs and always lives on LOG_DB. When
+		// LOG_SQL_DSN is unset, LOG_DB == DB and InitLogDB() returns early without
+		// calling migrateLOGDB() (see below) — so it must also be migrated here to
+		// cover that default deployment. The LOG_SQL_DSN deployment is covered by
+		// migrateLOGDB() instead.
+		&TokenStatsCache{},
 	)
 	if err != nil {
 		return err
@@ -378,7 +384,7 @@ func migrateDBFast() error {
 
 func migrateLOGDB() error {
 	var err error
-	if err = LOG_DB.AutoMigrate(&Log{}); err != nil {
+	if err = LOG_DB.AutoMigrate(&Log{}, &TokenStatsCache{}); err != nil {
 		return err
 	}
 	return nil

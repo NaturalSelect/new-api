@@ -288,8 +288,8 @@ func TestGetKeyDistribution_AnthropicSemanticIncludesCacheReadInInputAndTotal(t 
 	truncateTables(t)
 
 	createConsumeLogWithOther(t, 1, "alice", 10, "key-a", "claude-3-5-sonnet", 100, 50, 1000, map[string]interface{}{
-		"cache_tokens":    30,
-		"usage_semantic":  "anthropic",
+		"cache_tokens":   30,
+		"usage_semantic": "anthropic",
 	})
 
 	result, err := GetKeyDistribution(0, 0, "")

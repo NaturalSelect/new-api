@@ -266,6 +266,8 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	err := LOG_DB.Create(log).Error
 	if err != nil {
 		logger.LogError(c, "failed to record log: "+err.Error())
+	} else {
+		upsertTokenStatsCacheForLog(log)
 	}
 	if common.DataExportEnabled {
 		gopool.Go(func() {
@@ -314,6 +316,8 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 	err := LOG_DB.Create(log).Error
 	if err != nil {
 		common.SysLog("failed to record task billing log: " + err.Error())
+	} else {
+		upsertTokenStatsCacheForLog(log)
 	}
 }
 
@@ -362,6 +366,7 @@ func RecordPoeConsumeLog(params RecordPoeConsumeLogParams) int {
 		common.SysLog("failed to record poe consume log: " + err.Error())
 		return 0
 	}
+	upsertTokenStatsCacheForLog(log)
 	if common.DataExportEnabled {
 		gopool.Go(func() {
 			LogQuotaData(userId, username, params.ModelName, params.Quota, params.CreatedAt, params.PromptTokens+params.CompletionTokens)
@@ -592,6 +597,27 @@ func isAnthropicUsageSemantic(otherMap map[string]interface{}) bool {
 	return semantic == "anthropic"
 }
 
+// tokenStatsCacheOtherTokens extracts the cache-read/cache-write token counts and the
+// Claude/Anthropic semantic flag from a Log row's Other JSON. Both the live per-log
+// cache write (upsertTokenStatsCacheForLog) and the historical backfill scan
+// (scanLogsForStatsCacheDay) call this — sharing it with
+// scanTokenDistribution/scanKeyDistribution's own inline parsing is what guarantees
+// TokenStatsCache can never drift from what a raw scan would have computed for the
+// same rows.
+func tokenStatsCacheOtherTokens(other string) (cacheReadTokens int64, cacheWriteTokens int64, isAnthropic bool) {
+	if other == "" {
+		return 0, 0, false
+	}
+	otherMap := make(map[string]interface{})
+	if err := common.UnmarshalJsonStr(other, &otherMap); err != nil {
+		return 0, 0, false
+	}
+	cacheReadTokens = int64(toIntFromAny(otherMap["cache_tokens"]))
+	cacheWriteTokens = int64(getCacheWriteTokensFromOther(otherMap))
+	isAnthropic = isAnthropicUsageSemantic(otherMap)
+	return cacheReadTokens, cacheWriteTokens, isAnthropic
+}
+
 func bucketTimestampToHour(timestamp int64) int64 {
 	if timestamp <= 0 {
 		return 0
@@ -603,11 +629,87 @@ func GetTokenDistribution(startTimestamp int64, endTimestamp int64, username str
 	return getTokenDistributionAggregated(startTimestamp, endTimestamp, username)
 }
 
-// NOTE: getTokenDistributionAggregated aggregates token distribution from the logs table.
+// getTokenDistributionAggregated serves Token Distribution by splitting the requested
+// range against the TokenStatsCache watermark (see tokenStatsCacheZonesFor): whole UTC
+// days that are both cache-covered and fully contained in the request are answered
+// from TokenStatsCache; everything else (recent/not-yet-backfilled history, today, and
+// any partial boundary day) falls back to scanTokenDistribution, the original raw-logs
+// scan. This keeps results complete even before the cache is populated (e.g. right
+// after upgrade, or on a follower node whose synced watermark lags) — the cache can
+// only ever narrow how much gets scanned, never how much data is included.
+func getTokenDistributionAggregated(startTimestamp int64, endTimestamp int64, username string) ([]*TokenDistributionData, error) {
+	zones := tokenStatsCacheZonesFor(startTimestamp, endTimestamp)
+
+	var segments [][]*TokenDistributionData
+	if zones.BeforeOk {
+		segment, err := scanTokenDistribution(zones.BeforeStart, zones.BeforeEnd, username)
+		if err != nil {
+			return nil, err
+		}
+		segments = append(segments, segment)
+	}
+	if zones.CacheOk {
+		segment, err := queryTokenStatsCacheForTokenDistribution(zones.CacheFirstDay, zones.CacheLastDay, username)
+		if err != nil {
+			return nil, err
+		}
+		segments = append(segments, segment)
+	}
+	if zones.AfterOk {
+		segment, err := scanTokenDistribution(zones.AfterStart, zones.AfterEnd, username)
+		if err != nil {
+			return nil, err
+		}
+		segments = append(segments, segment)
+	}
+	return mergeTokenDistributionData(segments...), nil
+}
+
+// mergeTokenDistributionData combines the up-to-three segments getTokenDistributionAggregated
+// reads (raw-before, cache, raw-after) into one result, summing rows that share a
+// (created_at, model_name) key — in practice the segments' time zones do not overlap,
+// so this only ever combines distinct rows and re-sorts, but summing is harmless and
+// keeps the merge correct even if that assumption is ever relaxed.
+func mergeTokenDistributionData(segments ...[]*TokenDistributionData) []*TokenDistributionData {
+	type key struct {
+		CreatedAt int64
+		ModelName string
+	}
+	merged := make(map[key]*TokenDistributionData)
+	for _, segment := range segments {
+		for _, item := range segment {
+			k := key{CreatedAt: item.CreatedAt, ModelName: item.ModelName}
+			existing, ok := merged[k]
+			if !ok {
+				clone := *item
+				merged[k] = &clone
+				continue
+			}
+			existing.InputTokens += item.InputTokens
+			existing.OutputTokens += item.OutputTokens
+			existing.CacheReadTokens += item.CacheReadTokens
+			existing.CacheWriteTokens += item.CacheWriteTokens
+			existing.Count += item.Count
+		}
+	}
+	result := make([]*TokenDistributionData, 0, len(merged))
+	for _, item := range merged {
+		result = append(result, item)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].CreatedAt == result[j].CreatedAt {
+			return result[i].ModelName < result[j].ModelName
+		}
+		return result[i].CreatedAt < result[j].CreatedAt
+	})
+	return result
+}
+
+// NOTE: scanTokenDistribution aggregates token distribution straight from the logs table.
 // NOTE: Poe channel records carry billing_source "poe_log" in the other field and have
 // NOTE: real token values in the standard prompt_tokens/completion_tokens columns, so
 // NOTE: they are included naturally — no special exclusion is needed.
-func getTokenDistributionAggregated(startTimestamp int64, endTimestamp int64, username string) ([]*TokenDistributionData, error) {
+func scanTokenDistribution(startTimestamp int64, endTimestamp int64, username string) ([]*TokenDistributionData, error) {
 	base := LOG_DB.Table("logs").Select("id, created_at, model_name, prompt_tokens, completion_tokens, other").Where("type = ?", LogTypeConsume)
 	if startTimestamp != 0 {
 		base = base.Where("created_at >= ?", startTimestamp)
@@ -746,9 +848,85 @@ func GetSelfKeyDistribution(userId int, startTimestamp int64, endTimestamp int64
 // NOTE: getKeyDistributionAggregated reads token_id/token_name straight from the logs
 // NOTE: snapshot (no JOIN against tokens), so deleted keys still show up in historical
 // NOTE: stats. Cache hit/write tokens live only in the logs.other JSON column, so —
-// NOTE: like getTokenDistributionAggregated — rows are read in batches and aggregated
-// NOTE: in Go rather than with a single SQL GROUP BY/SUM.
+// NOTE: like scanTokenDistribution — rows are read in batches and aggregated in Go
+// NOTE: rather than with a single SQL GROUP BY/SUM.
+//
+// Like getTokenDistributionAggregated, it splits the requested range against the
+// TokenStatsCache watermark (see tokenStatsCacheZonesFor): whole UTC days that are
+// both cache-covered and fully contained in the request are answered from
+// TokenStatsCache; everything else falls back to scanKeyDistribution, the original raw
+// scan. Key Distribution has no time dimension in its output (unlike Token
+// Distribution's hour buckets), so — unlike there — day-granularity cache storage
+// loses no precision here at all.
 func getKeyDistributionAggregated(startTimestamp int64, endTimestamp int64, filter keyDistributionFilter) ([]*KeyDistributionData, error) {
+	zones := tokenStatsCacheZonesFor(startTimestamp, endTimestamp)
+
+	var segments [][]*KeyDistributionData
+	if zones.BeforeOk {
+		segment, err := scanKeyDistribution(zones.BeforeStart, zones.BeforeEnd, filter)
+		if err != nil {
+			return nil, err
+		}
+		segments = append(segments, segment)
+	}
+	if zones.CacheOk {
+		segment, err := queryTokenStatsCacheForKeyDistribution(zones.CacheFirstDay, zones.CacheLastDay, filter)
+		if err != nil {
+			return nil, err
+		}
+		segments = append(segments, segment)
+	}
+	if zones.AfterOk {
+		segment, err := scanKeyDistribution(zones.AfterStart, zones.AfterEnd, filter)
+		if err != nil {
+			return nil, err
+		}
+		segments = append(segments, segment)
+	}
+	result := mergeKeyDistributionData(segments...)
+	sortKeyDistributionData(result)
+	return result, nil
+}
+
+// mergeKeyDistributionData combines the up-to-three segments getKeyDistributionAggregated
+// reads (raw-before, cache, raw-after) into one result, summing rows that share a
+// (token_id, token_name, model_name) key — unlike Token Distribution's merge, these
+// segments commonly DO share keys (the same key can be used across the whole queried
+// range), so this summation is load-bearing, not just a safety net.
+func mergeKeyDistributionData(segments ...[]*KeyDistributionData) []*KeyDistributionData {
+	type key struct {
+		TokenId   int
+		TokenName string
+		ModelName string
+	}
+	merged := make(map[key]*KeyDistributionData)
+	for _, segment := range segments {
+		for _, item := range segment {
+			k := key{TokenId: item.TokenId, TokenName: item.TokenName, ModelName: item.ModelName}
+			existing, ok := merged[k]
+			if !ok {
+				clone := *item
+				merged[k] = &clone
+				continue
+			}
+			existing.InputTokens += item.InputTokens
+			existing.OutputTokens += item.OutputTokens
+			existing.CacheReadTokens += item.CacheReadTokens
+			existing.CacheWriteTokens += item.CacheWriteTokens
+			existing.Count += item.Count
+			existing.TotalTokens += item.TotalTokens
+		}
+	}
+	result := make([]*KeyDistributionData, 0, len(merged))
+	for _, item := range merged {
+		result = append(result, item)
+	}
+	return result
+}
+
+// scanKeyDistribution is the original full raw-logs scan behind getKeyDistributionAggregated,
+// and also the oracle scanLogsForStatsCacheDay's backfill must agree with.
+func scanKeyDistribution(startTimestamp int64, endTimestamp int64, filter keyDistributionFilter) ([]*KeyDistributionData, error) {
 	base := LOG_DB.Table("logs").Select("id, token_id, token_name, model_name, prompt_tokens, completion_tokens, other").Where("type = ?", LogTypeConsume)
 	if startTimestamp != 0 {
 		base = base.Where("created_at >= ?", startTimestamp)
@@ -770,9 +948,9 @@ func getKeyDistributionAggregated(startTimestamp int64, endTimestamp int64, filt
 	}
 	aggregates := make(map[aggregateKey]*KeyDistributionData)
 
-	// NOTE: see getTokenDistributionAggregated — seek (keyset) pagination on id avoids
-	// NOTE: the row skipping/double-counting ("drift") that Offset/Limit without ORDER BY
-	// NOTE: can produce on an actively-written logs table.
+	// NOTE: see scanTokenDistribution — seek (keyset) pagination on id avoids the row
+	// NOTE: skipping/double-counting ("drift") that Offset/Limit without ORDER BY can
+	// NOTE: produce on an actively-written logs table.
 	const batchSize = 1000
 	lastId := 0
 	for {
@@ -827,6 +1005,91 @@ func getKeyDistributionAggregated(startTimestamp int64, endTimestamp int64, filt
 
 	sortKeyDistributionData(result)
 	return result, nil
+}
+
+// tokenStatsCacheLogRecord is the raw per-log row scanLogsForStatsCacheDay reads before
+// Go-side aggregation, wide enough to cover both Token and Key Distribution's grouping
+// dimensions since it feeds one unified TokenStatsCache row per (user, token, model).
+type tokenStatsCacheLogRecord struct {
+	Id               int    `json:"id"`
+	UserId           int    `json:"user_id"`
+	Username         string `json:"username"`
+	TokenId          int    `json:"token_id"`
+	TokenName        string `json:"token_name"`
+	ModelName        string `json:"model_name"`
+	PromptTokens     int    `json:"prompt_tokens"`
+	CompletionTokens int    `json:"completion_tokens"`
+	Other            string `json:"other"`
+}
+
+// scanLogsForStatsCacheDay scans every LogTypeConsume row for one UTC day (day must
+// already be day-truncated — see BucketTimestampToDay) and aggregates them into the
+// (day, user, token, model) grain TokenStatsCache stores, using the same keyset
+// pagination and cache-token/Anthropic normalization (tokenStatsCacheOtherTokens) as
+// scanTokenDistribution/scanKeyDistribution so a backfilled day and a raw scan of that
+// same day can never disagree. It is the sole data source for
+// BackfillTokenStatsCacheDay; the returned deltas fully replace that day's cache rows.
+func scanLogsForStatsCacheDay(day int64) ([]tokenStatsCacheDelta, int64, error) {
+	base := LOG_DB.Table("logs").
+		Select("id, user_id, username, token_id, token_name, model_name, prompt_tokens, completion_tokens, other").
+		Where("type = ?", LogTypeConsume).
+		Where("created_at >= ? AND created_at < ?", day, day+86400)
+
+	type aggregateKey struct {
+		UserId    int
+		TokenId   int
+		TokenName string
+		ModelName string
+	}
+	aggregates := make(map[aggregateKey]*tokenStatsCacheDelta)
+
+	const batchSize = 1000
+	lastId := 0
+	var scanned int64
+	for {
+		var batch []tokenStatsCacheLogRecord
+		if err := base.Where("id > ?", lastId).Order("id ASC").Limit(batchSize).Find(&batch).Error; err != nil {
+			return nil, 0, err
+		}
+		if len(batch) == 0 {
+			break
+		}
+		for _, record := range batch {
+			key := aggregateKey{UserId: record.UserId, TokenId: record.TokenId, TokenName: record.TokenName, ModelName: record.ModelName}
+			item, ok := aggregates[key]
+			if !ok {
+				item = &tokenStatsCacheDelta{
+					Day: day, UserId: record.UserId, TokenId: record.TokenId,
+					TokenName: record.TokenName, ModelName: record.ModelName,
+				}
+				aggregates[key] = item
+			}
+			// Last-write-wins: batches arrive in id (chronological) order, so the final
+			// value seen for this key is that day's most recent snapshot of the username.
+			item.Username = record.Username
+			item.InputTokens += int64(record.PromptTokens)
+			item.OutputTokens += int64(record.CompletionTokens)
+			item.Count++
+
+			cacheReadTokens, cacheWriteTokens, isAnthropic := tokenStatsCacheOtherTokens(record.Other)
+			if isAnthropic {
+				item.InputTokens += cacheReadTokens
+			}
+			item.CacheReadTokens += cacheReadTokens
+			item.CacheWriteTokens += cacheWriteTokens
+		}
+		scanned += int64(len(batch))
+		lastId = batch[len(batch)-1].Id
+		if len(batch) < batchSize {
+			break
+		}
+	}
+
+	deltas := make([]tokenStatsCacheDelta, 0, len(aggregates))
+	for _, item := range aggregates {
+		deltas = append(deltas, *item)
+	}
+	return deltas, scanned, nil
 }
 
 // sortKeyDistributionData orders rows by total_tokens desc, with a fully deterministic

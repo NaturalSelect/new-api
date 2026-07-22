@@ -272,9 +272,35 @@ func TestGetKeyDistribution_SumsCacheTokensFromOther(t *testing.T) {
 	item := result[0]
 	require.Equal(t, 50, item.CacheReadTokens)
 	require.Equal(t, 15, item.CacheWriteTokens)
-	// total_tokens includes cache_write (real extra token spend) but excludes
-	// cache_read, which is already counted inside InputTokens.
+	// total_tokens includes cache_write (real extra token spend). cache_read is not
+	// added separately here because OpenAI semantic (no usage_semantic marker) already
+	// counts it inside InputTokens/prompt_tokens.
 	require.Equal(t, item.InputTokens+item.OutputTokens+item.CacheWriteTokens, item.TotalTokens)
+	require.Equal(t, 200, item.InputTokens) // 100+100, unchanged: cache_read is already inside prompt_tokens
+}
+
+// Claude/Anthropic semantic reports prompt_tokens as text-only, excluding
+// cache_read_input_tokens — unlike OpenAI, where prompt_tokens already includes it.
+// InputTokens (and therefore TotalTokens) must add cache_read back in for rows
+// tagged usage_semantic=anthropic, otherwise cache read spend silently disappears
+// from the Key Statistics total.
+func TestGetKeyDistribution_AnthropicSemanticIncludesCacheReadInInputAndTotal(t *testing.T) {
+	truncateTables(t)
+
+	createConsumeLogWithOther(t, 1, "alice", 10, "key-a", "claude-3-5-sonnet", 100, 50, 1000, map[string]interface{}{
+		"cache_tokens":    30,
+		"usage_semantic":  "anthropic",
+	})
+
+	result, err := GetKeyDistribution(0, 0, "")
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+
+	item := result[0]
+	require.Equal(t, 130, item.InputTokens) // 100 (text-only) + 30 (cache_read, additive for Claude)
+	require.Equal(t, 30, item.CacheReadTokens)
+	require.Equal(t, 50, item.OutputTokens)
+	require.Equal(t, 180, item.TotalTokens) // 130 + 50 + 0 cache_write
 }
 
 // Cache write falls back to cache_creation_tokens / cache_creation_tokens_5m+1h when

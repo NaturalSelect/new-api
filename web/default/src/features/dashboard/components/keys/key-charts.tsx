@@ -146,9 +146,25 @@ function buildKeyRankSpec(
     (a, b) => b.total - a.total
   )
 
-  const values: Array<{ Key: string; Model: string; Value: number }> = []
+  // token_name has no uniqueness constraint (only the key value itself is
+  // unique), so two distinct keys can share a display name — e.g. many users
+  // naming a key "default". The band axis groups bars by this label, so a
+  // collision would silently merge two different keys into one bar. Only
+  // disambiguate names that actually collide, keeping the common case (all
+  // names unique) clean.
+  const nameCounts = new Map<string, number>()
   for (const key of sortedKeys) {
     const label = key.token_name ? key.token_name : `Key #${key.token_id}`
+    nameCounts.set(label, (nameCounts.get(label) || 0) + 1)
+  }
+
+  const values: Array<{ Key: string; Model: string; Value: number }> = []
+  for (const key of sortedKeys) {
+    const baseLabel = key.token_name ? key.token_name : `Key #${key.token_id}`
+    const label =
+      (nameCounts.get(baseLabel) || 0) > 1
+        ? `${baseLabel} (#${key.token_id})`
+        : baseLabel
     for (const [model, value] of key.models) {
       values.push({ Key: label, Model: model, Value: value })
     }

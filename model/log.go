@@ -520,6 +520,7 @@ type TokenDistributionData struct {
 }
 
 type tokenDistributionLogRecord struct {
+	Id               int    `json:"id"`
 	CreatedAt        int64  `json:"created_at"`
 	ModelName        string `json:"model_name"`
 	PromptTokens     int    `json:"prompt_tokens"`
@@ -579,6 +580,18 @@ func getCacheWriteTokensFromOther(otherMap map[string]interface{}) int {
 	return 0
 }
 
+// isAnthropicUsageSemantic reports whether a log row's other JSON was recorded under
+// Claude/Anthropic usage semantics (see service.PostTextConsumeQuota), where
+// prompt_tokens is text-only and excludes cache_read/cache_creation tokens — unlike
+// OpenAI semantics, where prompt_tokens already includes cache_read as a subset.
+func isAnthropicUsageSemantic(otherMap map[string]interface{}) bool {
+	if _, ok := otherMap["usage_semantic"]; !ok {
+		return false
+	}
+	semantic, _ := otherMap["usage_semantic"].(string)
+	return semantic == "anthropic"
+}
+
 func bucketTimestampToHour(timestamp int64) int64 {
 	if timestamp <= 0 {
 		return 0
@@ -595,7 +608,7 @@ func GetTokenDistribution(startTimestamp int64, endTimestamp int64, username str
 // NOTE: real token values in the standard prompt_tokens/completion_tokens columns, so
 // NOTE: they are included naturally — no special exclusion is needed.
 func getTokenDistributionAggregated(startTimestamp int64, endTimestamp int64, username string) ([]*TokenDistributionData, error) {
-	base := LOG_DB.Table("logs").Select("created_at, model_name, prompt_tokens, completion_tokens, other").Where("type = ?", LogTypeConsume)
+	base := LOG_DB.Table("logs").Select("id, created_at, model_name, prompt_tokens, completion_tokens, other").Where("type = ?", LogTypeConsume)
 	if startTimestamp != 0 {
 		base = base.Where("created_at >= ?", startTimestamp)
 	}
@@ -612,11 +625,21 @@ func getTokenDistributionAggregated(startTimestamp int64, endTimestamp int64, us
 	}
 	aggregates := make(map[aggregateKey]*TokenDistributionData)
 
+	// NOTE: Offset/Limit pagination has no stable row order without ORDER BY, so on an
+	// NOTE: actively-written logs table, concurrent inserts can shift the result set and
+	// NOTE: cause rows to be skipped or double-counted between pages ("drift"). Seek
+	// NOTE: (keyset) pagination on the id primary key avoids this: every row keeps a
+	// NOTE: fixed id, so "id > lastId" always resumes exactly where the previous page
+	// NOTE: left off regardless of concurrent writes.
 	const batchSize = 1000
-	for offset := 0; ; offset += batchSize {
+	lastId := 0
+	for {
 		var batch []tokenDistributionLogRecord
-		if err := base.Offset(offset).Limit(batchSize).Find(&batch).Error; err != nil {
+		if err := base.Where("id > ?", lastId).Order("id ASC").Limit(batchSize).Find(&batch).Error; err != nil {
 			return nil, err
+		}
+		if len(batch) == 0 {
+			break
 		}
 		for _, record := range batch {
 			bucket := bucketTimestampToHour(record.CreatedAt)
@@ -640,11 +663,20 @@ func getTokenDistributionAggregated(startTimestamp int64, endTimestamp int64, us
 			if record.Other != "" {
 				otherMap := make(map[string]interface{})
 				if err := common.UnmarshalJsonStr(record.Other, &otherMap); err == nil {
-					item.CacheReadTokens += toIntFromAny(otherMap["cache_tokens"])
+					cacheReadTokens := toIntFromAny(otherMap["cache_tokens"])
+					// NOTE: Claude/Anthropic semantic reports prompt_tokens as text-only,
+					// NOTE: excluding cache_read — unlike OpenAI, where prompt_tokens already
+					// NOTE: includes it. Add it back here so InputTokens uniformly means
+					// NOTE: "total input including cache read" regardless of provider.
+					if isAnthropicUsageSemantic(otherMap) {
+						item.InputTokens += cacheReadTokens
+					}
+					item.CacheReadTokens += cacheReadTokens
 					item.CacheWriteTokens += getCacheWriteTokensFromOther(otherMap)
 				}
 			}
 		}
+		lastId = batch[len(batch)-1].Id
 		if len(batch) < batchSize {
 			break
 		}
@@ -681,6 +713,7 @@ type KeyDistributionData struct {
 // keyDistributionLogRecord is the raw per-log row read from the logs table before
 // Go-side aggregation, mirroring tokenDistributionLogRecord.
 type keyDistributionLogRecord struct {
+	Id               int    `json:"id"`
 	TokenId          int    `json:"token_id"`
 	TokenName        string `json:"token_name"`
 	ModelName        string `json:"model_name"`
@@ -716,7 +749,7 @@ func GetSelfKeyDistribution(userId int, startTimestamp int64, endTimestamp int64
 // NOTE: like getTokenDistributionAggregated — rows are read in batches and aggregated
 // NOTE: in Go rather than with a single SQL GROUP BY/SUM.
 func getKeyDistributionAggregated(startTimestamp int64, endTimestamp int64, filter keyDistributionFilter) ([]*KeyDistributionData, error) {
-	base := LOG_DB.Table("logs").Select("token_id, token_name, model_name, prompt_tokens, completion_tokens, other").Where("type = ?", LogTypeConsume)
+	base := LOG_DB.Table("logs").Select("id, token_id, token_name, model_name, prompt_tokens, completion_tokens, other").Where("type = ?", LogTypeConsume)
 	if startTimestamp != 0 {
 		base = base.Where("created_at >= ?", startTimestamp)
 	}
@@ -737,11 +770,18 @@ func getKeyDistributionAggregated(startTimestamp int64, endTimestamp int64, filt
 	}
 	aggregates := make(map[aggregateKey]*KeyDistributionData)
 
+	// NOTE: see getTokenDistributionAggregated — seek (keyset) pagination on id avoids
+	// NOTE: the row skipping/double-counting ("drift") that Offset/Limit without ORDER BY
+	// NOTE: can produce on an actively-written logs table.
 	const batchSize = 1000
-	for offset := 0; ; offset += batchSize {
+	lastId := 0
+	for {
 		var batch []keyDistributionLogRecord
-		if err := base.Offset(offset).Limit(batchSize).Find(&batch).Error; err != nil {
+		if err := base.Where("id > ?", lastId).Order("id ASC").Limit(batchSize).Find(&batch).Error; err != nil {
 			return nil, err
+		}
+		if len(batch) == 0 {
+			break
 		}
 		for _, record := range batch {
 			key := aggregateKey{TokenId: record.TokenId, TokenName: record.TokenName, ModelName: record.ModelName}
@@ -757,11 +797,20 @@ func getKeyDistributionAggregated(startTimestamp int64, endTimestamp int64, filt
 			if record.Other != "" {
 				otherMap := make(map[string]interface{})
 				if err := common.UnmarshalJsonStr(record.Other, &otherMap); err == nil {
-					item.CacheReadTokens += toIntFromAny(otherMap["cache_tokens"])
+					cacheReadTokens := toIntFromAny(otherMap["cache_tokens"])
+					// NOTE: Claude/Anthropic semantic reports prompt_tokens as text-only,
+					// NOTE: excluding cache_read — unlike OpenAI, where prompt_tokens already
+					// NOTE: includes it. Add it back here so InputTokens uniformly means
+					// NOTE: "total input including cache read" regardless of provider.
+					if isAnthropicUsageSemantic(otherMap) {
+						item.InputTokens += cacheReadTokens
+					}
+					item.CacheReadTokens += cacheReadTokens
 					item.CacheWriteTokens += getCacheWriteTokensFromOther(otherMap)
 				}
 			}
 		}
+		lastId = batch[len(batch)-1].Id
 		if len(batch) < batchSize {
 			break
 		}
@@ -769,9 +818,9 @@ func getKeyDistributionAggregated(startTimestamp int64, endTimestamp int64, filt
 
 	result := make([]*KeyDistributionData, 0, len(aggregates))
 	for _, item := range aggregates {
-		// NOTE: cache_read is intentionally excluded — it's already counted inside
-		// InputTokens (OpenAI's prompt_tokens includes cached tokens), matching the
-		// total semantics used by GetTokenDistribution's frontend chart.
+		// NOTE: InputTokens is normalized above to always include cache_read (see the
+		// NOTE: isAnthropicUsageSemantic branch), so this sum is the true total for both
+		// NOTE: OpenAI and Claude semantics without double-counting cache_read.
 		item.TotalTokens = item.InputTokens + item.OutputTokens + item.CacheWriteTokens
 		result = append(result, item)
 	}

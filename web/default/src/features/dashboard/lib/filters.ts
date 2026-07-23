@@ -58,6 +58,12 @@ function isTimeRangePresetDays(value: unknown): value is number {
   return TIME_RANGE_PRESETS.some((preset) => preset.days === value)
 }
 
+function isModelAnalyticsChartTab(
+  value: unknown
+): value is ModelAnalyticsChartTab {
+  return value === 'trend' || value === 'proportion' || value === 'top'
+}
+
 export function cleanFilters<T extends Record<string, unknown>>(
   filters: T
 ): Partial<T> {

@@ -132,7 +132,7 @@ export function PoeLogsFilterBar<TData>(props: PoeLogsFilterBarProps<TData>) {
   ])
 
   const handleChange = useCallback(
-    (field: keyof PoeLogsFilters, value: Date | string | undefined) => {
+    (field: keyof PoeLogsFilters, value: Date | string | boolean | undefined) => {
       setFilters((prev) => ({ ...prev, [field]: value }))
     },
     []

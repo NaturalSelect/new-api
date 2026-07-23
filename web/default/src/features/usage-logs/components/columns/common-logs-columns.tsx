@@ -681,7 +681,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         const hasSplitCache = cacheWrite5m > 0 || cacheWrite1h > 0
         const cacheWriteTokens = hasSplitCache
           ? cacheWrite5m + cacheWrite1h
-          : other?.cache_creation_tokens || other?.cache_write_tokens || 0
+          : other?.cache_creation_tokens || 0
 
         return (
           <div className='flex flex-col gap-0.5'>

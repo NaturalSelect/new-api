@@ -18,8 +18,6 @@ import (
 )
 
 const (
-	claudeCodeUserAgent         = "claude-cli/2.1.50"
-	claudeCodeXApp              = "claude-code"
 	claudeCodeDefaultBeta       = "claude-code-20250219"
 	claudeCodeSystemPromptEntry = "You are Claude Code, Anthropic's official CLI for Claude."
 )
@@ -89,23 +87,38 @@ func formatLegacyClaudeCodeUserID(deviceID, accountUUID, sessionID string) strin
 	return "user_" + deviceID + "_account_" + accountUUID + "_session_" + sessionID
 }
 
-// ApplyClaudeCodeDisguiseHeaders injects Claude Code CLI headers when the channel setting is enabled.
+// ApplyClaudeCodeDisguiseHeaders injects Claude Code CLI headers according to the
+// channel's disguise mode bitmask (dto.ClaudeDisguiseUA / ClaudeDisguiseHeader).
+// The UA and the remaining headers (X-App, anthropic-beta) are independently
+// controlled so callers can enable e.g. only the UA dimension.
 func ApplyClaudeCodeDisguiseHeaders(c *gin.Context, req *http.Header, info *relaycommon.RelayInfo) {
-	if info == nil || info.ChannelOtherSettings.ClaudeCodeDisguise == false {
+	if info == nil {
 		return
 	}
-	req.Set("User-Agent", claudeCodeUserAgent)
-	req.Set("X-App", claudeCodeXApp)
-	if req.Get("anthropic-beta") == "" {
-		req.Set("anthropic-beta", claudeCodeDefaultBeta)
+	mode := info.ChannelOtherSettings.EffectiveClaudeCodeDisguiseMode()
+	if mode&dto.ClaudeDisguiseUA != 0 {
+		req.Set("User-Agent", dto.ClaudeCodeDisguiseUserAgent)
+	}
+	if mode&dto.ClaudeDisguiseHeader != 0 {
+		req.Set("X-App", dto.ClaudeCodeDisguiseXApp)
+		if req.Get("anthropic-beta") == "" {
+			req.Set("anthropic-beta", claudeCodeDefaultBeta)
+		}
 	}
 }
 
-// ApplyClaudeCodeDisguiseBody injects Claude Code CLI body fields when the channel setting is enabled.
-// It also moves user system prompt entries into the first user message wrapped in <system-reminder> tags,
-// so that only the Claude Code disguise system prompt remains in the system field.
+// ApplyClaudeCodeDisguiseBody injects Claude Code CLI body fields when the channel's
+// disguise mode bitmask includes dto.ClaudeDisguiseSystemPrompt. It also moves user
+// system prompt entries into the first user message wrapped in <system-reminder>
+// tags, so that only the Claude Code disguise system prompt remains in the system
+// field, and normalizes metadata.user_id — all three steps are bundled under the
+// System Prompt dimension since they only make sense together.
 func ApplyClaudeCodeDisguiseBody(c *gin.Context, request *dto.ClaudeRequest, info *relaycommon.RelayInfo) {
-	if info == nil || info.ChannelOtherSettings.ClaudeCodeDisguise == false {
+	if info == nil {
+		return
+	}
+	mode := info.ChannelOtherSettings.EffectiveClaudeCodeDisguiseMode()
+	if mode&dto.ClaudeDisguiseSystemPrompt == 0 {
 		return
 	}
 	injectClaudeCodeSystem(request)

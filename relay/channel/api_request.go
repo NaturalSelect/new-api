@@ -12,6 +12,7 @@ import (
 	"time"
 
 	common2 "github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/constant"
@@ -304,6 +305,31 @@ func applyHeaderOverrideToRequest(req *http.Request, headerOverride map[string]s
 	}
 }
 
+// applyDisguiseHeaderProtection re-asserts CLI-disguise headers (Claude Code /
+// Codex) after header override application (channel affinity pass_headers,
+// static header_override, etc). Header override is applied last so it can win
+// over defaults such as Authorization — but that also let it silently undo a
+// disguise the channel explicitly opted into (e.g. the "claude cli trace"
+// affinity template passes through the client's original User-Agent). Only the
+// headers covered by the channel's *enabled* disguise dimensions are
+// protected: if e.g. the UA dimension is off, pass_headers still forwards the
+// client's original User-Agent untouched.
+func applyDisguiseHeaderProtection(hdr http.Header, info *common.RelayInfo) {
+	if hdr == nil || info == nil {
+		return
+	}
+	mode := info.ChannelOtherSettings.EffectiveClaudeCodeDisguiseMode()
+	if mode&dto.ClaudeDisguiseUA != 0 {
+		hdr.Set("User-Agent", dto.ClaudeCodeDisguiseUserAgent)
+	}
+	if mode&dto.ClaudeDisguiseHeader != 0 {
+		hdr.Set("X-App", dto.ClaudeCodeDisguiseXApp)
+	}
+	if info.ChannelOtherSettings.CodexDisguise {
+		hdr.Set("User-Agent", dto.CodexDisguiseUserAgent)
+	}
+}
+
 func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody io.Reader) (*http.Response, error) {
 	fullRequestURL, err := a.GetRequestURL(info)
 	if err != nil {
@@ -327,6 +353,7 @@ func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 		return nil, err
 	}
 	applyHeaderOverrideToRequest(req, headerOverride)
+	applyDisguiseHeaderProtection(req.Header, info)
 	resp, err := doRequest(c, req, info)
 	if err != nil {
 		return nil, fmt.Errorf("do request failed: %w", err)
@@ -359,6 +386,7 @@ func DoFormRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBod
 		return nil, err
 	}
 	applyHeaderOverrideToRequest(req, headerOverride)
+	applyDisguiseHeaderProtection(req.Header, info)
 	resp, err := doRequest(c, req, info)
 	if err != nil {
 		return nil, fmt.Errorf("do request failed: %w", err)
@@ -385,6 +413,7 @@ func DoWssRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 	for key, value := range headerOverride {
 		targetHeader.Set(key, value)
 	}
+	applyDisguiseHeaderProtection(targetHeader, info)
 	targetHeader.Set("Content-Type", c.Request.Header.Get("Content-Type"))
 	targetConn, _, err := websocket.DefaultDialer.Dial(fullRequestURL, targetHeader)
 	if err != nil {

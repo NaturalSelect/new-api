@@ -41,7 +41,7 @@ func TestApplyCodexDisguiseHeaders_Enabled(t *testing.T) {
 		info := makeCodexRelayInfo(true)
 		ApplyCodexDisguiseHeaders(c, &req, info)
 
-		assert.Equal(t, codexDisguiseUserAgent, req.Get("User-Agent"))
+		assert.Equal(t, dto.CodexDisguiseUserAgent, req.Get("User-Agent"))
 		assert.Equal(t, codexDisguiseOriginator, req.Get("originator"))
 	})
 }
@@ -54,7 +54,7 @@ func TestApplyCodexDisguiseHeaders_EnabledExistingOriginator(t *testing.T) {
 
 	ApplyCodexDisguiseHeaders(c, &req, info)
 
-	assert.Equal(t, codexDisguiseUserAgent, req.Get("User-Agent"))
+	assert.Equal(t, dto.CodexDisguiseUserAgent, req.Get("User-Agent"))
 	assert.Equal(t, "custom", req.Get("originator"))
 }
 
@@ -66,7 +66,7 @@ func TestApplyCodexDisguiseHeaders_EnabledExistingUA(t *testing.T) {
 
 	ApplyCodexDisguiseHeaders(c, &req, info)
 
-	assert.Equal(t, codexDisguiseUserAgent, req.Get("User-Agent"))
+	assert.Equal(t, dto.CodexDisguiseUserAgent, req.Get("User-Agent"))
 }
 
 func TestApplyCodexDisguiseHeaders_NilInfo(t *testing.T) {

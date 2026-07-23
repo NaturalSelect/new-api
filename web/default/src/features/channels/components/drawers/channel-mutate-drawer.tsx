@@ -148,6 +148,11 @@ import {
   collectNewDisallowedStatusCodeRedirects,
 } from '../../lib/status-code-risk-guard'
 import type { Channel } from '../../types'
+import {
+  CLAUDE_DISGUISE_UA,
+  CLAUDE_DISGUISE_HEADER,
+  CLAUDE_DISGUISE_SYSTEM_PROMPT,
+} from '../../types'
 import { useChannels } from '../channels-provider'
 import { CodexOAuthDialog } from '../dialogs/codex-oauth-dialog'
 import { FetchModelsDialog } from '../dialogs/fetch-models-dialog'
@@ -223,7 +228,7 @@ function hasAdvancedSettingsValues(values: ChannelFormValues): boolean {
     values.free_models_list?.trim() ||
     values.retry_on_429 ||
     values.claude_beta_query ||
-    values.claude_code_disguise ||
+    Boolean(values.claude_code_disguise_mode) ||
     values.codex_disguise ||
     values.auto_cache_control ||
     values.upstream_model_update_check_enabled ||
@@ -3176,24 +3181,65 @@ export function ChannelMutateDrawer({
 
                                 <FormField
                                   control={form.control}
-                                  name='claude_code_disguise'
+                                  name='claude_code_disguise_mode'
                                   render={({ field }) => (
-                                    <FormItem className='flex items-center justify-between gap-3 px-4 py-3'>
-                                      <div className='space-y-0.5'>
+                                    <FormItem className='px-4 py-3'>
+                                      <div className='space-y-0.5 mb-3'>
                                         <FormLabel className='text-sm'>
                                           {t('Claude Code disguise')}
                                         </FormLabel>
                                         <FormDescription>
                                           {t(
-                                            'Disguise requests as Claude Code CLI to bypass upstream identity checks'
+                                            'Select which aspects of Claude Code CLI to disguise'
                                           )}
                                         </FormDescription>
                                       </div>
                                       <FormControl>
-                                        <Switch
-                                          checked={field.value}
-                                          onCheckedChange={field.onChange}
-                                        />
+                                        <div className='space-y-2'>
+                                          {[
+                                            {
+                                              bit: CLAUDE_DISGUISE_UA,
+                                              label: t('User-Agent disguise'),
+                                            },
+                                            {
+                                              bit: CLAUDE_DISGUISE_HEADER,
+                                              label: t(
+                                                'Header disguise (X-App, anthropic-beta)'
+                                              ),
+                                            },
+                                            {
+                                              bit: CLAUDE_DISGUISE_SYSTEM_PROMPT,
+                                              label: t(
+                                                'System prompt disguise (prompt injection + metadata)'
+                                              ),
+                                            },
+                                          ].map(({ bit, label }) => (
+                                            <div
+                                              key={bit}
+                                              className='flex items-center justify-between gap-3'
+                                            >
+                                              <span className='text-sm'>
+                                                {label}
+                                              </span>
+                                              <Switch
+                                                checked={
+                                                  ((field.value ?? 0) &
+                                                    bit) !==
+                                                  0
+                                                }
+                                                onCheckedChange={(checked) => {
+                                                  const current =
+                                                    field.value ?? 0
+                                                  field.onChange(
+                                                    checked
+                                                      ? current | bit
+                                                      : current & ~bit
+                                                  )
+                                                }}
+                                              />
+                                            </div>
+                                          ))}
+                                        </div>
                                       </FormControl>
                                     </FormItem>
                                   )}

@@ -52,8 +52,8 @@ func TestApplyClaudeCodeDisguiseHeaders_Enabled(t *testing.T) {
 		info := makeRelayInfo(true)
 		ApplyClaudeCodeDisguiseHeaders(c, &req, info)
 
-		assert.Equal(t, claudeCodeUserAgent, req.Get("User-Agent"))
-		assert.Equal(t, claudeCodeXApp, req.Get("X-App"))
+		assert.Equal(t, dto.ClaudeCodeDisguiseUserAgent, req.Get("User-Agent"))
+		assert.Equal(t, dto.ClaudeCodeDisguiseXApp, req.Get("X-App"))
 		assert.Equal(t, claudeCodeDefaultBeta, req.Get("anthropic-beta"))
 	})
 
@@ -705,4 +705,99 @@ func TestEnsureClaudeCodeMetadataUserID_InvalidJSONComponents(t *testing.T) {
 	// Should be deterministic from the original JSON string
 	expected := deriveLegacyClaudeCodeUserID(invalidJSON)
 	assert.Equal(t, expected, meta.UserId)
+}
+
+// ========== Bitmask mode tests ==========
+
+func ptrInt(v int) *int { return &v }
+
+func makeRelayInfoMode(mode int) *relaycommon.RelayInfo {
+	return &relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelOtherSettings: dto.ChannelOtherSettings{
+				ClaudeCodeDisguiseMode: ptrInt(mode),
+			},
+		},
+	}
+}
+
+// TestApplyClaudeCodeDisguiseHeaders_UAOnly — only UA set, X-App/beta untouched
+func TestApplyClaudeCodeDisguiseHeaders_UAOnly(t *testing.T) {
+	c, _ := gin.CreateTestContext(nil)
+	req := http.Header{}
+	ApplyClaudeCodeDisguiseHeaders(c, &req, makeRelayInfoMode(dto.ClaudeDisguiseUA))
+
+	assert.Equal(t, dto.ClaudeCodeDisguiseUserAgent, req.Get("User-Agent"))
+	assert.Equal(t, "", req.Get("X-App"), "X-App must NOT be set when only UA dimension is on")
+	assert.Equal(t, "", req.Get("anthropic-beta"), "anthropic-beta must NOT be set when only UA dimension is on")
+}
+
+// TestApplyClaudeCodeDisguiseHeaders_HeaderOnly — X-App/beta set, UA untouched
+func TestApplyClaudeCodeDisguiseHeaders_HeaderOnly(t *testing.T) {
+	c, _ := gin.CreateTestContext(nil)
+	req := http.Header{}
+	ApplyClaudeCodeDisguiseHeaders(c, &req, makeRelayInfoMode(dto.ClaudeDisguiseHeader))
+
+	assert.Equal(t, "", req.Get("User-Agent"), "User-Agent must NOT be set when only Header dimension is on")
+	assert.Equal(t, dto.ClaudeCodeDisguiseXApp, req.Get("X-App"))
+	assert.Equal(t, claudeCodeDefaultBeta, req.Get("anthropic-beta"))
+}
+
+// TestApplyClaudeCodeDisguiseHeaders_ModeZeroExplicit — mode=0 via pointer disables all even if old bool were true
+func TestApplyClaudeCodeDisguiseHeaders_ModeZeroExplicit(t *testing.T) {
+	c, _ := gin.CreateTestContext(nil)
+	req := http.Header{}
+	req.Set("User-Agent", "original")
+	// legacy bool is true, but mode pointer explicitly 0 → should be disabled
+	info := &relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelOtherSettings: dto.ChannelOtherSettings{
+				ClaudeCodeDisguise:     true,
+				ClaudeCodeDisguiseMode: ptrInt(0),
+			},
+		},
+	}
+	ApplyClaudeCodeDisguiseHeaders(c, &req, info)
+
+	assert.Equal(t, "original", req.Get("User-Agent"), "disguise must be off when mode=ptr(0)")
+	assert.Equal(t, "", req.Get("X-App"))
+}
+
+// TestApplyClaudeCodeDisguiseBody_SystemPromptOnly — body injected, headers unchanged
+func TestApplyClaudeCodeDisguiseBody_SystemPromptOnly(t *testing.T) {
+	c, _ := gin.CreateTestContext(nil)
+	request := &dto.ClaudeRequest{System: nil}
+	ApplyClaudeCodeDisguiseBody(c, request, makeRelayInfoMode(dto.ClaudeDisguiseSystemPrompt))
+
+	arr, ok := request.System.([]dto.ClaudeMediaMessage)
+	require.True(t, ok, "system must be injected when SystemPrompt dimension is on")
+	require.Len(t, arr, 1)
+	assert.Equal(t, claudeCodeSystemPromptEntry, *arr[0].Text)
+}
+
+// TestApplyClaudeCodeDisguiseBody_UAOnly_NoBodyChange — body untouched when only UA dimension
+func TestApplyClaudeCodeDisguiseBody_UAOnly_NoBodyChange(t *testing.T) {
+	c, _ := gin.CreateTestContext(nil)
+	request := &dto.ClaudeRequest{System: "keep me"}
+	ApplyClaudeCodeDisguiseBody(c, request, makeRelayInfoMode(dto.ClaudeDisguiseUA))
+
+	assert.Equal(t, "keep me", request.System, "body must NOT be modified when SystemPrompt dimension is off")
+	assert.Nil(t, request.Metadata)
+}
+
+// TestApplyClaudeCodeDisguiseBody_ModeZeroExplicit_NoBodyChange
+func TestApplyClaudeCodeDisguiseBody_ModeZeroExplicit_NoBodyChange(t *testing.T) {
+	c, _ := gin.CreateTestContext(nil)
+	request := &dto.ClaudeRequest{System: "original"}
+	info := &relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelOtherSettings: dto.ChannelOtherSettings{
+				ClaudeCodeDisguise:     true, // legacy true
+				ClaudeCodeDisguiseMode: ptrInt(0),
+			},
+		},
+	}
+	ApplyClaudeCodeDisguiseBody(c, request, info)
+
+	assert.Equal(t, "original", request.System, "body must NOT be modified when mode=ptr(0) overrides legacy true")
 }

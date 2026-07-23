@@ -92,6 +92,13 @@ export interface ChannelSettings {
   retry_on_429?: number
 }
 
+// Claude Code 伪装努力程度 bitmask 位定义，需与后端 dto.ClaudeDisguise* 常量保持一致。
+export const CLAUDE_DISGUISE_UA = 1 << 0
+export const CLAUDE_DISGUISE_HEADER = 1 << 1
+export const CLAUDE_DISGUISE_SYSTEM_PROMPT = 1 << 2
+export const CLAUDE_DISGUISE_FULL =
+  CLAUDE_DISGUISE_UA | CLAUDE_DISGUISE_HEADER | CLAUDE_DISGUISE_SYSTEM_PROMPT
+
 export interface ChannelOtherSettings {
   azure_responses_version?: string
   vertex_key_type?: 'json' | 'api_key'
@@ -104,7 +111,9 @@ export interface ChannelOtherSettings {
   allow_inference_geo?: boolean
   allow_speed?: boolean
   claude_beta_query?: boolean
+  /** @deprecated 已被 claude_code_disguise_mode 取代，仅用于旧数据兼容（true 等价于 CLAUDE_DISGUISE_FULL） */
   claude_code_disguise?: boolean
+  claude_code_disguise_mode?: number
   codex_disguise?: boolean
   auto_cache_control?: boolean
   upstream_model_update_check_enabled?: boolean

@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -190,4 +191,99 @@ func TestProcessHeaderOverride_PassHeadersTemplateSetsRuntimeHeaders(t *testing.
 	require.Equal(t, "Codex CLI", upstreamReq.Header.Get("Originator"))
 	require.Equal(t, "sess-123", upstreamReq.Header.Get("Session_id"))
 	require.Empty(t, upstreamReq.Header.Get("X-Codex-Beta-Features"))
+}
+
+// ============================================================================
+// applyDisguiseHeaderProtection tests
+// ============================================================================
+
+func ptrMode(v int) *int { return &v }
+
+func makeInfoWithMode(mode *int, codex bool) *relaycommon.RelayInfo {
+	return &relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelOtherSettings: dto.ChannelOtherSettings{
+				ClaudeCodeDisguiseMode: mode,
+				CodexDisguise:          codex,
+			},
+		},
+	}
+}
+
+// TestApplyDisguiseHeaderProtection_ClaudeUAProtected — after an override sets
+// a client UA, the protection re-asserts the disguise UA.
+func TestApplyDisguiseHeaderProtection_ClaudeUAProtected(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	hdr := http.Header{}
+	hdr.Set("User-Agent", "client-original")
+
+	info := makeInfoWithMode(ptrMode(dto.ClaudeDisguiseFull), false)
+	applyDisguiseHeaderProtection(hdr, info)
+
+	require.Equal(t, dto.ClaudeCodeDisguiseUserAgent, hdr.Get("User-Agent"),
+		"disguise UA must win over client UA when UA dimension is enabled")
+	require.Equal(t, dto.ClaudeCodeDisguiseXApp, hdr.Get("X-App"),
+		"X-App must be re-asserted when Header dimension is enabled")
+}
+
+// TestApplyDisguiseHeaderProtection_UADimOff_OverrideWins — when UA dimension
+// is off, pass-through client UA is preserved.
+func TestApplyDisguiseHeaderProtection_UADimOff_OverrideWins(t *testing.T) {
+	hdr := http.Header{}
+	hdr.Set("User-Agent", "client-ua")
+
+	// Header+SystemPrompt, but NOT UA
+	info := makeInfoWithMode(ptrMode(dto.ClaudeDisguiseHeader|dto.ClaudeDisguiseSystemPrompt), false)
+	applyDisguiseHeaderProtection(hdr, info)
+
+	require.Equal(t, "client-ua", hdr.Get("User-Agent"),
+		"client UA must be preserved when UA dimension is off")
+}
+
+// TestApplyDisguiseHeaderProtection_ExplicitZeroMode — mode=ptr(0) means user
+// disabled all disguise; the legacy bool being true must NOT trigger protection.
+func TestApplyDisguiseHeaderProtection_ExplicitZeroMode(t *testing.T) {
+	hdr := http.Header{}
+	hdr.Set("User-Agent", "client-ua")
+
+	info := &relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelOtherSettings: dto.ChannelOtherSettings{
+				ClaudeCodeDisguise:     true, // legacy true
+				ClaudeCodeDisguiseMode: ptrMode(0),
+			},
+		},
+	}
+	applyDisguiseHeaderProtection(hdr, info)
+
+	require.Equal(t, "client-ua", hdr.Get("User-Agent"),
+		"protection must be a no-op when mode=ptr(0) explicitly disables disguise")
+}
+
+// TestApplyDisguiseHeaderProtection_CodexDisguise — Codex UA is re-asserted.
+func TestApplyDisguiseHeaderProtection_CodexDisguise(t *testing.T) {
+	hdr := http.Header{}
+	hdr.Set("User-Agent", "client-ua")
+
+	info := makeInfoWithMode(nil, true /* codex */)
+	applyDisguiseHeaderProtection(hdr, info)
+
+	require.Equal(t, dto.CodexDisguiseUserAgent, hdr.Get("User-Agent"),
+		"Codex disguise UA must be re-asserted")
+}
+
+// TestApplyDisguiseHeaderProtection_NilInfo — nil info is a no-op.
+func TestApplyDisguiseHeaderProtection_NilInfo(t *testing.T) {
+	hdr := http.Header{}
+	hdr.Set("User-Agent", "keep-me")
+	applyDisguiseHeaderProtection(hdr, nil)
+	require.Equal(t, "keep-me", hdr.Get("User-Agent"))
+}
+
+// TestApplyDisguiseHeaderProtection_NilHeader — nil header is a no-op (no panic).
+func TestApplyDisguiseHeaderProtection_NilHeader(t *testing.T) {
+	info := makeInfoWithMode(ptrMode(dto.ClaudeDisguiseFull), false)
+	require.NotPanics(t, func() {
+		applyDisguiseHeaderProtection(nil, info)
+	})
 }

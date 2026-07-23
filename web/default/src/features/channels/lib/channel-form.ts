@@ -23,6 +23,7 @@ import {
   MODEL_FETCHABLE_TYPES,
 } from '../constants'
 import type { Channel } from '../types'
+import { CLAUDE_DISGUISE_FULL } from '../types'
 
 // ============================================================================
 // Form Validation Schema
@@ -199,7 +200,7 @@ export const channelFormSchema = z
     allow_inference_geo: z.boolean().optional(), // OpenAI/Anthropic: inference geography
     allow_speed: z.boolean().optional(), // Anthropic: speed mode control
     claude_beta_query: z.boolean().optional(), // Anthropic: beta query passthrough
-    claude_code_disguise: z.boolean().optional(), // NOTE: Claude Code CLI request disguise
+    claude_code_disguise_mode: z.number().int().min(0).max(7).optional(), // NOTE: Claude Code CLI disguise effort bitmask (1=UA, 2=Header, 4=System Prompt)
     codex_disguise: z.boolean().optional(), // NOTE: Codex CLI request disguise
     auto_cache_control: z.boolean().optional(), // NOTE: Automatic prompt cache control
     // Upstream model update settings (stored in settings JSON)
@@ -324,7 +325,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   allow_inference_geo: false,
   allow_speed: false,
   claude_beta_query: false,
-  claude_code_disguise: false,
+  claude_code_disguise_mode: 0,
   codex_disguise: false,
   auto_cache_control: false,
   upstream_model_update_check_enabled: false,
@@ -387,7 +388,7 @@ export function transformChannelToFormDefaults(
   let allowInferenceGeo = false
   let allowSpeed = false
   let claudeBetaQuery = false
-  let claudeCodeDisguise = false
+  let claudeCodeDisguiseMode = 0
   let codexDisguise = false
   let autoCacheControl = false
   let upstreamModelUpdateCheckEnabled = false
@@ -408,7 +409,14 @@ export function transformChannelToFormDefaults(
       allowInferenceGeo = parsed.allow_inference_geo === true
       allowSpeed = parsed.allow_speed === true
       claudeBetaQuery = parsed.claude_beta_query === true
-      claudeCodeDisguise = parsed.claude_code_disguise === true
+      // NOTE: distinguish "field absent" (undefined) from "explicitly 0" so a
+      // channel that was saved with every dimension unchecked stays off, instead
+      // of falling back to the legacy claude_code_disguise=true it may still carry.
+      if (typeof parsed.claude_code_disguise_mode === 'number') {
+        claudeCodeDisguiseMode = parsed.claude_code_disguise_mode
+      } else if (parsed.claude_code_disguise === true) {
+        claudeCodeDisguiseMode = CLAUDE_DISGUISE_FULL
+      }
       codexDisguise = parsed.codex_disguise === true
       autoCacheControl = parsed.auto_cache_control === true
       upstreamModelUpdateCheckEnabled =
@@ -467,7 +475,7 @@ export function transformChannelToFormDefaults(
     allow_inference_geo: allowInferenceGeo,
     allow_speed: allowSpeed,
     claude_beta_query: claudeBetaQuery,
-    claude_code_disguise: claudeCodeDisguise,
+    claude_code_disguise_mode: claudeCodeDisguiseMode,
     codex_disguise: codexDisguise,
     auto_cache_control:
       [1, 14, 58, 59].includes(channel.type) && autoCacheControl,
@@ -579,11 +587,19 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
     settingsObj.allow_inference_geo = formData.allow_inference_geo === true
     settingsObj.allow_speed = formData.allow_speed === true
     settingsObj.claude_beta_query = formData.claude_beta_query === true
-    settingsObj.claude_code_disguise = formData.claude_code_disguise === true
+    const disguiseMode = formData.claude_code_disguise_mode || 0
+    // NOTE: always write mode explicitly (even 0) so the backend can tell
+    // "user saved with everything unchecked" apart from "never configured" —
+    // see dto.ChannelOtherSettings.EffectiveClaudeCodeDisguiseMode. The legacy
+    // bool is kept in sync for older backends/frontends that only understand it.
+    settingsObj.claude_code_disguise_mode = disguiseMode
+    settingsObj.claude_code_disguise = disguiseMode > 0
   } else {
     if ('allow_speed' in settingsObj) delete settingsObj.allow_speed
     if ('claude_beta_query' in settingsObj) delete settingsObj.claude_beta_query
     if ('claude_code_disguise' in settingsObj) delete settingsObj.claude_code_disguise
+    if ('claude_code_disguise_mode' in settingsObj)
+      delete settingsObj.claude_code_disguise_mode
   }
 
   // NOTE: OpenAI channel: codex_disguise toggle

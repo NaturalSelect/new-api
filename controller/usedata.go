@@ -84,12 +84,16 @@ func GetTokenDistribution(c *gin.Context) {
 	})
 }
 
+// GetSelfTokenDistribution returns the current user's Token Distribution stats. The
+// user is always taken from the server-side auth context (never a client-supplied
+// username/user query parameter) so a caller can never view another user's stats —
+// mirrors GetSelfKeyDistribution's user_id isolation.
 func GetSelfTokenDistribution(c *gin.Context) {
+	userId := c.GetInt("id")
 	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
 	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
-	username := c.GetString("username")
 
-	dates, err := model.GetTokenDistribution(startTimestamp, endTimestamp, username)
+	dates, err := model.GetSelfTokenDistribution(userId, startTimestamp, endTimestamp)
 	if err != nil {
 		common.ApiError(c, err)
 		return

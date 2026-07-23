@@ -282,18 +282,18 @@ func TestBackfillTokenStatsCacheDay_MatchesRawScan(t *testing.T) {
 	// Outside the target day: must not be included.
 	createConsumeLog(t, 1, "alice", 10, "key-a", "gpt-4", 999, 999, day+86400+10)
 
-	wantTokenDist, err := scanTokenDistribution(day, day+86399, "")
+	wantTokenDist, err := scanTokenDistribution(day, day+86399, distributionFilter{})
 	require.NoError(t, err)
-	wantKeyDist, err := scanKeyDistribution(day, day+86399, keyDistributionFilter{})
+	wantKeyDist, err := scanKeyDistribution(day, day+86399, distributionFilter{})
 	require.NoError(t, err)
 
 	scanned, err := BackfillTokenStatsCacheDay(day)
 	require.NoError(t, err)
 	require.EqualValues(t, 3, scanned)
 
-	gotTokenDist, err := queryTokenStatsCacheForTokenDistribution(day, day, "")
+	gotTokenDist, err := queryTokenStatsCacheForTokenDistribution(day, day, distributionFilter{})
 	require.NoError(t, err)
-	gotKeyDist, err := queryTokenStatsCacheForKeyDistribution(day, day, keyDistributionFilter{})
+	gotKeyDist, err := queryTokenStatsCacheForKeyDistribution(day, day, distributionFilter{})
 	require.NoError(t, err)
 
 	// Token Distribution: cache is day-bucketed while the raw scan is hour-bucketed

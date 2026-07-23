@@ -626,7 +626,17 @@ func bucketTimestampToHour(timestamp int64) int64 {
 }
 
 func GetTokenDistribution(startTimestamp int64, endTimestamp int64, username string) ([]*TokenDistributionData, error) {
-	return getTokenDistributionAggregated(startTimestamp, endTimestamp, username)
+	return getTokenDistributionAggregated(startTimestamp, endTimestamp, distributionFilter{Username: username})
+}
+
+// GetSelfTokenDistribution aggregates Token Distribution for a single user, identified
+// by the server-side user id from the request context — never a client-supplied
+// username/user parameter. Mirrors GetSelfKeyDistribution so both self endpoints
+// isolate on the same stable identifier instead of the logs/cache username snapshot,
+// which is not reliable for this purpose (see distributionFilter and the Username field
+// comment on TokenStatsCache).
+func GetSelfTokenDistribution(userId int, startTimestamp int64, endTimestamp int64) ([]*TokenDistributionData, error) {
+	return getTokenDistributionAggregated(startTimestamp, endTimestamp, distributionFilter{UserId: userId})
 }
 
 // getTokenDistributionAggregated serves Token Distribution by splitting the requested
@@ -637,26 +647,26 @@ func GetTokenDistribution(startTimestamp int64, endTimestamp int64, username str
 // scan. This keeps results complete even before the cache is populated (e.g. right
 // after upgrade, or on a follower node whose synced watermark lags) — the cache can
 // only ever narrow how much gets scanned, never how much data is included.
-func getTokenDistributionAggregated(startTimestamp int64, endTimestamp int64, username string) ([]*TokenDistributionData, error) {
+func getTokenDistributionAggregated(startTimestamp int64, endTimestamp int64, filter distributionFilter) ([]*TokenDistributionData, error) {
 	zones := tokenStatsCacheZonesFor(startTimestamp, endTimestamp)
 
 	var segments [][]*TokenDistributionData
 	if zones.BeforeOk {
-		segment, err := scanTokenDistribution(zones.BeforeStart, zones.BeforeEnd, username)
+		segment, err := scanTokenDistribution(zones.BeforeStart, zones.BeforeEnd, filter)
 		if err != nil {
 			return nil, err
 		}
 		segments = append(segments, segment)
 	}
 	if zones.CacheOk {
-		segment, err := queryTokenStatsCacheForTokenDistribution(zones.CacheFirstDay, zones.CacheLastDay, username)
+		segment, err := queryTokenStatsCacheForTokenDistribution(zones.CacheFirstDay, zones.CacheLastDay, filter)
 		if err != nil {
 			return nil, err
 		}
 		segments = append(segments, segment)
 	}
 	if zones.AfterOk {
-		segment, err := scanTokenDistribution(zones.AfterStart, zones.AfterEnd, username)
+		segment, err := scanTokenDistribution(zones.AfterStart, zones.AfterEnd, filter)
 		if err != nil {
 			return nil, err
 		}
@@ -709,7 +719,7 @@ func mergeTokenDistributionData(segments ...[]*TokenDistributionData) []*TokenDi
 // NOTE: Poe channel records carry billing_source "poe_log" in the other field and have
 // NOTE: real token values in the standard prompt_tokens/completion_tokens columns, so
 // NOTE: they are included naturally — no special exclusion is needed.
-func scanTokenDistribution(startTimestamp int64, endTimestamp int64, username string) ([]*TokenDistributionData, error) {
+func scanTokenDistribution(startTimestamp int64, endTimestamp int64, filter distributionFilter) ([]*TokenDistributionData, error) {
 	base := LOG_DB.Table("logs").Select("id, created_at, model_name, prompt_tokens, completion_tokens, other").Where("type = ?", LogTypeConsume)
 	if startTimestamp != 0 {
 		base = base.Where("created_at >= ?", startTimestamp)
@@ -717,8 +727,11 @@ func scanTokenDistribution(startTimestamp int64, endTimestamp int64, username st
 	if endTimestamp != 0 {
 		base = base.Where("created_at <= ?", endTimestamp)
 	}
-	if username != "" {
-		base = base.Where("username = ?", username)
+	if filter.UserId != 0 {
+		base = base.Where("user_id = ?", filter.UserId)
+	}
+	if filter.Username != "" {
+		base = base.Where("username = ?", filter.Username)
 	}
 
 	type aggregateKey struct {
@@ -824,9 +837,11 @@ type keyDistributionLogRecord struct {
 	Other            string `json:"other"`
 }
 
-// keyDistributionFilter narrows getKeyDistributionAggregated to either a specific user
-// (self view, enforced by server-side user_id) or an optional username (admin view).
-type keyDistributionFilter struct {
+// distributionFilter narrows getKeyDistributionAggregated/getTokenDistributionAggregated
+// to either a specific user (self view, enforced by server-side user_id) or an optional
+// username (admin view). Shared by both Key Distribution and Token Distribution so self
+// views on both endpoints isolate on the same stable identifier.
+type distributionFilter struct {
 	UserId   int
 	Username string
 }
@@ -835,14 +850,14 @@ type keyDistributionFilter struct {
 // the admin dashboard. username is optional and, when set, narrows the result to a
 // single user (mirrors GetTokenDistribution's admin username filter).
 func GetKeyDistribution(startTimestamp int64, endTimestamp int64, username string) ([]*KeyDistributionData, error) {
-	return getKeyDistributionAggregated(startTimestamp, endTimestamp, keyDistributionFilter{Username: username})
+	return getKeyDistributionAggregated(startTimestamp, endTimestamp, distributionFilter{Username: username})
 }
 
 // GetSelfKeyDistribution aggregates consume logs for a single user, identified by the
 // server-side user id from the request context — never a client-supplied
 // username/user parameter.
 func GetSelfKeyDistribution(userId int, startTimestamp int64, endTimestamp int64) ([]*KeyDistributionData, error) {
-	return getKeyDistributionAggregated(startTimestamp, endTimestamp, keyDistributionFilter{UserId: userId})
+	return getKeyDistributionAggregated(startTimestamp, endTimestamp, distributionFilter{UserId: userId})
 }
 
 // NOTE: getKeyDistributionAggregated reads token_id/token_name straight from the logs
@@ -858,7 +873,7 @@ func GetSelfKeyDistribution(userId int, startTimestamp int64, endTimestamp int64
 // scan. Key Distribution has no time dimension in its output (unlike Token
 // Distribution's hour buckets), so — unlike there — day-granularity cache storage
 // loses no precision here at all.
-func getKeyDistributionAggregated(startTimestamp int64, endTimestamp int64, filter keyDistributionFilter) ([]*KeyDistributionData, error) {
+func getKeyDistributionAggregated(startTimestamp int64, endTimestamp int64, filter distributionFilter) ([]*KeyDistributionData, error) {
 	zones := tokenStatsCacheZonesFor(startTimestamp, endTimestamp)
 
 	var segments [][]*KeyDistributionData
@@ -926,7 +941,7 @@ func mergeKeyDistributionData(segments ...[]*KeyDistributionData) []*KeyDistribu
 
 // scanKeyDistribution is the original full raw-logs scan behind getKeyDistributionAggregated,
 // and also the oracle scanLogsForStatsCacheDay's backfill must agree with.
-func scanKeyDistribution(startTimestamp int64, endTimestamp int64, filter keyDistributionFilter) ([]*KeyDistributionData, error) {
+func scanKeyDistribution(startTimestamp int64, endTimestamp int64, filter distributionFilter) ([]*KeyDistributionData, error) {
 	base := LOG_DB.Table("logs").Select("id, token_id, token_name, model_name, prompt_tokens, completion_tokens, other").Where("type = ?", LogTypeConsume)
 	if startTimestamp != 0 {
 		base = base.Where("created_at >= ?", startTimestamp)

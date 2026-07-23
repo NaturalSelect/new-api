@@ -180,6 +180,34 @@ func TestGetSelfKeyDistribution_ForcesUserIdIsolation(t *testing.T) {
 	require.Equal(t, 20, result2[0].TokenId)
 }
 
+// Core permission check for Token Distribution's self view: it must be strictly scoped
+// by the server-side user_id, never by the logs/cache username snapshot — mirrors
+// TestGetSelfKeyDistribution_ForcesUserIdIsolation. Two different accounts sharing the
+// same username value (e.g. a recreated account, or a stale/mis-attributed username on
+// some log rows — see distributionFilter and TokenStatsCache.Username) must not leak
+// into or be excluded from each other's stats.
+func TestGetSelfTokenDistribution_ForcesUserIdIsolation(t *testing.T) {
+	truncateTables(t)
+
+	// createdAt deliberately avoids [0, 3599]: bucketTimestampToHour truncates those to
+	// bucket 0, which scanTokenDistribution treats as a missing timestamp and skips —
+	// unrelated to what this test checks, so steer clear of it.
+	createConsumeLog(t, 1, "shared-name", 10, "key-a", "gpt-4", 100, 50, 10000)
+	createConsumeLog(t, 2, "shared-name", 20, "key-b", "gpt-4", 999, 999, 10000)
+
+	result, err := GetSelfTokenDistribution(1, 0, 0)
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+	require.Equal(t, 100, result[0].InputTokens)
+	require.Equal(t, 50, result[0].OutputTokens)
+
+	result2, err := GetSelfTokenDistribution(2, 0, 0)
+	require.NoError(t, err)
+	require.Len(t, result2, 1)
+	require.Equal(t, 999, result2[0].InputTokens)
+	require.Equal(t, 999, result2[0].OutputTokens)
+}
+
 // Self view also respects the time range filter.
 func TestGetSelfKeyDistribution_TimeRangeFilter(t *testing.T) {
 	truncateTables(t)

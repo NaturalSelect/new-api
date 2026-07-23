@@ -42,7 +42,7 @@ type TokenStatsCache struct {
 	Day    int64 `json:"day" gorm:"bigint;uniqueIndex:idx_tsc_unique,priority:1;index:idx_tsc_day"`
 	UserId int   `json:"user_id" gorm:"uniqueIndex:idx_tsc_unique,priority:2;index:idx_tsc_user_id"`
 	// Username is a denormalized, last-write-wins snapshot used only for filtering
-	// (GetTokenDistribution's username filter / keyDistributionFilter.Username). It is
+	// (the admin-view username filter on distributionFilter). It is
 	// intentionally excluded from the unique key: unlike token_name, it is never an
 	// output grouping dimension for either endpoint, only a WHERE-filter value, so
 	// collapsing a same-day rename into "whichever write happened last" cannot change
@@ -361,13 +361,16 @@ type tokenStatsCacheDayRow struct {
 // matching scanTokenDistribution's (hour, model_name) output grain except bucketed by
 // day instead of hour — see the TokenStatsCache doc comment for why day granularity is
 // an intentional, documented trade-off rather than an hourly bucket.
-func queryTokenStatsCacheForTokenDistribution(firstDay, lastDay int64, username string) ([]*TokenDistributionData, error) {
+func queryTokenStatsCacheForTokenDistribution(firstDay, lastDay int64, filter distributionFilter) ([]*TokenDistributionData, error) {
 	tx := LOG_DB.Table("token_stats_cache").
 		Select("day, model_name, SUM(input_tokens) as input_tokens, SUM(output_tokens) as output_tokens, SUM(cache_read_tokens) as cache_read_tokens, SUM(cache_write_tokens) as cache_write_tokens, SUM(count) as count").
 		Where("day >= ? AND day <= ?", firstDay, lastDay).
 		Group("day, model_name")
-	if username != "" {
-		tx = tx.Where("username = ?", username)
+	if filter.UserId != 0 {
+		tx = tx.Where("user_id = ?", filter.UserId)
+	}
+	if filter.Username != "" {
+		tx = tx.Where("username = ?", filter.Username)
 	}
 	var rows []tokenStatsCacheDayRow
 	if err := tx.Find(&rows).Error; err != nil {
@@ -396,7 +399,7 @@ func queryTokenStatsCacheForTokenDistribution(firstDay, lastDay int64, username 
 // Distribution: SUM the metrics across every day/user for each (token_id, token_name,
 // model_name), matching scanKeyDistribution's output grain exactly (no day dimension
 // in the output, so unlike Token Distribution there is no granularity trade-off here).
-func queryTokenStatsCacheForKeyDistribution(firstDay, lastDay int64, filter keyDistributionFilter) ([]*KeyDistributionData, error) {
+func queryTokenStatsCacheForKeyDistribution(firstDay, lastDay int64, filter distributionFilter) ([]*KeyDistributionData, error) {
 	tx := LOG_DB.Table("token_stats_cache").
 		Select("token_id, token_name, model_name, SUM(input_tokens) as input_tokens, SUM(output_tokens) as output_tokens, SUM(cache_read_tokens) as cache_read_tokens, SUM(cache_write_tokens) as cache_write_tokens, SUM(count) as count").
 		Where("day >= ? AND day <= ?", firstDay, lastDay).

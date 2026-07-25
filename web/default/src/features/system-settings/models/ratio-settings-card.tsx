@@ -25,7 +25,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { resetModelRatios } from '../api'
+import { clearModelPricing, resetModelRatios } from '../api'
 import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
 import { GroupRatioForm } from './group-ratio-form'
@@ -218,6 +218,7 @@ export function RatioSettingsCard({
   const updateOption = useUpdateOption()
   const queryClient = useQueryClient()
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false)
 
   const resetMutation = useMutation({
     mutationFn: resetModelRatios,
@@ -232,6 +233,22 @@ export function RatioSettingsCard({
     },
     onError: (error: Error) => {
       toast.error(error.message || t('Failed to reset model ratios'))
+    },
+  })
+
+  const clearMutation = useMutation({
+    mutationFn: clearModelPricing,
+    onSuccess: (data) => {
+      if (data.success) {
+        toast.success(t('Model pricing cleared successfully'))
+        queryClient.invalidateQueries({ queryKey: ['system-options'] })
+        setClearConfirmOpen(false)
+      } else {
+        toast.error(data.message || t('Failed to clear model pricing'))
+      }
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || t('Failed to clear model pricing'))
     },
   })
 
@@ -442,6 +459,15 @@ export function RatioSettingsCard({
     resetMutate()
   }, [resetMutate])
 
+  const handleClearPricing = useCallback(() => {
+    setClearConfirmOpen(true)
+  }, [])
+
+  const { mutate: clearMutate } = clearMutation
+  const handleConfirmClear = useCallback(() => {
+    clearMutate()
+  }, [clearMutate])
+
   const tabLabels: Record<RatioTabId, string> = {
     models: 'Model prices',
     groups: 'Group ratios',
@@ -464,8 +490,10 @@ export function RatioSettingsCard({
           form={modelForm}
           onSave={saveModelRatios}
           onReset={handleResetRatios}
+          onClear={handleClearPricing}
           isSaving={updateOption.isPending}
           isResetting={resetMutation.isPending}
+          isClearing={clearMutation.isPending}
         />
       )
     }
@@ -532,6 +560,19 @@ export function RatioSettingsCard({
         isLoading={resetMutation.isPending}
         handleConfirm={handleConfirmReset}
         confirmText={t('Reset')}
+      />
+
+      <ConfirmDialog
+        open={clearConfirmOpen}
+        onOpenChange={setClearConfirmOpen}
+        title={t('Clear all model pricing?')}
+        desc={t(
+          'This will empty all pricing configuration (model ratio, price, completion ratio, cache ratio, image ratio, audio ratio). Use this when switching upstream providers.'
+        )}
+        destructive
+        isLoading={clearMutation.isPending}
+        handleConfirm={handleConfirmClear}
+        confirmText={t('Clear')}
       />
     </SettingsSection>
   )

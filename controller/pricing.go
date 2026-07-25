@@ -99,3 +99,31 @@ func ResetModelRatio(c *gin.Context) {
 		"message": "重置模型倍率成功",
 	})
 }
+
+// ClearModelPricing 清空所有模型定价相关配置（模型倍率、固定价格、补全倍率、缓存倍率、
+// 图片/音频倍率等），常用于切换上游供应商前清理旧的定价数据。
+func ClearModelPricing(c *gin.Context) {
+	emptyMap := "{}"
+	values := map[string]string{
+		"ModelRatio":           emptyMap,
+		"ModelPrice":           emptyMap,
+		"CompletionRatio":      emptyMap,
+		"CacheRatio":           emptyMap,
+		"CreateCacheRatio":     emptyMap,
+		"ImageRatio":           emptyMap,
+		"AudioRatio":           emptyMap,
+		"AudioCompletionRatio": emptyMap,
+	}
+	if err := model.UpdateOptionsBulk(values); err != nil {
+		c.JSON(200, gin.H{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
+	}
+	model.InvalidatePricingCache()
+	c.JSON(200, gin.H{
+		"success": true,
+		"message": "清空模型定价成功",
+	})
+}

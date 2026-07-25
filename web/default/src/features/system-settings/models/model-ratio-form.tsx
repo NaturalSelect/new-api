@@ -58,16 +58,20 @@ type ModelRatioFormProps = {
   form: UseFormReturn<ModelFormValues>
   onSave: (values: ModelFormValues) => Promise<void>
   onReset: () => void
+  onClear: () => void
   isSaving: boolean
   isResetting: boolean
+  isClearing: boolean
 }
 
 export const ModelRatioForm = memo(function ModelRatioForm({
   form,
   onSave,
   onReset,
+  onClear,
   isSaving,
   isResetting,
+  isClearing,
 }: ModelRatioFormProps) {
   const { t } = useTranslation()
   const [editMode, setEditMode] = useState<'visual' | 'json'>('visual')
@@ -106,6 +110,15 @@ export const ModelRatioForm = memo(function ModelRatioForm({
 
       <Form {...form}>
         <SettingsPageActionsPortal>
+          <Button
+            type='button'
+            variant='destructive'
+            size='sm'
+            onClick={onClear}
+            disabled={isClearing}
+          >
+            {t('Clear all pricing')}
+          </Button>
           <Button
             type='button'
             variant='destructive'

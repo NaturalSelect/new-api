@@ -60,6 +60,13 @@ export async function resetModelRatios() {
   return res.data
 }
 
+export async function clearModelPricing() {
+  const res = await api.post<UpdateOptionResponse>(
+    '/api/option/clear_model_pricing'
+  )
+  return res.data
+}
+
 export async function getUpstreamChannels() {
   const res = await api.get<UpstreamChannelsResponse>(
     '/api/ratio_sync/channels'

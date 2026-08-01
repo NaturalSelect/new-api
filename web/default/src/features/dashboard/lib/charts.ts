@@ -1306,9 +1306,9 @@ export function processIntelligenceChartData(
     spec_intelligence_line: {
       type: 'line',
       data: [{ id: 'intelligenceData', values: [] }],
-      xField: 'Combo',
+      xField: 'Effort',
       yField: 'IQ',
-      seriesField: 'Effort',
+      seriesField: 'Model',
       title: {
         visible: true,
         text: tt('Model Intelligence Ranking'),
@@ -1322,10 +1322,25 @@ export function processIntelligenceChartData(
 
   if (!scores || scores.length === 0) return emptyResult
 
-  const sorted = [...scores].sort((a, b) => b.iq - a.iq)
+  // Effort levels follow a fixed low-to-high progression; unrecognized
+  // labels (future additions upstream) sort after known ones, alphabetically.
+  const EFFORT_ORDER = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']
+  const effortRank = (effort: string) => {
+    const idx = EFFORT_ORDER.indexOf(effort.toLowerCase())
+    return idx === -1 ? EFFORT_ORDER.length : idx
+  }
+
+  const sorted = [...scores].sort((a, b) => {
+    const rankDiff = effortRank(a.effort) - effortRank(b.effort)
+    if (rankDiff !== 0) return rankDiff
+    if (effortRank(a.effort) === EFFORT_ORDER.length) {
+      const nameDiff = a.effort.localeCompare(b.effort)
+      if (nameDiff !== 0) return nameDiff
+    }
+    return a.model.localeCompare(b.model)
+  })
 
   const values = sorted.map((item) => ({
-    Combo: `${item.model} · ${item.effort}`,
     Model: item.model,
     Effort: item.effort,
     IQ: Number(item.iq.toFixed(2)),
@@ -1340,9 +1355,9 @@ export function processIntelligenceChartData(
     spec_intelligence_line: {
       type: 'line',
       data: [{ id: 'intelligenceData', values }],
-      xField: 'Combo',
+      xField: 'Effort',
       yField: 'IQ',
-      seriesField: 'Effort',
+      seriesField: 'Model',
       smooth: false,
       title: {
         visible: true,
@@ -1361,11 +1376,14 @@ export function processIntelligenceChartData(
       },
       axes: [
         { orient: 'left', type: 'linear' },
-        { orient: 'bottom', type: 'band', label: { visible: false } },
+        { orient: 'bottom', type: 'band' },
       ],
       tooltip: {
         mark: {
-          title: { value: (datum: Record<string, unknown>) => `${datum?.Combo}` },
+          title: {
+            value: (datum: Record<string, unknown>) =>
+              `${datum?.Model} · ${datum?.Effort}`,
+          },
           content: [
             {
               key: tt('Score'),

@@ -8,6 +8,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/config"
+	"github.com/QuantumNous/new-api/setting/cpa_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/performance_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -75,6 +76,9 @@ func InitOptionMap() {
 	common.OptionMap["WorkerUrl"] = system_setting.WorkerUrl
 	common.OptionMap["WorkerValidKey"] = system_setting.WorkerValidKey
 	common.OptionMap["WorkerAllowHttpImageRequestEnabled"] = strconv.FormatBool(system_setting.WorkerAllowHttpImageRequestEnabled)
+	common.OptionMap["CPAUrl"] = cpa_setting.CPAUrl
+	common.OptionMap["CPAManagementKey"] = cpa_setting.CPAManagementKey
+	common.OptionMap["CPASyncInterval"] = strconv.Itoa(cpa_setting.CPASyncInterval)
 	common.OptionMap["PayAddress"] = ""
 	common.OptionMap["CustomCallbackAddress"] = ""
 	common.OptionMap["EpayId"] = ""
@@ -383,6 +387,12 @@ func updateOptionMap(key string, value string) (err error) {
 		system_setting.WorkerUrl = value
 	case "WorkerValidKey":
 		system_setting.WorkerValidKey = value
+	case "CPAUrl":
+		cpa_setting.CPAUrl = value
+	case "CPAManagementKey":
+		cpa_setting.CPAManagementKey = value
+	case "CPASyncInterval":
+		cpa_setting.CPASyncInterval, _ = strconv.Atoi(value)
 	case "PayAddress":
 		operation_setting.PayAddress = value
 	case "Chats":

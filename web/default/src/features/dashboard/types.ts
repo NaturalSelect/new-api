@@ -165,6 +165,25 @@ export interface ProcessedIntelligenceChartData {
 }
 
 // ============================================================================
+// CPA Credential Usage Types
+// ============================================================================
+
+export interface CPAUsageWindow {
+  percent: number
+  reset_at: string
+}
+
+export interface CPAUsageItem {
+  id: string
+  name: string
+  type: string
+  usage_7d?: CPAUsageWindow
+  usage_5h?: CPAUsageWindow
+  observed_at: string
+}
+
+
+// ============================================================================
 // Announcement Types
 // ============================================================================
 

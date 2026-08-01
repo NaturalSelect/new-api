@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
 import type {
+  CPAUsageItem,
   IntelligenceScoreItem,
   KeyDistributionDataItem,
   QuotaDataItem,
@@ -122,5 +123,26 @@ export async function getIntelligenceScores() {
     success: boolean
     data: { scores: IntelligenceScoreItem[]; updated_at: number }
   }>('/api/data/intelligence-scores')
+  return res.data
+}
+
+// ----------------------------------------------------------------------------
+// CPA Credential Usage
+// ----------------------------------------------------------------------------
+
+export async function getCPAUsage() {
+  const res = await api.get<{
+    success: boolean
+    data: { usage: CPAUsageItem[]; updated_at: number; configured: boolean }
+  }>('/api/data/cpa-usage')
+  return res.data
+}
+
+export async function refreshCPAUsage() {
+  const res = await api.post<{
+    success: boolean
+    message: string
+    data?: { usage: CPAUsageItem[]; updated_at: number; configured: boolean }
+  }>('/api/data/cpa-usage/refresh')
   return res.data
 }

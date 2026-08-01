@@ -102,6 +102,12 @@ const LazyIntelligenceChart = lazy(() =>
   }))
 )
 
+const LazyCPAUsagePanel = lazy(() =>
+  import('./components/cpa/cpa-usage-panel').then((m) => ({
+    default: m.CPAUsagePanel,
+  }))
+)
+
 function LogStatCardsFallback() {
   return (
     <div className='overflow-hidden rounded-lg border'>
@@ -170,6 +176,9 @@ const SECTION_META: Record<DashboardSectionId, { titleKey: string }> = {
   },
   intelligence: {
     titleKey: 'Model Intelligence',
+  },
+  cpa: {
+    titleKey: 'CPA Usage',
   },
 }
 
@@ -406,6 +415,13 @@ export function Dashboard() {
             <FadeIn>
               <Suspense fallback={<ModelChartsFallback />}>
                 <LazyIntelligenceChart />
+              </Suspense>
+            </FadeIn>
+          )}
+          {activeSection === 'cpa' && (
+            <FadeIn>
+              <Suspense fallback={<ModelChartsFallback />}>
+                <LazyCPAUsagePanel />
               </Suspense>
             </FadeIn>
           )}

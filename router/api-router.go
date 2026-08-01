@@ -324,6 +324,8 @@ func SetApiRouter(router *gin.Engine) {
 		dataRoute.GET("/key-distribution", middleware.AdminAuth(), controller.GetKeyDistribution)
 		dataRoute.GET("/key-distribution/self", middleware.UserAuth(), controller.GetSelfKeyDistribution)
 		dataRoute.GET("/intelligence-scores", middleware.AdminAuth(), controller.GetIntelligenceScores)
+		dataRoute.GET("/cpa-usage", middleware.AdminAuth(), controller.GetCPAUsage)
+		dataRoute.POST("/cpa-usage/refresh", middleware.AdminAuth(), controller.RefreshCPAUsage)
 
 		logRoute.Use(middleware.CORS(), middleware.CriticalRateLimit())
 		{

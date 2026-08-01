@@ -127,6 +127,11 @@ func main() {
 	// runs on every node since it maintains a per-process in-memory cache)
 	service.StartIntelligenceSyncTask()
 
+	// CPA auth-file usage sync task (fetches usage snapshots from the
+	// configured CPA service; runs on every node since it maintains a
+	// per-process in-memory cache)
+	service.StartCPASyncTask()
+
 	// Token stats cache backfill task (backfills TokenStatsCache one historical day
 	// per tick, speeding up Token/Key Distribution dashboard reads)
 	service.StartTokenStatsBackfillTask()

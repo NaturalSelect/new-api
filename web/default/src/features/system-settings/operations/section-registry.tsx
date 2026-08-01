@@ -136,6 +136,10 @@ const OPERATIONS_SECTIONS = [
             settings['intelligence_setting.enabled'] ?? false,
           'intelligence_setting.refresh_interval':
             settings['intelligence_setting.refresh_interval'] ?? 60,
+          'intelligence_setting.auto_effort_enabled':
+            settings['intelligence_setting.auto_effort_enabled'] ?? false,
+          'intelligence_setting.disabled_auto_efforts':
+            settings['intelligence_setting.disabled_auto_efforts'] ?? [],
         }}
       />
     ),

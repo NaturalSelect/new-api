@@ -318,6 +318,8 @@ export type OperationsSettings = {
   'poe_log_setting.sync_tokens': boolean
   'intelligence_setting.enabled': boolean
   'intelligence_setting.refresh_interval': number
+  'intelligence_setting.auto_effort_enabled': boolean
+  'intelligence_setting.disabled_auto_efforts': string[]
 }
 
 export type SecuritySettings = {

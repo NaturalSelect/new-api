@@ -74,6 +74,8 @@ const defaultOperationsSettings: OperationsSettings = {
   'poe_log_setting.sync_tokens': true,
   'intelligence_setting.enabled': false,
   'intelligence_setting.refresh_interval': 60,
+  'intelligence_setting.auto_effort_enabled': false,
+  'intelligence_setting.disabled_auto_efforts': [],
 }
 
 export function OperationsSettings() {

@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { SystemBehaviorSection } from '../general/system-behavior-section'
 import { EmailSettingsSection } from '../integrations/email-settings-section'
+import { IntelligenceSettingsSection } from '../integrations/intelligence-settings-section'
 import { MonitoringSettingsSection } from '../integrations/monitoring-settings-section'
 import { PoeLogSettingsSection } from '../integrations/poe-log-settings-section'
 import { WorkerSettingsSection } from '../integrations/worker-settings-section'
@@ -122,6 +123,20 @@ const OPERATIONS_SECTIONS = [
     build: (settings: OperationsSettings) => (
       <LogSettingsSection
         defaultEnabled={Boolean(settings.LogConsumeEnabled)}
+      />
+    ),
+  },
+  {
+    id: 'intelligence',
+    titleKey: 'Intelligence Sync',
+    build: (settings: OperationsSettings) => (
+      <IntelligenceSettingsSection
+        defaultValues={{
+          'intelligence_setting.enabled':
+            settings['intelligence_setting.enabled'] ?? false,
+          'intelligence_setting.refresh_interval':
+            settings['intelligence_setting.refresh_interval'] ?? 60,
+        }}
       />
     ),
   },

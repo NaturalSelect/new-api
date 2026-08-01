@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
 import type {
+  IntelligenceScoreItem,
   KeyDistributionDataItem,
   QuotaDataItem,
   TokenDistributionDataItem,
@@ -109,5 +110,17 @@ export async function getUptimeStatus() {
   const res = await api.get<{ success: boolean; data: UptimeGroupResult[] }>(
     '/api/uptime/status'
   )
+  return res.data
+}
+
+// ----------------------------------------------------------------------------
+// Model Intelligence
+// ----------------------------------------------------------------------------
+
+export async function getIntelligenceScores() {
+  const res = await api.get<{
+    success: boolean
+    data: { scores: IntelligenceScoreItem[]; updated_at: number }
+  }>('/api/data/intelligence-scores')
   return res.data
 }

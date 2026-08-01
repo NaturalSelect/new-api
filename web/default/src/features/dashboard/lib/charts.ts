@@ -25,7 +25,9 @@ import type {
   ProcessedChartData,
   ProcessedUserChartData,
   ProcessedTokenDistributionChartData,
+  ProcessedIntelligenceChartData,
   TokenDistributionDataItem,
+  IntelligenceScoreItem,
 } from '@/features/dashboard/types'
 
 type TFunction = (key: string) => string
@@ -1284,6 +1286,105 @@ export function processUserChartData(
       },
       point: { visible: false },
       color: { specified: userColorMap },
+      background: { fill: 'transparent' },
+      animation: true,
+    },
+  }
+}
+
+export function processIntelligenceChartData(
+  scores: IntelligenceScoreItem[],
+  t?: TFunction,
+  themeKey?: string
+): ProcessedIntelligenceChartData {
+  const tt: TFunction = t ?? ((x) => x)
+  const themeColors = getThemeChartColors(themeKey)
+  const colorRange =
+    themeColors.length > 0 ? themeColors : USER_COLOR_FALLBACKS
+
+  const emptyResult: ProcessedIntelligenceChartData = {
+    spec_intelligence_bar: {
+      type: 'bar',
+      data: [{ id: 'intelligenceData', values: [] }],
+      xField: 'IQ',
+      yField: 'Combo',
+      seriesField: 'Effort',
+      direction: 'horizontal',
+      title: {
+        visible: true,
+        text: tt('Model Intelligence Ranking'),
+        subtext: tt('No data available'),
+      },
+      legends: { visible: false },
+      color: { type: 'ordinal', range: colorRange },
+      background: { fill: 'transparent' },
+    },
+  }
+
+  if (!scores || scores.length === 0) return emptyResult
+
+  const sorted = [...scores].sort((a, b) => b.iq - a.iq)
+
+  const values = sorted.map((item) => ({
+    Combo: `${item.model} · ${item.effort}`,
+    Model: item.model,
+    Effort: item.effort,
+    IQ: Number(item.iq.toFixed(2)),
+    PassRate:
+      item.valid_tasks > 0
+        ? Number(((item.passed / item.valid_tasks) * 100).toFixed(1))
+        : 0,
+    AveragePriceUSD: item.average_price_usd,
+  }))
+
+  return {
+    spec_intelligence_bar: {
+      type: 'bar',
+      data: [{ id: 'intelligenceData', values }],
+      xField: 'IQ',
+      yField: 'Combo',
+      seriesField: 'Effort',
+      direction: 'horizontal',
+      title: {
+        visible: true,
+        text: tt('Model Intelligence Ranking'),
+        subtext: `${values.length} ${tt('model combos')}`,
+      },
+      legends: { visible: true, selectMode: 'single' },
+      color: { type: 'ordinal', range: colorRange },
+      bar: {
+        state: { hover: { stroke: '#000', lineWidth: 1 } },
+      },
+      label: {
+        visible: true,
+        position: 'outside',
+        style: { fontSize: 11 },
+      },
+      axes: [
+        { orient: 'left', type: 'band' },
+        { orient: 'bottom', type: 'linear', visible: false },
+      ],
+      tooltip: {
+        mark: {
+          content: [
+            {
+              key: tt('Score'),
+              value: (datum: Record<string, unknown>) =>
+                Number(datum?.IQ) || 0,
+            },
+            {
+              key: tt('Pass Rate'),
+              value: (datum: Record<string, unknown>) =>
+                `${Number(datum?.PassRate) || 0}%`,
+            },
+            {
+              key: tt('Avg. Cost'),
+              value: (datum: Record<string, unknown>) =>
+                `$${(Number(datum?.AveragePriceUSD) || 0).toFixed(2)}`,
+            },
+          ],
+        },
+      },
       background: { fill: 'transparent' },
       animation: true,
     },

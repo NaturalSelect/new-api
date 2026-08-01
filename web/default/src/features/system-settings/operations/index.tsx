@@ -72,6 +72,8 @@ const defaultOperationsSettings: OperationsSettings = {
   'poe_log_setting.free_models': [],
   'poe_log_setting.sync_to_consume_log': true,
   'poe_log_setting.sync_tokens': true,
+  'intelligence_setting.enabled': false,
+  'intelligence_setting.refresh_interval': 60,
 }
 
 export function OperationsSettings() {

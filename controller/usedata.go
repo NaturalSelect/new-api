@@ -6,6 +6,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 
 	"github.com/gin-gonic/gin"
 )
@@ -145,5 +146,20 @@ func GetSelfKeyDistribution(c *gin.Context) {
 		"success": true,
 		"message": "",
 		"data":    data,
+	})
+}
+
+// GetIntelligenceScores returns the locally cached model+effort intelligence
+// scores fetched periodically from the external benchmark API, along with the
+// unix timestamp of the last successful sync (0 if none has completed yet).
+func GetIntelligenceScores(c *gin.Context) {
+	scores, updatedAt := service.GetIntelligenceScores()
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data": gin.H{
+			"scores":     scores,
+			"updated_at": updatedAt,
+		},
 	})
 }

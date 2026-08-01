@@ -44,11 +44,17 @@ const DASHBOARD_SECTIONS = [
     adminOnly: true,
     build: () => null,
   },
+  {
+    id: 'intelligence',
+    titleKey: 'Model Intelligence',
+    adminOnly: true,
+    build: () => null,
+  },
 ] as const
 
 export type DashboardSectionId = (typeof DASHBOARD_SECTIONS)[number]['id']
 
-const ADMIN_ONLY_SECTIONS = new Set<string>(['users'])
+export const ADMIN_ONLY_SECTIONS = new Set<string>(['users', 'intelligence'])
 
 const dashboardRegistry = createSectionRegistry<
   DashboardSectionId,

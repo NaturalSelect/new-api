@@ -123,6 +123,10 @@ func main() {
 	// Poe usage log sync task (every 1 minutes, for Poe channel types)
 	service.StartPoeLogSyncTask()
 
+	// Model intelligence score sync task (fetches external benchmark scores;
+	// runs on every node since it maintains a per-process in-memory cache)
+	service.StartIntelligenceSyncTask()
+
 	// Token stats cache backfill task (backfills TokenStatsCache one historical day
 	// per tick, speeding up Token/Key Distribution dashboard reads)
 	service.StartTokenStatsBackfillTask()

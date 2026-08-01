@@ -145,6 +145,26 @@ export interface KeyDistributionDataItem {
 }
 
 // ============================================================================
+// Model Intelligence Types
+// ============================================================================
+
+export interface IntelligenceScoreItem {
+  model: string
+  effort: string
+  iq: number
+  passed: number
+  valid_tasks: number
+  average_price_usd: number
+  average_minutes: number
+  combined_cost_index: number
+  latest_graded_at: string
+}
+
+export interface ProcessedIntelligenceChartData {
+  spec_intelligence_bar: VChartSpec
+}
+
+// ============================================================================
 // Announcement Types
 // ============================================================================
 

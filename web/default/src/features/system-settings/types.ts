@@ -316,6 +316,8 @@ export type OperationsSettings = {
   'poe_log_setting.free_models': string[]
   'poe_log_setting.sync_to_consume_log': boolean
   'poe_log_setting.sync_tokens': boolean
+  'intelligence_setting.enabled': boolean
+  'intelligence_setting.refresh_interval': number
 }
 
 export type SecuritySettings = {

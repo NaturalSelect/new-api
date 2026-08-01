@@ -47,6 +47,7 @@ import {
 } from './lib'
 import {
   type DashboardSectionId,
+  ADMIN_ONLY_SECTIONS,
   DASHBOARD_DEFAULT_SECTION,
   DASHBOARD_SECTION_IDS,
 } from './section-registry'
@@ -92,6 +93,12 @@ const LazyUserCharts = lazy(() =>
 const LazyKeyCharts = lazy(() =>
   import('./components/keys/key-charts').then((m) => ({
     default: m.KeyCharts,
+  }))
+)
+
+const LazyIntelligenceChart = lazy(() =>
+  import('./components/intelligence/intelligence-chart').then((m) => ({
+    default: m.IntelligenceChart,
   }))
 )
 
@@ -160,6 +167,9 @@ const SECTION_META: Record<DashboardSectionId, { titleKey: string }> = {
   },
   users: {
     titleKey: 'User Analytics',
+  },
+  intelligence: {
+    titleKey: 'Model Intelligence',
   },
 }
 
@@ -250,7 +260,9 @@ export function Dashboard() {
   const visibleSections = useMemo(
     () =>
       DASHBOARD_SECTION_IDS.filter(
-        (section) => section !== 'overview' && (section !== 'users' || isAdmin)
+        (section) =>
+          section !== 'overview' &&
+          (!ADMIN_ONLY_SECTIONS.has(section) || isAdmin)
       ),
     [isAdmin]
   )
@@ -387,6 +399,13 @@ export function Dashboard() {
             <FadeIn>
               <Suspense fallback={<ModelChartsFallback />}>
                 <LazyKeyCharts filters={modelFilters} />
+              </Suspense>
+            </FadeIn>
+          )}
+          {activeSection === 'intelligence' && (
+            <FadeIn>
+              <Suspense fallback={<ModelChartsFallback />}>
+                <LazyIntelligenceChart />
               </Suspense>
             </FadeIn>
           )}

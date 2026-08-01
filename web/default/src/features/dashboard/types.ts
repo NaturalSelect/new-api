@@ -161,7 +161,7 @@ export interface IntelligenceScoreItem {
 }
 
 export interface ProcessedIntelligenceChartData {
-  spec_intelligence_bar: VChartSpec
+  spec_intelligence_line: VChartSpec
 }
 
 // ============================================================================

@@ -174,12 +174,6 @@ const SECTION_META: Record<DashboardSectionId, { titleKey: string }> = {
   users: {
     titleKey: 'User Analytics',
   },
-  intelligence: {
-    titleKey: 'Model Intelligence',
-  },
-  cpa: {
-    titleKey: 'CPA Usage',
-  },
 }
 
 export function Dashboard() {
@@ -395,6 +389,20 @@ export function Dashboard() {
                   />
                 </Suspense>
               </FadeIn>
+              {isAdmin && (
+                <FadeIn delay={0.2}>
+                  <Suspense fallback={<ModelChartsFallback />}>
+                    <LazyIntelligenceChart />
+                  </Suspense>
+                </FadeIn>
+              )}
+              {isAdmin && (
+                <FadeIn delay={0.25}>
+                  <Suspense fallback={<ModelChartsFallback />}>
+                    <LazyCPAUsagePanel />
+                  </Suspense>
+                </FadeIn>
+              )}
             </>
           )}
           {activeSection === 'users' && (
@@ -408,20 +416,6 @@ export function Dashboard() {
             <FadeIn>
               <Suspense fallback={<ModelChartsFallback />}>
                 <LazyKeyCharts filters={modelFilters} />
-              </Suspense>
-            </FadeIn>
-          )}
-          {activeSection === 'intelligence' && (
-            <FadeIn>
-              <Suspense fallback={<ModelChartsFallback />}>
-                <LazyIntelligenceChart />
-              </Suspense>
-            </FadeIn>
-          )}
-          {activeSection === 'cpa' && (
-            <FadeIn>
-              <Suspense fallback={<ModelChartsFallback />}>
-                <LazyCPAUsagePanel />
               </Suspense>
             </FadeIn>
           )}

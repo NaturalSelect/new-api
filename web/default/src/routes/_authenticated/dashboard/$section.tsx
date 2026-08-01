@@ -23,8 +23,21 @@ import {
   DASHBOARD_DEFAULT_SECTION,
 } from '@/features/dashboard/section-registry'
 
+// NOTE: intelligence/cpa were merged into the models section; keep old
+// bookmarked URLs landing on the page that now contains their content.
+const LEGACY_SECTION_REDIRECTS: Record<string, string> = {
+  intelligence: 'models',
+  cpa: 'models',
+}
+
 export const Route = createFileRoute('/_authenticated/dashboard/$section')({
   beforeLoad: ({ params }) => {
+    if (params.section in LEGACY_SECTION_REDIRECTS) {
+      throw redirect({
+        to: '/dashboard/$section',
+        params: { section: LEGACY_SECTION_REDIRECTS[params.section] },
+      })
+    }
     const validSections = DASHBOARD_SECTION_IDS as unknown as string[]
     if (!validSections.includes(params.section)) {
       throw redirect({

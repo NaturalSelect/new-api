@@ -1303,13 +1303,12 @@ export function processIntelligenceChartData(
     themeColors.length > 0 ? themeColors : USER_COLOR_FALLBACKS
 
   const emptyResult: ProcessedIntelligenceChartData = {
-    spec_intelligence_bar: {
-      type: 'bar',
+    spec_intelligence_line: {
+      type: 'line',
       data: [{ id: 'intelligenceData', values: [] }],
-      xField: 'IQ',
-      yField: 'Combo',
+      xField: 'Combo',
+      yField: 'IQ',
       seriesField: 'Effort',
-      direction: 'horizontal',
       title: {
         visible: true,
         text: tt('Model Intelligence Ranking'),
@@ -1338,13 +1337,13 @@ export function processIntelligenceChartData(
   }))
 
   return {
-    spec_intelligence_bar: {
-      type: 'bar',
+    spec_intelligence_line: {
+      type: 'line',
       data: [{ id: 'intelligenceData', values }],
-      xField: 'IQ',
-      yField: 'Combo',
+      xField: 'Combo',
+      yField: 'IQ',
       seriesField: 'Effort',
-      direction: 'horizontal',
+      smooth: false,
       title: {
         visible: true,
         text: tt('Model Intelligence Ranking'),
@@ -1352,20 +1351,21 @@ export function processIntelligenceChartData(
       },
       legends: { visible: true, selectMode: 'single' },
       color: { type: 'ordinal', range: colorRange },
-      bar: {
-        state: { hover: { stroke: '#000', lineWidth: 1 } },
-      },
-      label: {
+      point: {
         visible: true,
-        position: 'outside',
-        style: { fontSize: 11 },
+        style: { size: 5, stroke: '#ffffff', lineWidth: 1.5 },
+      },
+      line: {
+        style: { lineWidth: 2 },
+        state: { hover: { lineWidth: 3 } },
       },
       axes: [
-        { orient: 'left', type: 'band' },
-        { orient: 'bottom', type: 'linear', visible: false },
+        { orient: 'left', type: 'linear' },
+        { orient: 'bottom', type: 'band', label: { visible: false } },
       ],
       tooltip: {
         mark: {
+          title: { value: (datum: Record<string, unknown>) => `${datum?.Combo}` },
           content: [
             {
               key: tt('Score'),

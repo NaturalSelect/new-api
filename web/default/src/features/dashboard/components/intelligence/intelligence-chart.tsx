@@ -80,7 +80,7 @@ export function IntelligenceChart() {
     [scores, isLoading, t, customization.preset]
   )
 
-  const spec = chartData.spec_intelligence_bar
+  const spec = chartData.spec_intelligence_line
 
   return (
     <div className='overflow-hidden rounded-lg border'>

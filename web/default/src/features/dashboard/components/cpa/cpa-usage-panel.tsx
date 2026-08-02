@@ -24,6 +24,7 @@ import dayjs from '@/lib/dayjs'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { getCPAUsage, refreshCPAUsage } from '@/features/dashboard/api'
 import type { CPAUsageItem } from '@/features/dashboard/types'
 import { PanelWrapper } from '../ui/panel-wrapper'
@@ -50,7 +51,7 @@ function CredentialRow(props: { item: CPAUsageItem }) {
 
   return (
     <div className='hover:bg-muted/40 flex flex-col gap-3 px-3 py-3 transition-colors sm:px-5 sm:flex-row sm:items-center sm:gap-6'>
-      <div className='flex min-w-0 flex-1 items-center gap-2'>
+      <div className='flex min-w-0 items-center gap-2 sm:w-40 sm:shrink-0 md:w-48'>
         <span className='truncate text-sm font-medium'>
           {props.item.name}
         </span>
@@ -72,7 +73,7 @@ function CredentialRow(props: { item: CPAUsageItem }) {
         )}
       </div>
       {observedDisplay && (
-        <span className='text-muted-foreground/70 shrink-0 text-xs'>
+        <span className='text-muted-foreground/70 shrink-0 text-xs sm:w-28 sm:text-right md:w-32'>
           {t('Observed')} {observedDisplay}
         </span>
       )}
@@ -129,6 +130,7 @@ export function CPAUsagePanel() {
       loading={isLoading}
       empty={usage.length === 0}
       emptyMessage={emptyMessage}
+      height='h-96'
       contentClassName='p-0'
       headerActions={
         <Button
@@ -148,33 +150,35 @@ export function CPAUsagePanel() {
         </Button>
       }
     >
-      <div>
-        {Array.from(groups.entries()).map(([type, items], groupIdx) => (
-          <div key={type}>
-            <div className='bg-muted/30 border-border/60 flex items-center gap-2 border-b px-3 py-2 sm:px-5'>
-              <Badge variant='outline' className='capitalize'>
-                {t(type.charAt(0).toUpperCase() + type.slice(1))}
-              </Badge>
-              <span className='text-muted-foreground/40 font-mono text-xs tabular-nums'>
-                {items.length}
-              </span>
-            </div>
-            {items.map((item, itemIdx) => (
-              <div
-                key={item.id}
-                className={cn(
-                  itemIdx < items.length - 1 && 'border-border/40 border-b',
-                  groupIdx < groups.size - 1 &&
-                    itemIdx === items.length - 1 &&
-                    'border-border/60 border-b'
-                )}
-              >
-                <CredentialRow item={item} />
+      <ScrollArea className='h-96'>
+        <div>
+          {Array.from(groups.entries()).map(([type, items], groupIdx) => (
+            <div key={type}>
+              <div className='bg-muted/30 border-border/60 flex items-center gap-2 border-b px-3 py-2 sm:px-5'>
+                <Badge variant='outline' className='capitalize'>
+                  {t(type.charAt(0).toUpperCase() + type.slice(1))}
+                </Badge>
+                <span className='text-muted-foreground/40 font-mono text-xs tabular-nums'>
+                  {items.length}
+                </span>
               </div>
-            ))}
-          </div>
-        ))}
-      </div>
+              {items.map((item, itemIdx) => (
+                <div
+                  key={item.id}
+                  className={cn(
+                    itemIdx < items.length - 1 && 'border-border/40 border-b',
+                    groupIdx < groups.size - 1 &&
+                      itemIdx === items.length - 1 &&
+                      'border-border/60 border-b'
+                  )}
+                >
+                  <CredentialRow item={item} />
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      </ScrollArea>
     </PanelWrapper>
   )
 }

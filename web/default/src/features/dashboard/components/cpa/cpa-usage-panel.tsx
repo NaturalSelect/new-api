@@ -27,6 +27,7 @@ import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { getCPAUsage, refreshCPAUsage } from '@/features/dashboard/api'
 import type { CPAUsageItem } from '@/features/dashboard/types'
+import { TruncatedText } from '@/components/truncated-text'
 import { PanelWrapper } from '../ui/panel-wrapper'
 import { CPAUsageBar } from './cpa-usage-bar'
 
@@ -43,6 +44,22 @@ function groupByType(items: CPAUsageItem[]) {
   return groups
 }
 
+const TYPE_SORT_PRIORITY: Record<string, number> = {
+  claude: 0,
+  codex: 1,
+}
+
+function sortGroupEntries(
+  groups: Map<string, CPAUsageItem[]>
+): [string, CPAUsageItem[]][] {
+  return Array.from(groups.entries()).sort(([typeA], [typeB]) => {
+    const priorityA = TYPE_SORT_PRIORITY[typeA.toLowerCase()] ?? Infinity
+    const priorityB = TYPE_SORT_PRIORITY[typeB.toLowerCase()] ?? Infinity
+    if (priorityA !== priorityB) return priorityA - priorityB
+    return typeA.localeCompare(typeB)
+  })
+}
+
 function CredentialRow(props: { item: CPAUsageItem }) {
   const { t } = useTranslation()
   const observedDisplay = dayjs(props.item.observed_at).isValid()
@@ -52,9 +69,11 @@ function CredentialRow(props: { item: CPAUsageItem }) {
   return (
     <div className='hover:bg-muted/40 flex flex-col gap-3 px-3 py-3 transition-colors sm:px-5 sm:flex-row sm:items-center sm:gap-6'>
       <div className='flex min-w-0 items-center gap-2 sm:w-40 sm:shrink-0 md:w-48'>
-        <span className='truncate text-sm font-medium'>
-          {props.item.name}
-        </span>
+        <TruncatedText
+          text={props.item.name}
+          className='text-sm font-medium'
+          maxWidth='max-w-full'
+        />
       </div>
       <div className='grid flex-1 grid-cols-1 gap-3 sm:grid-cols-2'>
         {props.item.usage_7d && (
@@ -108,6 +127,7 @@ export function CPAUsagePanel() {
   const updatedAt = data?.updated_at ?? 0
   const configured = data?.configured ?? false
   const groups = useMemo(() => groupByType(usage), [usage])
+  const sortedGroups = useMemo(() => sortGroupEntries(groups), [groups])
   const updatedAtDisplay = updatedAt ? dayjs.unix(updatedAt).fromNow() : null
 
   const emptyMessage = configured
@@ -152,7 +172,7 @@ export function CPAUsagePanel() {
     >
       <ScrollArea className='h-96'>
         <div>
-          {Array.from(groups.entries()).map(([type, items], groupIdx) => (
+          {sortedGroups.map(([type, items], groupIdx) => (
             <div key={type}>
               <div className='bg-muted/30 border-border/60 flex items-center gap-2 border-b px-3 py-2 sm:px-5'>
                 <Badge variant='outline' className='capitalize'>
@@ -167,7 +187,7 @@ export function CPAUsagePanel() {
                   key={item.id}
                   className={cn(
                     itemIdx < items.length - 1 && 'border-border/40 border-b',
-                    groupIdx < groups.size - 1 &&
+                    groupIdx < sortedGroups.length - 1 &&
                       itemIdx === items.length - 1 &&
                       'border-border/60 border-b'
                   )}

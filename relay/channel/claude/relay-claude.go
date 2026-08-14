@@ -1,6 +1,7 @@
 package claude
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -379,6 +380,10 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 								CacheControl: mediaMessage.CacheControl,
 							})
 						}
+					case dto.ContentTypeFile:
+						if block, ok := claudeFileBlock(c, mediaMessage); ok {
+							claudeMediaMessages = append(claudeMediaMessages, block)
+						}
 					default:
 						source := mediaMessage.ToFileSource()
 						if source == nil {
@@ -436,6 +441,48 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 	claudeRequest.Messages = claudeMessages
 	service.EnsureClaudeMetadataUserIDFromPromptCacheKey(&claudeRequest, textRequest.PromptCacheKey)
 	return &claudeRequest, nil
+}
+
+// claudeFileBlock converts an OpenAI "file" content part into the matching Claude
+// block type according to the filename extension: pdf becomes a document block,
+// textual files become text blocks carrying the decoded content, and anything
+// Claude cannot represent is dropped (ok=false).
+func claudeFileBlock(c *gin.Context, mediaMessage dto.MediaContent) (dto.ClaudeMediaMessage, bool) {
+	file := mediaMessage.GetFile()
+	if file == nil || file.FileData == "" {
+		return dto.ClaudeMediaMessage{}, false
+	}
+	ext := ""
+	if dot := strings.LastIndex(file.FileName, "."); dot != -1 && dot+1 < len(file.FileName) {
+		ext = strings.ToLower(file.FileName[dot+1:])
+	}
+	switch service.GetMimeTypeByExtension(ext) {
+	case "application/pdf":
+		return dto.ClaudeMediaMessage{
+			Type: "document",
+			Source: &dto.ClaudeMessageSource{
+				Type:      "base64",
+				MediaType: "application/pdf",
+				Data:      file.FileData,
+			},
+		}, true
+	case "text/plain":
+		data := file.FileData
+		if strings.HasPrefix(data, "data:") {
+			if idx := strings.Index(data, ","); idx != -1 {
+				data = data[idx+1:]
+			}
+		}
+		decoded, err := base64.StdEncoding.DecodeString(data)
+		if err != nil {
+			return dto.ClaudeMediaMessage{}, false
+		}
+		return dto.ClaudeMediaMessage{
+			Type: "text",
+			Text: common.GetPointer[string](string(decoded)),
+		}, true
+	}
+	return dto.ClaudeMediaMessage{}, false
 }
 
 func StreamResponseClaude2OpenAI(claudeResponse *dto.ClaudeResponse) *dto.ChatCompletionsStreamResponse {

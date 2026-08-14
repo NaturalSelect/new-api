@@ -15,31 +15,48 @@ import (
 )
 
 const (
-	intelligenceSourceURL    = "https://codexradar.com/data/intelligence-efficiency.json?refresh=1"
+	intelligenceSourceURL    = "https://codexradar.com/api/intelligence-efficiency-metrics?refresh=1"
 	intelligenceHTTPTimeout  = 30 * time.Second
 	intelligenceMaxBodyBytes = 10 << 20 // 10MB
 )
 
-// IntelligenceScore is one model+effort combo's benchmark result, as reported
-// by the external intelligence-efficiency API. The IQ score comes pre-computed
-// from upstream; no local weighting/aggregation is performed.
+// IntelligenceScore is one model+effort combo's benchmark result, exposed to
+// the frontend via GetIntelligenceScores. This is our own stable API
+// contract; its JSON tags do not necessarily match the upstream response
+// shape (see intelligencePoint), which is mapped into this type on fetch.
 type IntelligenceScore struct {
 	Model             string  `json:"model"`
 	Effort            string  `json:"effort"`
 	IQ                float64 `json:"iq"`
-	Passed            int     `json:"passed"`
-	ValidTasks        int     `json:"valid_tasks"`
+	Passed            float64 `json:"passed"`
+	ValidTasks        float64 `json:"valid_tasks"`
 	AveragePriceUSD   float64 `json:"average_price_usd"`
 	AverageMinutes    float64 `json:"average_minutes"`
 	CombinedCostIndex float64 `json:"combined_cost_index"`
 	LatestGradedAt    string  `json:"latest_graded_at"`
 }
 
+// intelligencePoint mirrors one entry of the "points" array returned by
+// https://codexradar.com/api/intelligence-efficiency-metrics. weighted_passed/
+// weighted_total are the rolling-weighted counts backing iq; the sibling
+// plain passed/total fields are raw non-weighted counts and are not used.
+type intelligencePoint struct {
+	Model             string  `json:"model"`
+	Effort            string  `json:"effort"`
+	IQ                float64 `json:"iq"`
+	WeightedPassed    float64 `json:"weighted_passed"`
+	WeightedTotal     float64 `json:"weighted_total"`
+	AveragePriceUSD   float64 `json:"average_price_usd"`
+	AverageMinutes    float64 `json:"average_minutes"`
+	CombinedCostIndex float64 `json:"combined_cost_index"`
+	SourceUpdatedAt   string  `json:"source_updated_at"`
+}
+
 // intelligenceAPIResponse mirrors the subset of fields consumed from
-// https://codexradar.com/data/intelligence-efficiency.json
+// https://codexradar.com/api/intelligence-efficiency-metrics
 type intelligenceAPIResponse struct {
 	SourceUpdatedAt string              `json:"source_updated_at"`
-	Points          []IntelligenceScore `json:"points"`
+	Points          []intelligencePoint `json:"points"`
 }
 
 var (
@@ -124,8 +141,23 @@ func runIntelligenceSyncOnce() {
 		return
 	}
 
+	scores := make([]IntelligenceScore, len(parsed.Points))
+	for i, p := range parsed.Points {
+		scores[i] = IntelligenceScore{
+			Model:             p.Model,
+			Effort:            p.Effort,
+			IQ:                p.IQ,
+			Passed:            p.WeightedPassed,
+			ValidTasks:        p.WeightedTotal,
+			AveragePriceUSD:   p.AveragePriceUSD,
+			AverageMinutes:    p.AverageMinutes,
+			CombinedCostIndex: p.CombinedCostIndex,
+			LatestGradedAt:    p.SourceUpdatedAt,
+		}
+	}
+
 	intelligenceCacheMutex.Lock()
-	intelligenceCacheScores = parsed.Points
+	intelligenceCacheScores = scores
 	intelligenceCacheUpdatedAt = time.Now().Unix()
 	intelligenceCacheMutex.Unlock()
 }

@@ -21,7 +21,7 @@ import type { DashboardChartPreferences, DashboardFilters } from './types'
 export const TIME_GRANULARITY_STORAGE_KEY = 'data_export_default_time'
 export const DASHBOARD_CHART_PREFERENCES_STORAGE_KEY =
   'dashboard_models_chart_preferences'
-export const DASHBOARD_CHART_PREFERENCES_VERSION = 2
+export const DASHBOARD_CHART_PREFERENCES_VERSION = 3
 export const DEFAULT_TIME_GRANULARITY = 'day' as const
 export const MAX_CHART_TREND_POINTS = 7
 
@@ -30,14 +30,14 @@ export const DEFAULT_DASHBOARD_CHART_PREFERENCES: DashboardChartPreferences = {
   consumptionDistributionChart: 'bar',
   consumptionDistributionMode: 'quota',
   modelAnalyticsChart: 'trend',
-  defaultTimeRangeDays: 0,
+  defaultTimeRange: 'month',
   defaultTimeGranularity: DEFAULT_TIME_GRANULARITY,
 }
 
 export const TIME_RANGE_BY_GRANULARITY = {
-  hour: 1,
-  day: 7,
-  week: 30,
+  hour: '1d',
+  day: '7d',
+  week: '29d',
 } as const
 
 export const TIME_GRANULARITY_OPTIONS = [
@@ -47,11 +47,13 @@ export const TIME_GRANULARITY_OPTIONS = [
 ] as const
 
 export const TIME_RANGE_PRESETS = [
-  { label: 'This month', days: 0 },
-  { label: '1 Day', days: 1 },
-  { label: '7 Days', days: 7 },
-  { label: '14 Days', days: 14 },
-  { label: '29 Days', days: 29 },
+  { label: 'Today', value: 'today' },
+  { label: 'Yesterday', value: 'yesterday' },
+  { label: 'This month', value: 'month' },
+  { label: '1 Day', value: '1d' },
+  { label: '7 Days', value: '7d' },
+  { label: '14 Days', value: '14d' },
+  { label: '29 Days', value: '29d' },
 ] as const
 
 export const CONSUMPTION_DISTRIBUTION_CHART_OPTIONS = [

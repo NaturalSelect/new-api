@@ -17,6 +17,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import {
+  dateToUnixTimestamp,
+  getCalendarDayRange,
   getCurrentMonthDateRange,
   getRollingDateRange,
   type TimeGranularity,
@@ -36,6 +38,7 @@ import type {
   DashboardChartPreferences,
   DashboardFilters,
   ModelAnalyticsChartTab,
+  TimeRangePresetValue,
 } from '@/features/dashboard/types'
 
 function isTimeGranularity(value: unknown): value is TimeGranularity {
@@ -54,8 +57,8 @@ function isConsumptionDistributionMode(
   return value === 'quota' || value === 'token'
 }
 
-function isTimeRangePresetDays(value: unknown): value is number {
-  return TIME_RANGE_PRESETS.some((preset) => preset.days === value)
+function isTimeRangePreset(value: unknown): value is TimeRangePresetValue {
+  return TIME_RANGE_PRESETS.some((preset) => preset.value === value)
 }
 
 function isModelAnalyticsChartTab(
@@ -80,8 +83,25 @@ export function cleanFilters<T extends Record<string, unknown>>(
   return cleaned
 }
 
-export function getDashboardDateRange(days: number): { start: Date; end: Date } {
-  return days === 0 ? getCurrentMonthDateRange() : getRollingDateRange(days)
+export function getDashboardDateRange(
+  preset: TimeRangePresetValue
+): { start: Date; end: Date } {
+  switch (preset) {
+    case 'today':
+      return getCalendarDayRange(0)
+    case 'yesterday':
+      return getCalendarDayRange(-1)
+    case 'month':
+      return getCurrentMonthDateRange()
+    case '1d':
+      return getRollingDateRange(1)
+    case '7d':
+      return getRollingDateRange(7)
+    case '14d':
+      return getRollingDateRange(14)
+    case '29d':
+      return getRollingDateRange(29)
+  }
 }
 
 export function getSavedGranularity(
@@ -133,10 +153,10 @@ export function getSavedChartPreferences(): DashboardChartPreferences {
       modelAnalyticsChart: isModelAnalyticsChartTab(parsed.modelAnalyticsChart)
         ? parsed.modelAnalyticsChart
         : fallbackPreferences.modelAnalyticsChart,
-      defaultTimeRangeDays:
-        isCurrentVersion && isTimeRangePresetDays(parsed.defaultTimeRangeDays)
-          ? parsed.defaultTimeRangeDays
-          : fallbackPreferences.defaultTimeRangeDays,
+      defaultTimeRange:
+        isCurrentVersion && isTimeRangePreset(parsed.defaultTimeRange)
+          ? parsed.defaultTimeRange
+          : fallbackPreferences.defaultTimeRange,
       defaultTimeGranularity:
         isCurrentVersion && isTimeGranularity(parsed.defaultTimeGranularity)
           ? parsed.defaultTimeGranularity
@@ -169,10 +189,12 @@ export function saveChartPreferences(
   )
 }
 
-export function getDefaultDays(granularity?: TimeGranularity): number {
+export function getDefaultTimeRange(
+  granularity?: TimeGranularity
+): TimeRangePresetValue {
   const preferences = getSavedChartPreferences()
   if (!granularity || granularity === preferences.defaultTimeGranularity) {
-    return preferences.defaultTimeRangeDays
+    return preferences.defaultTimeRange
   }
   return TIME_RANGE_BY_GRANULARITY[granularity]
 }
@@ -180,12 +202,33 @@ export function getDefaultDays(granularity?: TimeGranularity): number {
 export function buildDefaultDashboardFilters(
   preferences: DashboardChartPreferences = getSavedChartPreferences()
 ): DashboardFilters {
-  const { start, end } = getDashboardDateRange(preferences.defaultTimeRangeDays)
+  const { start, end } = getDashboardDateRange(preferences.defaultTimeRange)
   return {
     ...EMPTY_DASHBOARD_FILTERS,
     start_timestamp: start,
     end_timestamp: end,
     time_granularity: preferences.defaultTimeGranularity,
+  }
+}
+
+/**
+ * Resolve a dashboard filter into concrete start/end Unix timestamps,
+ * falling back to the saved default time range preset for any side left
+ * unset (e.g. after a date picker field is cleared).
+ */
+export function resolveFilterTimeRange(filters?: DashboardFilters): {
+  start_timestamp: number
+  end_timestamp: number
+} {
+  const fallback = getDashboardDateRange(
+    getDefaultTimeRange(filters?.time_granularity)
+  )
+  const start = filters?.start_timestamp ?? fallback.start
+  const end = filters?.end_timestamp ?? fallback.end
+
+  return {
+    start_timestamp: dateToUnixTimestamp(start),
+    end_timestamp: dateToUnixTimestamp(end),
   }
 }
 

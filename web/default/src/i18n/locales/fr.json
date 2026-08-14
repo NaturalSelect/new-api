@@ -4594,6 +4594,7 @@
     "Year": "Année",
     "years": "ans",
     "Yes": "Oui",
+    "Yesterday": "Hier",
     "You are about to delete {{count}} API key(s).": "Vous êtes sur le point de supprimer {{count}} clé(s) API.",
     "You are running the latest version ({{version}}).": "Vous utilisez la dernière version ({{version}}).",
     "You can close this tab once the binding completes or a success message appears in the original window.": "Vous pouvez fermer cet onglet une fois la liaison terminée ou qu'un message de succès apparaît dans la fenêtre d'origine.",

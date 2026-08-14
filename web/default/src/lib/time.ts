@@ -97,6 +97,24 @@ export function getRollingDateRange(
   return { start, end }
 }
 
+/**
+ * Calculate a calendar-day date range (00:00:00 to 23:59:59.999, local time).
+ * Example: offsetDays=0 means today, offsetDays=-1 means yesterday.
+ * Unlike getRollingDateRange, this is a fixed calendar day, not a rolling window.
+ */
+export function getCalendarDayRange(
+  offsetDays = 0,
+  fromDate: Date = new Date()
+): { start: Date; end: Date } {
+  const target = new Date(fromDate)
+  target.setDate(target.getDate() + offsetDays)
+
+  return {
+    start: getStartOfDay(target),
+    end: getEndOfDay(target),
+  }
+}
+
 export function getCurrentMonthDateRange(
   fromDate: Date = new Date()
 ): { start: Date; end: Date } {

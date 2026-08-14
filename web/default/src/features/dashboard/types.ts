@@ -66,12 +66,21 @@ export type ConsumptionDistributionMode = 'quota' | 'token'
 
 export type ModelAnalyticsChartTab = 'trend' | 'proportion' | 'top'
 
+export type TimeRangePresetValue =
+  | 'today'
+  | 'yesterday'
+  | 'month'
+  | '1d'
+  | '7d'
+  | '14d'
+  | '29d'
+
 export interface DashboardChartPreferences {
   version: number
   consumptionDistributionChart: ConsumptionDistributionChartType
   consumptionDistributionMode: ConsumptionDistributionMode
   modelAnalyticsChart: ModelAnalyticsChartTab
-  defaultTimeRangeDays: number
+  defaultTimeRange: TimeRangePresetValue
   defaultTimeGranularity: TimeGranularity
 }
 

@@ -56,6 +56,7 @@ import {
 import type {
   DashboardChartPreferences,
   DashboardFilters,
+  TimeRangePresetValue,
 } from '@/features/dashboard/types'
 
 interface ModelsFilterProps {
@@ -80,23 +81,47 @@ const SectionDivider = ({ label }: { label: string }) => (
   </div>
 )
 
+// Rolling-window presets keyed by their day count; today/yesterday/month are
+// fixed calendar points and are matched separately below.
+const ROLLING_DAYS_BY_PRESET: Partial<Record<TimeRangePresetValue, number>> = {
+  '1d': 1,
+  '7d': 7,
+  '14d': 14,
+  '29d': 29,
+}
+
 const getSelectedRange = (
   filters: DashboardFilters,
-  fallbackDays: number
-): number | null => {
+  fallbackPreset: TimeRangePresetValue
+): TimeRangePresetValue | null => {
   const start = filters.start_timestamp?.getTime()
   const end = filters.end_timestamp?.getTime()
-  if (!start || !end) return fallbackDays
+  if (!start || !end) return fallbackPreset
+
+  // Today/yesterday span ~1 day, same as the "1 Day" rolling preset, so they
+  // must be checked first against their fixed calendar boundaries (both
+  // start and end) before falling back to duration-based matching below.
+  for (const preset of ['today', 'yesterday'] as const) {
+    const range = getDashboardDateRange(preset)
+    if (
+      Math.abs(range.start.getTime() - start) < 60_000 &&
+      Math.abs(range.end.getTime() - end) < 60_000
+    ) {
+      return preset
+    }
+  }
 
   return (
     TIME_RANGE_PRESETS.find((range) => {
-      if (range.days === 0) {
-        const { start: monthStart } = getDashboardDateRange(0)
+      if (range.value === 'month') {
+        const { start: monthStart } = getDashboardDateRange('month')
         return Math.abs(monthStart.getTime() - start) < 60_000
       }
 
-      return Math.abs(end - start - range.days * 24 * 60 * 60 * 1000) < 60_000
-    })?.days ?? null
+      const days = ROLLING_DAYS_BY_PRESET[range.value]
+      if (!days) return false
+      return Math.abs(end - start - days * 24 * 60 * 60 * 1000) < 60_000
+    })?.value ?? null
   )
 }
 
@@ -108,14 +133,15 @@ export function ModelsFilter(props: ModelsFilterProps) {
 
   const [open, setOpen] = useState(false)
   const [filters, setFilters] = useState<DashboardFilters>(props.filters)
-  const [selectedRange, setSelectedRange] = useState<number | null>(() =>
-    getSelectedRange(props.filters, props.preferences.defaultTimeRangeDays)
-  )
+  const [selectedRange, setSelectedRange] =
+    useState<TimeRangePresetValue | null>(() =>
+      getSelectedRange(props.filters, props.preferences.defaultTimeRange)
+    )
 
   const resetFiltersFromCurrentFilters = () => {
     setFilters(props.filters)
     setSelectedRange(
-      getSelectedRange(props.filters, props.preferences.defaultTimeRangeDays)
+      getSelectedRange(props.filters, props.preferences.defaultTimeRange)
     )
   }
 
@@ -134,14 +160,14 @@ export function ModelsFilter(props: ModelsFilterProps) {
   }
 
   const handleReset = () => {
-    const days = props.preferences.defaultTimeRangeDays
-    const { start, end } = getDashboardDateRange(days)
+    const preset = props.preferences.defaultTimeRange
+    const { start, end } = getDashboardDateRange(preset)
     setFilters({
       ...buildDefaultDashboardFilters(props.preferences),
       start_timestamp: start,
       end_timestamp: end,
     })
-    setSelectedRange(days)
+    setSelectedRange(preset)
     props.onReset()
     setOpen(false)
   }
@@ -155,15 +181,15 @@ export function ModelsFilter(props: ModelsFilterProps) {
       setSelectedRange(null)
   }
 
-  const handleQuickRange = (days: number) => {
-    const { start, end } = getDashboardDateRange(days)
+  const handleQuickRange = (preset: TimeRangePresetValue) => {
+    const { start, end } = getDashboardDateRange(preset)
 
     setFilters((prev) => ({
       ...prev,
       start_timestamp: start,
       end_timestamp: end,
     }))
-    setSelectedRange(days)
+    setSelectedRange(preset)
   }
 
   return (
@@ -193,19 +219,19 @@ export function ModelsFilter(props: ModelsFilterProps) {
                 <Calendar className='h-4 w-4' />
                 {t('Quick Range')}
               </Label>
-              <div className='grid grid-cols-2 gap-2 sm:flex'>
+              <div className='grid grid-cols-3 gap-2 sm:grid-cols-4'>
                 {TIME_RANGE_PRESETS.map((range) => (
                   <Button
-                    key={range.days}
+                    key={range.value}
                     type='button'
                     size='sm'
                     variant={
-                      selectedRange === range.days ? 'default' : 'outline'
+                      selectedRange === range.value ? 'default' : 'outline'
                     }
-                    onClick={() => handleQuickRange(range.days)}
+                    onClick={() => handleQuickRange(range.value)}
                     className={cn(
-                      'flex-1',
-                      selectedRange === range.days &&
+                      'w-full',
+                      selectedRange === range.value &&
                         'ring-ring ring-2 ring-offset-2'
                     )}
                   >

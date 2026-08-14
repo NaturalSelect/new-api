@@ -33,13 +33,16 @@ import {
   TIME_RANGE_PRESETS,
 } from '@/features/dashboard/constants'
 import {
-  getDefaultDays,
+  getDefaultTimeRange,
   getDashboardDateRange,
   getSavedGranularity,
   saveGranularity,
   processUserChartData,
 } from '@/features/dashboard/lib'
-import type { ProcessedUserChartData } from '@/features/dashboard/types'
+import type {
+  ProcessedUserChartData,
+  TimeRangePresetValue,
+} from '@/features/dashboard/types'
 
 let themeManagerPromise: Promise<
   (typeof import('@visactor/vchart'))['ThemeManager']
@@ -76,22 +79,22 @@ export function UserCharts() {
   const [timeGranularity, setTimeGranularity] = useState<TimeGranularity>(() =>
     getSavedGranularity()
   )
-  const [selectedRange, setSelectedRange] = useState<number>(() =>
-    getDefaultDays(timeGranularity)
+  const [selectedRange, setSelectedRange] = useState<TimeRangePresetValue>(
+    () => getDefaultTimeRange(timeGranularity)
   )
   const [topUserLimit, setTopUserLimit] = useState(10)
   const [timeRange, setTimeRange] = useState(() => {
-    const days = getDefaultDays(timeGranularity)
-    const { start, end } = getDashboardDateRange(days)
+    const preset = getDefaultTimeRange(timeGranularity)
+    const { start, end } = getDashboardDateRange(preset)
     return {
       start_timestamp: Math.floor(start.getTime() / 1000),
       end_timestamp: Math.floor(end.getTime() / 1000),
     }
   })
 
-  const handleRangeChange = useCallback((days: number) => {
-    setSelectedRange(days)
-    const { start, end } = getDashboardDateRange(days)
+  const handleRangeChange = useCallback((preset: TimeRangePresetValue) => {
+    setSelectedRange(preset)
+    const { start, end } = getDashboardDateRange(preset)
     setTimeRange({
       start_timestamp: Math.floor(start.getTime() / 1000),
       end_timestamp: Math.floor(end.getTime() / 1000),
@@ -102,9 +105,9 @@ export function UserCharts() {
     (g: TimeGranularity) => {
       setTimeGranularity(g)
       saveGranularity(g)
-      const days = getDefaultDays(g)
-      if (days !== selectedRange) {
-        handleRangeChange(days)
+      const preset = getDefaultTimeRange(g)
+      if (preset !== selectedRange) {
+        handleRangeChange(preset)
       }
     },
     [selectedRange, handleRangeChange]
@@ -157,15 +160,17 @@ export function UserCharts() {
     <div className='space-y-3'>
       <div className='flex items-center gap-1.5 overflow-x-auto pb-1 sm:gap-2'>
         <Tabs
-          value={String(selectedRange)}
-          onValueChange={(value) => handleRangeChange(Number(value))}
+          value={selectedRange}
+          onValueChange={(value) =>
+            handleRangeChange(value as TimeRangePresetValue)
+          }
           className='shrink-0'
         >
           <TabsList>
             {TIME_RANGE_PRESETS.map((preset) => (
               <TabsTrigger
-                key={preset.days}
-                value={String(preset.days)}
+                key={preset.value}
+                value={preset.value}
                 className='px-2.5 text-xs'
               >
                 {t(preset.label)}

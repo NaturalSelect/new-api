@@ -28,7 +28,6 @@ import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/auth-store'
 import { ROLE } from '@/lib/roles'
-import { computeTimeRange } from '@/lib/time'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { SectionPageLayout } from '@/components/layout'
@@ -41,7 +40,7 @@ import { DEFAULT_TIME_GRANULARITY } from './constants'
 import {
   buildDefaultDashboardFilters,
   buildQueryParams,
-  getDefaultDays,
+  resolveFilterTimeRange,
   getSavedChartPreferences,
   saveChartPreferences,
 } from './lib'
@@ -234,11 +233,7 @@ export function Dashboard() {
     if (activeSection !== 'models') return
     const abortController = new AbortController()
     setTokenDistributionLoading(true)
-    const timeRange = computeTimeRange(
-      getDefaultDays(modelFilters.time_granularity),
-      modelFilters.start_timestamp,
-      modelFilters.end_timestamp
-    )
+    const timeRange = resolveFilterTimeRange(modelFilters)
     const params = buildQueryParams(timeRange, modelFilters)
     getTokenDistribution(params, isAdmin)
       .then((res) => {

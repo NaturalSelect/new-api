@@ -21,7 +21,6 @@ import { useQuery } from '@tanstack/react-query'
 import { VChart } from '@visactor/react-vchart'
 import { AlertCircle, Key } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { computeTimeRange } from '@/lib/time'
 import { VCHART_OPTION } from '@/lib/vchart'
 import { useThemeCustomization } from '@/context/theme-customization-provider'
 import { useTheme } from '@/context/theme-provider'
@@ -29,7 +28,7 @@ import { useIsAdmin } from '@/hooks/use-admin'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { getKeyDistribution } from '@/features/dashboard/api'
-import { buildQueryParams, getDefaultDays } from '@/features/dashboard/lib'
+import { buildQueryParams, resolveFilterTimeRange } from '@/features/dashboard/lib'
 import type {
   DashboardFilters,
   KeyDistributionDataItem,
@@ -250,11 +249,7 @@ export function KeyCharts(props: KeyChartsProps) {
   >(null)
   const isAdmin = useIsAdmin()
 
-  const timeRange = computeTimeRange(
-    getDefaultDays(props.filters?.time_granularity),
-    props.filters?.start_timestamp,
-    props.filters?.end_timestamp
-  )
+  const timeRange = resolveFilterTimeRange(props.filters)
   // XX: the self endpoint always resolves the acting user from the auth
   // session, so only forward the username filter on admin requests.
   const username = isAdmin ? props.filters?.username : undefined

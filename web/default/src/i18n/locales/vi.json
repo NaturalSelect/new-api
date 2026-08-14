@@ -4594,6 +4594,7 @@
     "Year": "Năm",
     "years": "năm",
     "Yes": "Có",
+    "Yesterday": "Hôm qua",
     "You are about to delete {{count}} API key(s).": "Bạn sắp xóa {{count}} khóa API.",
     "You are running the latest version ({{version}}).": "Bạn đang sử dụng phiên bản mới nhất ({{version}}).",
     "You can close this tab once the binding completes or a success message appears in the original window.": "Bạn có thể đóng tab này sau khi quá trình liên kết hoàn tất hoặc thông báo thành công xuất hiện trong cửa sổ gốc.",

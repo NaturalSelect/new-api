@@ -4594,6 +4594,7 @@
     "Year": "Year",
     "years": "years",
     "Yes": "Yes",
+    "Yesterday": "Yesterday",
     "You are about to delete {{count}} API key(s).": "You are about to delete {{count}} API key(s).",
     "You are running the latest version ({{version}}).": "You are running the latest version ({{version}}).",
     "You can close this tab once the binding completes or a success message appears in the original window.": "You can close this tab once the binding completes or a success message appears in the original window.",

@@ -50,6 +50,7 @@ import type {
   ConsumptionDistributionChartType,
   DashboardChartPreferences,
   ModelAnalyticsChartTab,
+  TimeRangePresetValue,
 } from '@/features/dashboard/types'
 
 interface ModelsChartPreferencesProps {
@@ -96,15 +97,15 @@ export function ModelsChartPreferences(props: ModelsChartPreferencesProps) {
             <Select
               items={[
                 ...TIME_RANGE_PRESETS.map((option) => ({
-                  value: String(option.days),
+                  value: option.value,
                   label: t(option.label),
                 })),
               ]}
-              value={String(draft.defaultTimeRangeDays)}
+              value={draft.defaultTimeRange}
               onValueChange={(value) =>
                 setDraft((prev) => ({
                   ...prev,
-                  defaultTimeRangeDays: Number(value),
+                  defaultTimeRange: value as TimeRangePresetValue,
                 }))
               }
             >
@@ -114,7 +115,7 @@ export function ModelsChartPreferences(props: ModelsChartPreferencesProps) {
               <SelectContent alignItemWithTrigger={false}>
                 <SelectGroup>
                   {TIME_RANGE_PRESETS.map((option) => (
-                    <SelectItem key={option.days} value={String(option.days)}>
+                    <SelectItem key={option.value} value={option.value}>
                       {t(option.label)}
                     </SelectItem>
                   ))}

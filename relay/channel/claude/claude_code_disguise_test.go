@@ -1,6 +1,8 @@
 package claude
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"regexp"
@@ -27,6 +29,19 @@ func makeRelayInfo(disguise bool) *relaycommon.RelayInfo {
 
 func makeRelayInfoNil() *relaycommon.RelayInfo {
 	return nil
+}
+
+// assertDisguiseEntries asserts that arr[0:3] are the Claude Code disguise blocks:
+// billing header, agent identifier, static prompt (matching real Claude Code).
+func assertDisguiseEntries(t *testing.T, arr []dto.ClaudeMediaMessage) {
+	t.Helper()
+	require.GreaterOrEqual(t, len(arr), 3)
+	assert.Equal(t, "text", arr[0].Type)
+	assert.Regexp(t, regexp.MustCompile(`^x-anthropic-billing-header: cc_version=2\.1\.50\.[0-9a-f]{3}; cc_entrypoint=cli; cch=[0-9a-f]{5};$`), *arr[0].Text)
+	assert.Equal(t, "text", arr[1].Type)
+	assert.Equal(t, claudeCodeSystemPromptEntry, *arr[1].Text)
+	assert.Equal(t, "text", arr[2].Type)
+	assert.Equal(t, claudeCodeStaticPrompt, *arr[2].Text)
 }
 
 // 1. TestApplyClaudeCodeDisguiseHeaders_Disabled — switch false, headers unchanged
@@ -81,7 +96,7 @@ func TestApplyClaudeCodeDisguiseBody_Disabled(t *testing.T) {
 	assert.Nil(t, request.Metadata)
 }
 
-// 4. TestApplyClaudeCodeDisguiseBody_NilSystem — system nil becomes array with 1 entry
+// 4. TestApplyClaudeCodeDisguiseBody_NilSystem — system nil becomes array with 3 disguise entries
 func TestApplyClaudeCodeDisguiseBody_NilSystem(t *testing.T) {
 	c, _ := gin.CreateTestContext(nil)
 	request := &dto.ClaudeRequest{
@@ -93,12 +108,11 @@ func TestApplyClaudeCodeDisguiseBody_NilSystem(t *testing.T) {
 
 	arr, ok := request.System.([]dto.ClaudeMediaMessage)
 	require.True(t, ok)
-	require.Len(t, arr, 1)
-	assert.Equal(t, "text", arr[0].Type)
-	assert.Equal(t, claudeCodeSystemPromptEntry, *arr[0].Text)
+	require.Len(t, arr, 3)
+	assertDisguiseEntries(t, arr)
 }
 
-// 5. TestApplyClaudeCodeDisguiseBody_StringSystem — system string becomes 2-entry array
+// 5. TestApplyClaudeCodeDisguiseBody_StringSystem — system string becomes 4-entry array
 func TestApplyClaudeCodeDisguiseBody_StringSystem(t *testing.T) {
 	c, _ := gin.CreateTestContext(nil)
 	request := &dto.ClaudeRequest{
@@ -110,11 +124,10 @@ func TestApplyClaudeCodeDisguiseBody_StringSystem(t *testing.T) {
 
 	arr, ok := request.System.([]dto.ClaudeMediaMessage)
 	require.True(t, ok)
-	require.Len(t, arr, 2)
-	assert.Equal(t, "text", arr[0].Type)
-	assert.Equal(t, claudeCodeSystemPromptEntry, *arr[0].Text)
-	assert.Equal(t, "text", arr[1].Type)
-	assert.Equal(t, "original system prompt", *arr[1].Text)
+	require.Len(t, arr, 4)
+	assertDisguiseEntries(t, arr)
+	assert.Equal(t, "text", arr[3].Type)
+	assert.Equal(t, "original system prompt", *arr[3].Text)
 }
 
 // 6. TestApplyClaudeCodeDisguiseBody_ArraySystemHasEntry — already has entry, not duplicated
@@ -136,6 +149,28 @@ func TestApplyClaudeCodeDisguiseBody_ArraySystemHasEntry(t *testing.T) {
 	require.True(t, ok)
 	require.Len(t, arr, 2) // NOTE: not duplicated
 	assert.Equal(t, claudeCodeSystemPromptEntry, *arr[0].Text)
+}
+
+// 6b. TestApplyClaudeCodeDisguiseBody_ArraySystemHasBillingHeader — billing-header
+// entry from a previous hop also counts as "already injected".
+func TestApplyClaudeCodeDisguiseBody_ArraySystemHasBillingHeader(t *testing.T) {
+	c, _ := gin.CreateTestContext(nil)
+	billing := "x-anthropic-billing-header: cc_version=2.1.50.abc; cc_entrypoint=cli; cch=12345;"
+	otherText := "other prompt"
+	request := &dto.ClaudeRequest{
+		System: []dto.ClaudeMediaMessage{
+			{Type: "text", Text: &billing},
+			{Type: "text", Text: &otherText},
+		},
+	}
+	info := makeRelayInfo(true)
+
+	ApplyClaudeCodeDisguiseBody(c, request, info)
+
+	arr, ok := request.System.([]dto.ClaudeMediaMessage)
+	require.True(t, ok)
+	require.Len(t, arr, 2) // NOTE: not duplicated
+	assert.Equal(t, billing, *arr[0].Text)
 }
 
 // 7. TestApplyClaudeCodeDisguiseBody_MetadataEmpty — metadata empty, user_id injected
@@ -354,8 +389,8 @@ func TestApplyClaudeCodeDisguiseBody_OnOpenAIToClaudePath(t *testing.T) {
 	// system 应被注入伪装 entry
 	arr, ok := claudeReq.System.([]dto.ClaudeMediaMessage)
 	require.True(t, ok)
-	assert.GreaterOrEqual(t, len(arr), 1)
-	assert.Equal(t, claudeCodeSystemPromptEntry, *arr[0].Text)
+	assert.GreaterOrEqual(t, len(arr), 3)
+	assertDisguiseEntries(t, arr)
 
 	// metadata.user_id 应被确定性派生（源自 PromptCacheKey）
 	var meta dto.ClaudeMetadata
@@ -493,11 +528,11 @@ func TestMoveUserSystemToFirstUserMessage_StringContent(t *testing.T) {
 
 	ApplyClaudeCodeDisguiseBody(c, request, info)
 
-	// System should only contain the Claude Code disguise entry
+	// System should only contain the Claude Code disguise entries
 	arr, ok := request.System.([]dto.ClaudeMediaMessage)
 	require.True(t, ok)
-	require.Len(t, arr, 1)
-	assert.Equal(t, claudeCodeSystemPromptEntry, *arr[0].Text)
+	require.Len(t, arr, 3)
+	assertDisguiseEntries(t, arr)
 
 	// First user message should contain the wrapped system prompt
 	content, ok := request.Messages[0].Content.(string)
@@ -518,12 +553,12 @@ func TestMoveUserSystemToFirstUserMessage_NoMessages(t *testing.T) {
 
 	ApplyClaudeCodeDisguiseBody(c, request, info)
 
-	// System should keep both entries since there are no messages to inject into
+	// System should keep all entries since there are no messages to inject into
 	arr, ok := request.System.([]dto.ClaudeMediaMessage)
 	require.True(t, ok)
-	require.Len(t, arr, 2)
-	assert.Equal(t, claudeCodeSystemPromptEntry, *arr[0].Text)
-	assert.Equal(t, "user custom system prompt", *arr[1].Text)
+	require.Len(t, arr, 4)
+	assertDisguiseEntries(t, arr)
+	assert.Equal(t, "user custom system prompt", *arr[3].Text)
 }
 
 // 11c. TestMoveUserSystemToFirstUserMessage_MultipleSystemEntries — multiple system entries merged
@@ -544,11 +579,11 @@ func TestMoveUserSystemToFirstUserMessage_MultipleSystemEntries(t *testing.T) {
 
 	ApplyClaudeCodeDisguiseBody(c, request, info)
 
-	// System should only contain the Claude Code entry
+	// System should only contain the Claude Code disguise entries
 	arr, ok := request.System.([]dto.ClaudeMediaMessage)
 	require.True(t, ok)
-	require.Len(t, arr, 1)
-	assert.Equal(t, claudeCodeSystemPromptEntry, *arr[0].Text)
+	require.Len(t, arr, 3)
+	assertDisguiseEntries(t, arr)
 
 	// First user message should contain both prompts wrapped
 	content, ok := request.Messages[0].Content.(string)
@@ -771,8 +806,8 @@ func TestApplyClaudeCodeDisguiseBody_SystemPromptOnly(t *testing.T) {
 
 	arr, ok := request.System.([]dto.ClaudeMediaMessage)
 	require.True(t, ok, "system must be injected when SystemPrompt dimension is on")
-	require.Len(t, arr, 1)
-	assert.Equal(t, claudeCodeSystemPromptEntry, *arr[0].Text)
+	require.Len(t, arr, 3)
+	assertDisguiseEntries(t, arr)
 }
 
 // TestApplyClaudeCodeDisguiseBody_UAOnly_NoBodyChange — body untouched when only UA dimension
@@ -800,4 +835,57 @@ func TestApplyClaudeCodeDisguiseBody_ModeZeroExplicit_NoBodyChange(t *testing.T)
 	ApplyClaudeCodeDisguiseBody(c, request, info)
 
 	assert.Equal(t, "original", request.System, "body must NOT be modified when mode=ptr(0) overrides legacy true")
+}
+
+// TestApplyClaudeCodeDisguiseBody_IdempotentReplay — applying disguise twice must not
+// duplicate the disguise entries (second call detects existing billing header).
+func TestApplyClaudeCodeDisguiseBody_IdempotentReplay(t *testing.T) {
+	c, _ := gin.CreateTestContext(nil)
+	request := &dto.ClaudeRequest{
+		System: "user prompt",
+		Messages: []dto.ClaudeMessage{
+			{Role: "user", Content: "hi"},
+		},
+	}
+	ApplyClaudeCodeDisguiseBody(c, request, makeRelayInfo(true))
+	first, ok := request.System.([]dto.ClaudeMediaMessage)
+	require.True(t, ok)
+
+	ApplyClaudeCodeDisguiseBody(c, request, makeRelayInfo(true))
+	second, ok := request.System.([]dto.ClaudeMediaMessage)
+	require.True(t, ok)
+
+	// NOTE: the user system entry was moved to the first user message by the first
+	// call, so system holds only the 3 disguise entries from then on.
+	require.Len(t, first, 3)
+	require.Len(t, second, 3)
+	assertDisguiseEntries(t, second)
+	assert.Equal(t, *first[0].Text, *second[0].Text, "billing header must be stable across replays")
+}
+
+// TestGenerateClaudeCodeBillingHeader_Details — fingerprint algorithm and cch determinism.
+func TestGenerateClaudeCodeBillingHeader_Details(t *testing.T) {
+	c, _ := gin.CreateTestContext(nil)
+	text := "a long enough user system prompt"
+	request := &dto.ClaudeRequest{
+		System: []dto.ClaudeMediaMessage{{Type: "text", Text: &text}},
+		Messages: []dto.ClaudeMessage{
+			{Role: "user", Content: "hi"},
+		},
+	}
+
+	h1 := generateClaudeCodeBillingHeader(c, request)
+	h2 := generateClaudeCodeBillingHeader(c, request)
+
+	// Same request → deterministic cch (content hash) and fingerprint
+	assert.Equal(t, h1, h2)
+	assert.Regexp(t, regexp.MustCompile(`^x-anthropic-billing-header: cc_version=2\.1\.50\.[0-9a-f]{3}; cc_entrypoint=cli; cch=[0-9a-f]{5};$`), h1)
+
+	// Fingerprint must match CLIProxyAPI's algorithm:
+	// SHA256(salt + msg[4] + msg[7] + msg[20] + version)[:3]
+	runes := []rune(text)
+	seed := string(runes[4]) + string(runes[7]) + string(runes[20])
+	h := sha256.Sum256([]byte("59cf53e54c78" + seed + "2.1.50"))
+	expectedFp := hex.EncodeToString(h[:])[:3]
+	assert.Contains(t, h1, "cc_version=2.1.50."+expectedFp+";")
 }

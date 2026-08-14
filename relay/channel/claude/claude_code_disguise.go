@@ -2,9 +2,11 @@ package claude
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"regexp"
 	"strings"
@@ -20,6 +22,8 @@ import (
 const (
 	claudeCodeDefaultBeta       = "claude-code-20250219"
 	claudeCodeSystemPromptEntry = "You are Claude Code, Anthropic's official CLI for Claude."
+	claudeCodeBillingPrefix     = "x-anthropic-billing-header:"
+	claudeCodeFingerprintSalt   = "59cf53e54c78"
 )
 
 // claudeCodeLegacyUserIDRe matches the legacy metadata.user_id format:
@@ -110,7 +114,7 @@ func ApplyClaudeCodeDisguiseHeaders(c *gin.Context, req *http.Header, info *rela
 // ApplyClaudeCodeDisguiseBody injects Claude Code CLI body fields when the channel's
 // disguise mode bitmask includes dto.ClaudeDisguiseSystemPrompt. It also moves user
 // system prompt entries into the first user message wrapped in <system-reminder>
-// tags, so that only the Claude Code disguise system prompt remains in the system
+// tags, so that only the Claude Code disguise system entries remain in the system
 // field, and normalizes metadata.user_id — all three steps are bundled under the
 // System Prompt dimension since they only make sense together.
 func ApplyClaudeCodeDisguiseBody(c *gin.Context, request *dto.ClaudeRequest, info *relaycommon.RelayInfo) {
@@ -121,14 +125,86 @@ func ApplyClaudeCodeDisguiseBody(c *gin.Context, request *dto.ClaudeRequest, inf
 	if mode&dto.ClaudeDisguiseSystemPrompt == 0 {
 		return
 	}
-	injectClaudeCodeSystem(request)
+	injectClaudeCodeSystem(c, request)
 	moveUserSystemToFirstUserMessage(request)
 	ensureClaudeCodeMetadataUserID(request)
 }
 
+// isClaudeCodeDisguiseText reports whether a system entry text belongs to the
+// Claude Code disguise (billing header, agent identifier, or static prompt).
+func isClaudeCodeDisguiseText(text string) bool {
+	return text == claudeCodeSystemPromptEntry ||
+		text == claudeCodeStaticPrompt ||
+		strings.HasPrefix(text, claudeCodeBillingPrefix)
+}
+
+// claudeCodeEntrypointFromUA extracts the entrypoint from a Claude Code User-Agent.
+// Format: "claude-cli/x.y.z (external, cli)" → "cli", "(external, vscode)" → "vscode".
+// Returns "cli" if parsing fails or UA is not Claude Code.
+func claudeCodeEntrypointFromUA(userAgent string) string {
+	start := strings.Index(userAgent, "(")
+	end := strings.LastIndex(userAgent, ")")
+	if start < 0 || end <= start {
+		return "cli"
+	}
+	inner := userAgent[start+1 : end]
+	parts := strings.Split(inner, ",")
+	if len(parts) >= 2 {
+		ep := strings.TrimSpace(parts[1])
+		if ep != "" {
+			return ep
+		}
+	}
+	return "cli"
+}
+
+// computeClaudeCodeFingerprint computes the 3-char build fingerprint that Claude Code
+// embeds in cc_version. Algorithm: SHA256(salt + messageText[4] + messageText[7] +
+// messageText[20] + version)[:3]
+func computeClaudeCodeFingerprint(messageText, version string) string {
+	indices := [3]int{4, 7, 20}
+	runes := []rune(messageText)
+	var sb strings.Builder
+	for _, idx := range indices {
+		if idx < len(runes) {
+			sb.WriteRune(runes[idx])
+		} else {
+			sb.WriteRune('0')
+		}
+	}
+	h := sha256.Sum256([]byte(claudeCodeFingerprintSalt + sb.String() + version))
+	return hex.EncodeToString(h[:])[:3]
+}
+
+// generateClaudeCodeBillingHeader creates the x-anthropic-billing-header text block
+// that real Claude Code prepends to every system prompt array.
+// Format: x-anthropic-billing-header: cc_version=<ver>.<build>; cc_entrypoint=<ep>; cch=<hash>;
+// Must be called before the disguise entries are injected: both the fingerprint seed
+// (first original system text) and the cch content hash (SHA256 of the pre-injection
+// payload) are computed over the original request, mirroring Claude Code's own ordering.
+func generateClaudeCodeBillingHeader(c *gin.Context, request *dto.ClaudeRequest) string {
+	version := strings.TrimPrefix(dto.ClaudeCodeDisguiseUserAgent, "claude-cli/")
+	messageText := ""
+	for _, entry := range getTypedSystemEntries(request) {
+		if entry.Text != nil {
+			messageText = *entry.Text
+			break
+		}
+	}
+	entrypoint := "cli"
+	if c != nil && c.Request != nil {
+		entrypoint = claudeCodeEntrypointFromUA(c.Request.UserAgent())
+	}
+	payload, _ := common.Marshal(request)
+	sum := sha256.Sum256(payload)
+	cch := hex.EncodeToString(sum[:])[:5]
+	return fmt.Sprintf("%s cc_version=%s.%s; cc_entrypoint=%s; cch=%s;",
+		claudeCodeBillingPrefix, version, computeClaudeCodeFingerprint(messageText, version), entrypoint, cch)
+}
+
 // moveUserSystemToFirstUserMessage extracts user system prompt entries from request.System,
 // wraps them in <system-reminder> tags, and prepends to the first user message.
-// The Claude Code disguise entry is kept in request.System.
+// The Claude Code disguise entries are kept in request.System.
 // If there are no messages to inject into, user system entries remain in System unchanged.
 // If any moved entry carried a cache_control marker, it is preserved on the merged block
 // so prompt caching is not silently broken by the move.
@@ -142,12 +218,12 @@ func moveUserSystemToFirstUserMessage(request *dto.ClaudeRequest) {
 		return
 	}
 
-	// Separate Claude Code entry from user entries
+	// Separate Claude Code disguise entries from user entries
 	var claudeCodeEntries []dto.ClaudeMediaMessage
 	var userSystemTexts []string
 	var mergedCacheControl json.RawMessage
 	for _, entry := range systemEntries {
-		if entry.Text != nil && *entry.Text == claudeCodeSystemPromptEntry {
+		if entry.Text != nil && isClaudeCodeDisguiseText(*entry.Text) {
 			claudeCodeEntries = append(claudeCodeEntries, entry)
 		} else if entry.Text != nil && *entry.Text != "" {
 			userSystemTexts = append(userSystemTexts, *entry.Text)
@@ -276,36 +352,44 @@ func getTypedSystemEntries(request *dto.ClaudeRequest) []dto.ClaudeMediaMessage 
 	}
 }
 
-// injectClaudeCodeSystem prepends the Claude Code system prompt entry to request.System.
-// If the entry already exists, it is not duplicated.
-func injectClaudeCodeSystem(request *dto.ClaudeRequest) {
-	makeEntry := func() dto.ClaudeMediaMessage {
-		text := claudeCodeSystemPromptEntry
-		return dto.ClaudeMediaMessage{
-			Type: "text",
-			Text: &text,
+// injectClaudeCodeSystem prepends the Claude Code disguise system entries to
+// request.System, mirroring real Claude Code's three-block structure:
+//
+//	system[0]: billing header (dynamically generated per request)
+//	system[1]: agent identifier
+//	system[2]: static core prompt
+//
+// If any disguise entry already exists, nothing is injected (idempotent).
+func injectClaudeCodeSystem(c *gin.Context, request *dto.ClaudeRequest) {
+	billing := generateClaudeCodeBillingHeader(c, request)
+	makeDisguiseEntries := func(original *dto.ClaudeMediaMessage) []dto.ClaudeMediaMessage {
+		entries := []dto.ClaudeMediaMessage{
+			{Type: "text", Text: common.GetPointer(billing)},
+			{Type: "text", Text: common.GetPointer(claudeCodeSystemPromptEntry)},
+			{Type: "text", Text: common.GetPointer(claudeCodeStaticPrompt)},
 		}
+		if original != nil {
+			entries = append(entries, *original)
+		}
+		return entries
 	}
 
 	switch sys := request.System.(type) {
 	case nil:
-		// NOTE: system is nil — set to single-entry array
-		request.System = []dto.ClaudeMediaMessage{makeEntry()}
+		// NOTE: system is nil — set to disguise-only array
+		request.System = makeDisguiseEntries(nil)
 	case string:
-		// NOTE: system is a plain string — convert to array with disguise entry first
+		// NOTE: system is a plain string — convert to array with disguise entries first
 		original := sys
-		request.System = []dto.ClaudeMediaMessage{
-			makeEntry(),
-			{Type: "text", Text: &original},
-		}
+		request.System = makeDisguiseEntries(&dto.ClaudeMediaMessage{Type: "text", Text: &original})
 	case []dto.ClaudeMediaMessage:
 		// NOTE: already typed — check for existing entry and prepend if absent
 		for _, entry := range sys {
-			if entry.Text != nil && *entry.Text == claudeCodeSystemPromptEntry {
+			if entry.Text != nil && isClaudeCodeDisguiseText(*entry.Text) {
 				return
 			}
 		}
-		request.System = append([]dto.ClaudeMediaMessage{makeEntry()}, sys...)
+		request.System = append(makeDisguiseEntries(nil), sys...)
 	case []any:
 		// NOTE: untyped array from JSON passthrough — convert to typed, then process
 		data, err := common.Marshal(sys)
@@ -318,11 +402,11 @@ func injectClaudeCodeSystem(request *dto.ClaudeRequest) {
 			return
 		}
 		for _, entry := range typed {
-			if entry.Text != nil && *entry.Text == claudeCodeSystemPromptEntry {
+			if entry.Text != nil && isClaudeCodeDisguiseText(*entry.Text) {
 				return
 			}
 		}
-		request.System = append([]dto.ClaudeMediaMessage{makeEntry()}, typed...)
+		request.System = append(makeDisguiseEntries(nil), typed...)
 	default:
 		// NOTE: unknown type — try round-trip conversion via common.Marshal/Unmarshal
 		data, err := common.Marshal(sys)
@@ -334,11 +418,11 @@ func injectClaudeCodeSystem(request *dto.ClaudeRequest) {
 			return
 		}
 		for _, entry := range typed {
-			if entry.Text != nil && *entry.Text == claudeCodeSystemPromptEntry {
+			if entry.Text != nil && isClaudeCodeDisguiseText(*entry.Text) {
 				return
 			}
 		}
-		request.System = append([]dto.ClaudeMediaMessage{makeEntry()}, typed...)
+		request.System = append(makeDisguiseEntries(nil), typed...)
 	}
 }
 

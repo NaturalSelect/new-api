@@ -17,6 +17,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 
@@ -36,6 +37,14 @@ func Distribute() func(c *gin.Context) {
 		modelRequest, shouldSelectChannel, err := getModelRequest(c)
 		if err != nil {
 			abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorInvalidRequest, map[string]any{"Error": err.Error()}))
+			return
+		}
+		if isEasterEggRequest(c.Request.URL.Path, modelRequest.Model) {
+			// 彩蛋模型不属于任何真实渠道，跳过渠道选择，直接放行给 controller 层本地构造响应
+			common.SetContextKey(c, constant.ContextKeyRequestStartTime, time.Now())
+			common.SetContextKey(c, constant.ContextKeyEasterEggModel, true)
+			c.Set("original_model", modelRequest.Model) // for retry
+			c.Next()
 			return
 		}
 		if ok {
@@ -164,6 +173,26 @@ func Distribute() func(c *gin.Context) {
 			service.RecordChannelAffinity(c, channel.Id)
 		}
 	}
+}
+
+// isEasterEggRequest 判断请求是否命中彩蛋模型配置：模型名匹配且请求路径属于
+// 文本对话类端点（图片/音频/embeddings/moderations/MJ/Suno/realtime 等场景不生效）
+func isEasterEggRequest(path, modelName string) bool {
+	if !operation_setting.IsEasterEggModel(modelName) {
+		return false
+	}
+	return isEasterEggEligiblePath(path)
+}
+
+func isEasterEggEligiblePath(path string) bool {
+	switch path {
+	case "/v1/chat/completions", "/pg/chat/completions", "/v1/messages", "/v1/responses":
+		return true
+	}
+	if strings.HasPrefix(path, "/v1beta/models/") || strings.HasPrefix(path, "/v1/models/") {
+		return strings.HasSuffix(path, ":generateContent") || strings.HasSuffix(path, ":streamGenerateContent")
+	}
+	return false
 }
 
 // getModelFromRequest 从请求中读取模型信息

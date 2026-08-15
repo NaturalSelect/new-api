@@ -21,6 +21,7 @@ import { IoNetDeploymentSettingsSection } from '../integrations/ionet-deployment
 import type { ModelSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
 import { ClaudeSettingsCard } from './claude-settings-card'
+import { EasterEggSettingsCard } from './easter-egg-settings-card'
 import { GeminiSettingsCard } from './gemini-settings-card'
 import { GlobalSettingsCard } from './global-settings-card'
 import { GrokSettingsCard } from './grok-settings-card'
@@ -148,6 +149,20 @@ const MODELS_SECTIONS = [
         defaultValues={{
           enabled: settings['model_deployment.ionet.enabled'],
           apiKey: settings['model_deployment.ionet.api_key'],
+        }}
+      />
+    ),
+  },
+  {
+    id: 'easter-egg',
+    titleKey: 'Easter Egg Model',
+    build: (settings: ModelSettings) => (
+      <EasterEggSettingsCard
+        defaultValues={{
+          'easter_egg_setting.enabled':
+            settings['easter_egg_setting.enabled'] ?? false,
+          'easter_egg_setting.model_name':
+            settings['easter_egg_setting.model_name'] ?? '',
         }}
       />
     ),

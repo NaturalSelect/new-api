@@ -126,6 +126,12 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		return
 	}
 
+	if common.GetContextKeyBool(c, constant.ContextKeyEasterEggModel) {
+		recordEasterEggConsumeLog(c, relayInfo)
+		newAPIError = relay.EasterEggHelper(c, relayInfo)
+		return
+	}
+
 	needSensitiveCheck := setting.ShouldCheckPromptSensitive()
 	needCountToken := constant.CountToken
 	// Avoid building huge CombineText (strings.Join) when token counting and sensitive check are both disabled.
@@ -393,6 +399,30 @@ func record429RetryConsumeLog(c *gin.Context, info *relaycommon.RelayInfo, chann
 		IsStream:         info.IsStream,
 		Group:            info.UsingGroup,
 		Other:            other,
+	})
+}
+
+// recordEasterEggConsumeLog 命中彩蛋模型时记录一条 quota=0 的消费日志，
+// 便于在使用日志与模型用量统计中正常显示，但不产生任何真实计费副作用。
+func recordEasterEggConsumeLog(c *gin.Context, info *relaycommon.RelayInfo) {
+	if !common.LogConsumeEnabled {
+		return
+	}
+	model.RecordConsumeLog(c, info.UserId, model.RecordConsumeLogParams{
+		ChannelId:        0,
+		PromptTokens:     0,
+		CompletionTokens: 0,
+		ModelName:        info.OriginModelName,
+		TokenName:        c.GetString("token_name"),
+		Quota:            0,
+		Content:          "奶龙彩蛋模型触发，未实际请求上游渠道，不计费",
+		TokenId:          info.TokenId,
+		UseTimeSeconds:   int(time.Since(info.StartTime).Seconds()),
+		IsStream:         info.IsStream,
+		Group:            info.UsingGroup,
+		Other: map[string]interface{}{
+			"easter_egg": true,
+		},
 	})
 }
 

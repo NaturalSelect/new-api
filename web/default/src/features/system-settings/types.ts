@@ -183,6 +183,8 @@ export type ModelSettings = {
   'channel_affinity_setting.rules': string
   'model_deployment.ionet.api_key': string
   'model_deployment.ionet.enabled': boolean
+  'easter_egg_setting.enabled': boolean
+  'easter_egg_setting.model_name': string
 }
 
 export type BillingSettings = {

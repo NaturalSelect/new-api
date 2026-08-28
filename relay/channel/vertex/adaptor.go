@@ -292,6 +292,7 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 		if err != nil {
 			return nil, err
 		}
+		info.ReasoningEffort = claude.EffortFromRequest(*request, claudeReq)
 		vertexClaudeReq := copyRequest(claudeReq, anthropicVersion)
 		c.Set("request_model", claudeReq.Model)
 		info.UpstreamModelName = claudeReq.Model

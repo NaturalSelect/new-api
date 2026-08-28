@@ -101,6 +101,7 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 	if err != nil {
 		return nil, err
 	}
+	info.ReasoningEffort = EffortFromRequest(*request, claudeReq)
 	// NOTE: OpenAI-format clients also need Claude Code disguise applied to the
 	// converted ClaudeRequest body, otherwise the system prompt / metadata
 	// injections only take effect for native Claude-format callers. This path is

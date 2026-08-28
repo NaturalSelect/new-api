@@ -127,6 +127,7 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to convert openai request to claude request")
 	}
+	info.ReasoningEffort = claude.EffortFromRequest(*request, claudeReq)
 	info.UpstreamModelName = claudeReq.Model
 	return claudeReq, err
 }

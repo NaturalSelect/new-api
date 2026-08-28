@@ -443,6 +443,17 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 	return &claudeRequest, nil
 }
 
+// EffortFromRequest returns the reasoning effort level to record for a Claude-bound
+// request: the OpenAI-style reasoning_effort field when the client set it directly,
+// otherwise the effort resolved onto the converted request's output_config (e.g.
+// from a model-name suffix like claude-opus-4-6-high).
+func EffortFromRequest(textRequest dto.GeneralOpenAIRequest, claudeRequest *dto.ClaudeRequest) string {
+	if textRequest.ReasoningEffort != "" {
+		return textRequest.ReasoningEffort
+	}
+	return claudeRequest.GetEfforts()
+}
+
 // claudeFileBlock converts an OpenAI "file" content part into the matching Claude
 // block type according to the filename extension: pdf becomes a document block,
 // textual files become text blocks carrying the decoded content, and anything

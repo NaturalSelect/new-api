@@ -44,17 +44,26 @@ function groupByType(items: CPAUsageItem[]) {
   return groups
 }
 
-const TYPE_SORT_PRIORITY: Record<string, number> = {
-  claude: 0,
-  codex: 1,
+const TYPE_SORT_FALLBACK_PRIORITY = Infinity
+
+function buildTypePriority(typeOrder: string[]): Record<string, number> {
+  const priority: Record<string, number> = {}
+  typeOrder.forEach((type, index) => {
+    priority[type.toLowerCase()] = index
+  })
+  return priority
 }
 
 function sortGroupEntries(
-  groups: Map<string, CPAUsageItem[]>
+  groups: Map<string, CPAUsageItem[]>,
+  typeOrder: string[]
 ): [string, CPAUsageItem[]][] {
+  const priorityByType = buildTypePriority(typeOrder)
   return Array.from(groups.entries()).sort(([typeA], [typeB]) => {
-    const priorityA = TYPE_SORT_PRIORITY[typeA.toLowerCase()] ?? Infinity
-    const priorityB = TYPE_SORT_PRIORITY[typeB.toLowerCase()] ?? Infinity
+    const priorityA =
+      priorityByType[typeA.toLowerCase()] ?? TYPE_SORT_FALLBACK_PRIORITY
+    const priorityB =
+      priorityByType[typeB.toLowerCase()] ?? TYPE_SORT_FALLBACK_PRIORITY
     if (priorityA !== priorityB) return priorityA - priorityB
     return typeA.localeCompare(typeB)
   })
@@ -110,7 +119,12 @@ export function CPAUsagePanel() {
     select: (res) =>
       res.success
         ? res.data
-        : { usage: [] as CPAUsageItem[], updated_at: 0, configured: false },
+        : {
+            usage: [] as CPAUsageItem[],
+            updated_at: 0,
+            configured: false,
+            type_order: [] as string[],
+          },
     staleTime: 60_000,
   })
 
@@ -126,8 +140,12 @@ export function CPAUsagePanel() {
   const usage = data?.usage ?? []
   const updatedAt = data?.updated_at ?? 0
   const configured = data?.configured ?? false
+  const typeOrder = data?.type_order ?? []
   const groups = useMemo(() => groupByType(usage), [usage])
-  const sortedGroups = useMemo(() => sortGroupEntries(groups), [groups])
+  const sortedGroups = useMemo(
+    () => sortGroupEntries(groups, typeOrder),
+    [groups, typeOrder]
+  )
   const updatedAtDisplay = updatedAt ? dayjs.unix(updatedAt).fromNow() : null
 
   const emptyMessage = configured

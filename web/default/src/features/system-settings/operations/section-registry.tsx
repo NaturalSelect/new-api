@@ -111,6 +111,7 @@ const OPERATIONS_SECTIONS = [
           CPAUrl: settings.CPAUrl,
           CPAManagementKey: settings.CPAManagementKey,
           CPASyncInterval: settings.CPASyncInterval,
+          CPATypeOrder: settings.CPATypeOrder,
         }}
       />
     ),

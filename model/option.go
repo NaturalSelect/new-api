@@ -79,6 +79,7 @@ func InitOptionMap() {
 	common.OptionMap["CPAUrl"] = cpa_setting.CPAUrl
 	common.OptionMap["CPAManagementKey"] = cpa_setting.CPAManagementKey
 	common.OptionMap["CPASyncInterval"] = strconv.Itoa(cpa_setting.CPASyncInterval)
+	common.OptionMap["CPATypeOrder"] = cpa_setting.CPATypeOrder
 	common.OptionMap["PayAddress"] = ""
 	common.OptionMap["CustomCallbackAddress"] = ""
 	common.OptionMap["EpayId"] = ""
@@ -393,6 +394,8 @@ func updateOptionMap(key string, value string) (err error) {
 		cpa_setting.CPAManagementKey = value
 	case "CPASyncInterval":
 		cpa_setting.CPASyncInterval, _ = strconv.Atoi(value)
+	case "CPATypeOrder":
+		cpa_setting.CPATypeOrder = value
 	case "PayAddress":
 		operation_setting.PayAddress = value
 	case "Chats":

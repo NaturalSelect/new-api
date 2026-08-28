@@ -133,7 +133,12 @@ export async function getIntelligenceScores() {
 export async function getCPAUsage() {
   const res = await api.get<{
     success: boolean
-    data: { usage: CPAUsageItem[]; updated_at: number; configured: boolean }
+    data: {
+      usage: CPAUsageItem[]
+      updated_at: number
+      configured: boolean
+      type_order: string[]
+    }
   }>('/api/data/cpa-usage')
   return res.data
 }
@@ -142,7 +147,12 @@ export async function refreshCPAUsage() {
   const res = await api.post<{
     success: boolean
     message: string
-    data?: { usage: CPAUsageItem[]; updated_at: number; configured: boolean }
+    data?: {
+      usage: CPAUsageItem[]
+      updated_at: number
+      configured: boolean
+      type_order: string[]
+    }
   }>('/api/data/cpa-usage/refresh')
   return res.data
 }

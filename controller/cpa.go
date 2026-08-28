@@ -22,6 +22,7 @@ func GetCPAUsage(c *gin.Context) {
 			"usage":      usage,
 			"updated_at": updatedAt,
 			"configured": cpa_setting.EnableCPA(),
+			"type_order": cpa_setting.GetCPATypeOrder(),
 		},
 	})
 }
@@ -44,6 +45,7 @@ func RefreshCPAUsage(c *gin.Context) {
 			"usage":      usage,
 			"updated_at": updatedAt,
 			"configured": true,
+			"type_order": cpa_setting.GetCPATypeOrder(),
 		},
 	})
 }

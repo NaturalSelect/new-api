@@ -302,6 +302,7 @@ export type OperationsSettings = {
   CPAUrl: string
   CPAManagementKey: string
   CPASyncInterval: number
+  CPATypeOrder: string
   LogConsumeEnabled: boolean
   'performance_setting.disk_cache_enabled': boolean
   'performance_setting.disk_cache_threshold_mb': number

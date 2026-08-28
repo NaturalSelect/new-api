@@ -55,6 +55,7 @@ const createCPASchema = (t: (key: string) => string) =>
         CPA_MIN_SYNC_INTERVAL_SECONDS,
         t('Interval must be at least 30 seconds')
       ),
+    CPATypeOrder: z.string(),
   })
 
 type CPAFormValues = z.infer<ReturnType<typeof createCPASchema>>
@@ -95,6 +96,11 @@ export function CPASettingsSection({
 
     if (values.CPASyncInterval !== defaultValues.CPASyncInterval) {
       updates.push({ key: 'CPASyncInterval', value: values.CPASyncInterval })
+    }
+
+    const sanitizedTypeOrder = values.CPATypeOrder.trim()
+    if (sanitizedTypeOrder !== defaultValues.CPATypeOrder.trim()) {
+      updates.push({ key: 'CPATypeOrder', value: sanitizedTypeOrder })
     }
 
     for (const update of updates) {
@@ -179,6 +185,31 @@ export function CPASettingsSection({
                 <FormDescription>
                   {t(
                     'How often to fetch usage snapshots from the CPA service. Minimum 30 seconds.'
+                  )}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name='CPATypeOrder'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('CPA Type Order')}</FormLabel>
+                <FormControl>
+                  <Input
+                    type='text'
+                    placeholder={t('claude,codex')}
+                    autoComplete='off'
+                    {...field}
+                    onChange={(event) => field.onChange(event.target.value)}
+                  />
+                </FormControl>
+                <FormDescription>
+                  {t(
+                    'Comma-separated credential types in display order (e.g. claude,codex). Types not listed are shown after, sorted alphabetically.'
                   )}
                 </FormDescription>
                 <FormMessage />

@@ -114,8 +114,7 @@ type MonitoringSettingsSectionProps = {
     AutomaticDisableChannelEnabled: boolean
     AutomaticEnableChannelEnabled: boolean
     AutoBanChannelOnZeroBalance: boolean
-  AutomaticDisableKeywords: string
-  ContentPolicyWarningKeywords: string
+    AutomaticDisableKeywords: string
     ContentPolicyWarningKeywords: string
     AutomaticDisableStatusCodes: string
     AutomaticRetryStatusCodes: string

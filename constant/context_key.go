@@ -67,4 +67,9 @@ const (
 	// ContextKeyLanguage stores the user's language preference for i18n
 	ContextKeyLanguage ContextKey = "language"
 	ContextKeyIsStream ContextKey = "is_stream"
+
+	// ContextKeyWarningLogRecorded marks that a content-policy warning has already been
+	// recorded for this HTTP request, preventing duplicate WarningLog rows when the same
+	// client request retries across multiple channels.
+	ContextKeyWarningLogRecorded ContextKey = "warning_log_recorded"
 )

@@ -283,6 +283,7 @@ export type OperationsSettings = {
   AutomaticEnableChannelEnabled: boolean
   AutoBanChannelOnZeroBalance: boolean
   AutomaticDisableKeywords: string
+  ContentPolicyWarningKeywords: string
   AutomaticDisableStatusCodes: string
   AutomaticRetryStatusCodes: string
   'monitor_setting.auto_test_channel_enabled': boolean

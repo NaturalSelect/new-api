@@ -60,6 +60,7 @@ const monitoringSchema = z
     AutomaticEnableChannelEnabled: z.boolean(),
     AutoBanChannelOnZeroBalance: z.boolean(),
     AutomaticDisableKeywords: z.string(),
+    ContentPolicyWarningKeywords: z.string(),
     AutomaticDisableStatusCodes: z.string(),
     AutomaticRetryStatusCodes: z.string(),
     monitor_setting: z.object({
@@ -113,7 +114,9 @@ type MonitoringSettingsSectionProps = {
     AutomaticDisableChannelEnabled: boolean
     AutomaticEnableChannelEnabled: boolean
     AutoBanChannelOnZeroBalance: boolean
-    AutomaticDisableKeywords: string
+  AutomaticDisableKeywords: string
+  ContentPolicyWarningKeywords: string
+    ContentPolicyWarningKeywords: string
     AutomaticDisableStatusCodes: string
     AutomaticRetryStatusCodes: string
     'monitor_setting.auto_test_channel_enabled': boolean
@@ -153,6 +156,9 @@ const buildFormDefaults = (
   AutomaticDisableKeywords: normalizeLineEndings(
     defaults.AutomaticDisableKeywords ?? ''
   ),
+  ContentPolicyWarningKeywords: normalizeLineEndings(
+    defaults.ContentPolicyWarningKeywords ?? ''
+  ),
   AutomaticDisableStatusCodes: defaults.AutomaticDisableStatusCodes ?? '',
   AutomaticRetryStatusCodes: defaults.AutomaticRetryStatusCodes ?? '',
   monitor_setting: {
@@ -177,6 +183,9 @@ const normalizeDefaults = (
   AutoBanChannelOnZeroBalance: defaults.AutoBanChannelOnZeroBalance,
   AutomaticDisableKeywords: normalizeLineEndings(
     defaults.AutomaticDisableKeywords ?? ''
+  ),
+  ContentPolicyWarningKeywords: normalizeLineEndings(
+    defaults.ContentPolicyWarningKeywords ?? ''
   ),
   AutomaticDisableStatusCodes: parseHttpStatusCodeRules(
     defaults.AutomaticDisableStatusCodes ?? ''
@@ -204,6 +213,9 @@ const normalizeFormValues = (
   AutoBanChannelOnZeroBalance: values.AutoBanChannelOnZeroBalance,
   AutomaticDisableKeywords: normalizeLineEndings(
     values.AutomaticDisableKeywords
+  ),
+  ContentPolicyWarningKeywords: normalizeLineEndings(
+    values.ContentPolicyWarningKeywords
   ),
   AutomaticDisableStatusCodes: parseHttpStatusCodeRules(
     values.AutomaticDisableStatusCodes
@@ -508,6 +520,30 @@ export function MonitoringSettingsSection({
                 <FormDescription>
                   {t(
                     'If an upstream error contains any of these keywords (case insensitive), the channel will be disabled automatically.'
+                  )}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name='ContentPolicyWarningKeywords'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Content policy warning keywords')}</FormLabel>
+                <FormControl>
+                  <Textarea
+                    rows={6}
+                    placeholder={t('one keyword per line')}
+                    {...field}
+                    onChange={(event) => field.onChange(event.target.value)}
+                  />
+                </FormControl>
+                <FormDescription>
+                  {t(
+                    'If an upstream error contains any of these keywords (case insensitive), the request is flagged and the complete original request is saved to the warning log for investigation.'
                   )}
                 </FormDescription>
                 <FormMessage />

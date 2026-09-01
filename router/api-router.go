@@ -365,6 +365,14 @@ func SetApiRouter(router *gin.Engine) {
 			poeLogRoute.POST("/clear", controller.ClearPoeLogs)
 		}
 
+		warningLogRoute := apiRouter.Group("/warning_log")
+		warningLogRoute.Use(middleware.AdminAuth())
+		{
+			warningLogRoute.GET("/", controller.GetAllWarningLogs)
+			warningLogRoute.GET("/:id", controller.GetWarningLog)
+			warningLogRoute.DELETE("/", controller.DeleteOldWarningLogs)
+		}
+
 		vendorRoute := apiRouter.Group("/vendors")
 		vendorRoute.Use(middleware.AdminAuth())
 		{

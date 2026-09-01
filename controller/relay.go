@@ -261,7 +261,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		newAPIError = service.NormalizeViolationFeeError(newAPIError)
 		relayInfo.LastError = newAPIError
 
-		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
+		channelError := *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan())
+		processChannelError(c, channelError, newAPIError)
+		recordContentPolicyWarning(c, relayInfo, channelError, newAPIError)
 
 		if !shouldRetry(c, newAPIError, common.RetryTimes-retryParam.GetRetry()) {
 			break
@@ -505,6 +507,100 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 
 }
 
+// recordContentPolicyWarning detects upstream content-policy rejections (e.g. OpenAI's
+// "your prompt was flagged as potentially violating our usage policy") and persists the
+// complete original request — including the full raw body and prompt text — into
+// WarningLog for later investigation. Every field is read from c/info/channelError
+// synchronously here, before handing off to a goroutine, since c becomes invalid once
+// the request ends and common.CleanupBodyStorage(c) closes the cached body storage.
+func recordContentPolicyWarning(c *gin.Context, info *relaycommon.RelayInfo, channelError types.ChannelError, err *types.NewAPIError) {
+	if !constant.WarningLogEnabled {
+		return
+	}
+	if common.GetContextKeyBool(c, constant.ContextKeyWarningLogRecorded) {
+		return
+	}
+	matched, keyword := service.MatchContentPolicyWarning(err)
+	if !matched {
+		return
+	}
+	common.SetContextKey(c, constant.ContextKeyWarningLogRecorded, true)
+
+	requestPath := ""
+	if c.Request != nil && c.Request.URL != nil {
+		requestPath = c.Request.URL.Path
+	}
+	requestBody, bodySize := readWarningLogRequestBody(c)
+
+	other := map[string]interface{}{
+		"retry_index": info.RetryIndex,
+		"use_channel": c.GetStringSlice("use_channel"),
+	}
+	if common.GetContextKeyBool(c, constant.ContextKeyChannelIsMultiKey) {
+		other["is_multi_key"] = true
+		other["multi_key_index"] = common.GetContextKeyInt(c, constant.ContextKeyChannelMultiKeyIndex)
+	}
+
+	entry := &model.WarningLog{
+		CreatedAt:         common.GetTimestamp(),
+		UserId:            info.UserId,
+		Username:          c.GetString("username"),
+		TokenId:           info.TokenId,
+		TokenName:         c.GetString("token_name"),
+		ChannelId:         channelError.ChannelId,
+		ChannelName:       channelError.ChannelName,
+		ChannelType:       channelError.ChannelType,
+		ModelName:         info.OriginModelName,
+		Group:             info.UsingGroup,
+		Ip:                c.ClientIP(),
+		RequestId:         c.GetString(common.RequestIdKey),
+		UpstreamRequestId: c.GetString(common.UpstreamRequestIdKey),
+		StatusCode:        err.StatusCode,
+		ErrorCode:         string(err.GetErrorCode()),
+		MatchedKeyword:    keyword,
+		ErrorMessage:      err.Error(),
+		RequestPath:       requestPath,
+		PromptText:        warningLogPromptText(info),
+		RequestBody:       requestBody,
+		BodySize:          bodySize,
+		Other:             common.MapToJsonStr(other),
+	}
+
+	gopool.Go(func() {
+		model.RecordWarningLog(entry)
+	})
+}
+
+// readWarningLogRequestBody reads the complete cached request body for WarningLog
+// capture. This feature exists specifically to preserve the full original request for
+// investigation, so the body is never truncated.
+func readWarningLogRequestBody(c *gin.Context) (body string, size int64) {
+	bs, err := common.GetBodyStorage(c)
+	if err != nil {
+		return "", 0
+	}
+	data, err := bs.Bytes()
+	if err != nil {
+		return "", bs.Size()
+	}
+	return string(data), bs.Size()
+}
+
+// warningLogPromptText extracts the same prompt text used for token counting/sensitive
+// checking (see the needSensitiveCheck path above in Relay), reused here so the warning
+// log carries the prompt without a second extraction pass. Returns "" for relay paths
+// that never attach a parsed request, such as Task relay (MJ/Suno/video).
+func warningLogPromptText(info *relaycommon.RelayInfo) string {
+	if info == nil || info.Request == nil {
+		return ""
+	}
+	meta := info.Request.GetTokenCountMeta()
+	if meta == nil {
+		return ""
+	}
+	return meta.CombineText
+}
+
 func RelayMidjourney(c *gin.Context) {
 	relayInfo, err := relaycommon.GenRelayInfo(c, types.RelayFormatMjProxy, nil, nil)
 
@@ -688,10 +784,11 @@ func RelayTask(c *gin.Context) {
 		}
 
 		if !taskErr.LocalError {
-			processChannelError(c,
-				*types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey,
-					common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()),
-				types.NewOpenAIError(taskErr.Error, types.ErrorCodeBadResponseStatusCode, taskErr.StatusCode))
+			channelError := *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey,
+				common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan())
+			taskAPIError := types.NewOpenAIError(taskErr.Error, types.ErrorCodeBadResponseStatusCode, taskErr.StatusCode)
+			processChannelError(c, channelError, taskAPIError)
+			recordContentPolicyWarning(c, relayInfo, channelError, taskAPIError)
 		}
 
 		if !shouldRetryTaskRelay(c, channel.Id, taskErr, common.RetryTimes-retryParam.GetRetry()) {

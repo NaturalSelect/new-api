@@ -289,8 +289,14 @@ func migrateDB() error {
 		// cover that default deployment. The LOG_SQL_DSN deployment is covered by
 		// migrateLOGDB() instead.
 		&TokenStatsCache{},
+		// WarningLog always lives on LOG_DB alongside Log/TokenStatsCache — same
+		// dual-migration reasoning as TokenStatsCache above.
+		&WarningLog{},
 	)
 	if err != nil {
+		return err
+	}
+	if err := migrateWarningLogColumnsToLongText(DB, common.UsingMySQL); err != nil {
 		return err
 	}
 	if common.UsingSQLite {
@@ -340,6 +346,7 @@ func migrateDBFast() error {
 		{&PerfMetric{}, "PerfMetric"},
 		{&PoeLog{}, "PoeLog"},
 		{&PoeLogSyncState{}, "PoeLogSyncState"},
+		{&WarningLog{}, "WarningLog"},
 	}
 	// 动态计算migration数量，确保errChan缓冲区足够大
 	errChan := make(chan error, len(migrations))
@@ -373,6 +380,9 @@ func migrateDBFast() error {
 			return err
 		}
 	}
+	if err := migrateWarningLogColumnsToLongText(DB, common.UsingMySQL); err != nil {
+		return err
+	}
 	common.SysLog("database migrated")
 
 	if err := MigratePoeLogBotNameLower(); err != nil {
@@ -384,10 +394,10 @@ func migrateDBFast() error {
 
 func migrateLOGDB() error {
 	var err error
-	if err = LOG_DB.AutoMigrate(&Log{}, &TokenStatsCache{}); err != nil {
+	if err = LOG_DB.AutoMigrate(&Log{}, &TokenStatsCache{}, &WarningLog{}); err != nil {
 		return err
 	}
-	return nil
+	return migrateWarningLogColumnsToLongText(LOG_DB, common.LogSqlType == common.DatabaseTypeMySQL)
 }
 
 type sqliteColumnDef struct {
@@ -517,6 +527,41 @@ func migrateTokenModelLimitsToText() error {
 			return fmt.Errorf("failed to migrate %s.%s to text: %w", tableName, columnName, err)
 		}
 		common.SysLog(fmt.Sprintf("Successfully migrated %s.%s to text", tableName, columnName))
+	}
+	return nil
+}
+
+// migrateWarningLogColumnsToLongText upgrades WarningLog's large text columns from the
+// AutoMigrate-created TEXT to LONGTEXT on MySQL. MySQL's TEXT column type caps at 65,535
+// bytes, which would silently truncate or reject the complete request body/prompt this
+// feature exists to preserve; LONGTEXT (up to 4GB) removes that limit. PostgreSQL and
+// SQLite TEXT columns have no such cap and need no change. db/isMySQL let each caller
+// (migrateDB against DB, migrateLOGDB against LOG_DB) supply its own connection and
+// dialect, since LOG_DB may or may not be a separate MySQL instance from DB. Safe to run
+// multiple times — it checks the column type first.
+func migrateWarningLogColumnsToLongText(db *gorm.DB, isMySQL bool) error {
+	if !isMySQL {
+		return nil
+	}
+	tableName := "warning_logs"
+	if !db.Migrator().HasTable(tableName) {
+		return nil
+	}
+	for _, columnName := range []string{"request_body", "prompt_text", "error_message"} {
+		var columnType string
+		if err := db.Raw(`SELECT COLUMN_TYPE FROM information_schema.columns
+				WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?`,
+			tableName, columnName).Scan(&columnType).Error; err != nil {
+			common.SysLog(fmt.Sprintf("Warning: failed to query metadata for %s.%s: %v", tableName, columnName, err))
+			continue
+		} else if strings.EqualFold(columnType, "longtext") {
+			continue
+		}
+		alterSQL := fmt.Sprintf("ALTER TABLE %s MODIFY COLUMN %s LONGTEXT", tableName, columnName)
+		if err := db.Exec(alterSQL).Error; err != nil {
+			return fmt.Errorf("failed to migrate %s.%s to longtext: %w", tableName, columnName, err)
+		}
+		common.SysLog(fmt.Sprintf("Successfully migrated %s.%s to longtext", tableName, columnName))
 	}
 	return nil
 }

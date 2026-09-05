@@ -2,6 +2,7 @@ package model
 
 import (
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 
@@ -23,7 +24,14 @@ func resetTokenStatsCacheWatermark(t *testing.T) {
 	})
 }
 
+// TestBucketTimestampToDay pins time.Local to a fixed, non-UTC offset (matching
+// Asia/Shanghai, the docker-compose default) so the expected boundaries are
+// deterministic regardless of the machine running the test.
 func TestBucketTimestampToDay(t *testing.T) {
+	original := time.Local
+	time.Local = time.FixedZone("UTC+8", 8*3600)
+	t.Cleanup(func() { time.Local = original })
+
 	cases := []struct {
 		name      string
 		timestamp int64
@@ -31,9 +39,9 @@ func TestBucketTimestampToDay(t *testing.T) {
 	}{
 		{"zero", 0, 0},
 		{"negative", -100, 0},
-		{"exact_day_boundary", 172800, 172800},
-		{"mid_day", 172800 + 3661, 172800},
-		{"just_before_next_day", 172800 + 86399, 172800},
+		{"exact_day_boundary", 57600, 57600},           // 1970-01-02 00:00:00 +08:00
+		{"mid_day", 57600 + 3661, 57600},
+		{"just_before_next_day", 57600 + 86399, 57600},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -330,7 +338,7 @@ func TestBackfillTokenStatsCacheDay_MatchesRawScan(t *testing.T) {
 func TestBackfillTokenStatsCacheDay_Idempotent(t *testing.T) {
 	truncateTables(t)
 
-	const day = 20 * 86400
+	day := BucketTimestampToDay(20 * 86400)
 	createConsumeLog(t, 1, "alice", 10, "key-a", "gpt-4", 100, 50, day+100)
 
 	_, err := BackfillTokenStatsCacheDay(day)
@@ -350,7 +358,7 @@ func TestBackfillTokenStatsCacheDay_Idempotent(t *testing.T) {
 func TestBackfillTokenStatsCacheDay_ComposesWithConcurrentLiveWrite(t *testing.T) {
 	truncateTables(t)
 
-	const day = 30 * 86400
+	day := BucketTimestampToDay(30 * 86400)
 	createConsumeLog(t, 1, "alice", 10, "key-a", "gpt-4", 100, 50, day+100)
 
 	_, err := BackfillTokenStatsCacheDay(day)

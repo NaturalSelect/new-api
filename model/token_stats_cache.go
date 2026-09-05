@@ -1,7 +1,9 @@
 package model
 
 import (
+	"errors"
 	"strconv"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 
@@ -9,7 +11,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// tokenStatsCacheWatermarkOptionKey stores the earliest UTC day (a day-truncated Unix
+// tokenStatsCacheWatermarkOptionKey stores the earliest day (a day-truncated Unix
 // timestamp, see BucketTimestampToDay) that TokenStatsCache fully covers. Days before
 // the watermark have not been backfilled yet and must be served from a raw logs scan;
 // days in [watermark, today) are safe to read from the cache; today itself is always
@@ -65,14 +67,22 @@ func (TokenStatsCache) TableName() string {
 	return "token_stats_cache"
 }
 
-// BucketTimestampToDay truncates a Unix timestamp to the start of its UTC calendar
-// day. Used as the cache table's row grain and as the watermark/"today" boundary so
-// backfill, live upserts, and reads all agree on the same day boundaries.
+// BucketTimestampToDay truncates a Unix timestamp to the start of its calendar day in
+// the server's local timezone (time.Local, i.e. whatever TZ the deployment is
+// configured with — docker-compose.yml defaults this to Asia/Shanghai). Used as the
+// cache table's row grain and as the watermark/"today" boundary so backfill, live
+// upserts, and reads all agree on the same day boundaries — and so a "day" here means
+// the same thing dashboard clients mean by it, instead of always meaning UTC.
+// Assumes a fixed UTC offset (no DST): ceilToDay and tokenStatsCacheZonesFor both
+// treat a day as exactly 86400 seconds, which only holds for non-DST zones such as
+// Asia/Shanghai.
 func BucketTimestampToDay(timestamp int64) int64 {
 	if timestamp <= 0 {
 		return 0
 	}
-	return timestamp - (timestamp % 86400)
+	t := time.Unix(timestamp, 0)
+	y, m, d := t.Date()
+	return time.Date(y, m, d, 0, 0, 0, 0, t.Location()).Unix()
 }
 
 // GetTokenStatsCacheWatermark returns the earliest day TokenStatsCache fully covers.
@@ -102,6 +112,40 @@ func GetTokenStatsCacheWatermark() int64 {
 // after that day's cache rows have been durably written.
 func AdvanceTokenStatsCacheWatermark(day int64) error {
 	return UpdateOption(tokenStatsCacheWatermarkOptionKey, strconv.FormatInt(day, 10))
+}
+
+// tokenStatsCacheDayBoundaryFixOptionKey guards MigrateTokenStatsCacheDayBoundary so it
+// only ever runs once per deployment.
+const tokenStatsCacheDayBoundaryFixOptionKey = "TokenStatsCacheDayBoundaryFixed"
+
+// MigrateTokenStatsCacheDayBoundary is a one-time fixup for BucketTimestampToDay's
+// switch from UTC to the server's local timezone. Every row already cached under the
+// old UTC-day grain is wrong once local time diverges from UTC, and would silently
+// double-count once new local-day rows are backfilled alongside it (the two grains'
+// day values don't line up, so neither the unique index nor the backfill's per-day
+// delete would ever collide with or clean up the stale rows). This clears the cache
+// table and resets the watermark option so GetTokenStatsCacheWatermark falls back to
+// "today" (nothing covered) and the existing background task (see
+// StartTokenStatsBackfillTask) rebuilds it from scratch under the new boundaries.
+// Cache reads always fall back to a raw logs scan for anything not (re)covered yet, so
+// this is safe to run against a live table.
+func MigrateTokenStatsCacheDayBoundary() error {
+	var existing Option
+	err := DB.Where(&Option{Key: tokenStatsCacheDayBoundaryFixOptionKey}).First(&existing).Error
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+
+	if err := LOG_DB.Exec("DELETE FROM token_stats_cache").Error; err != nil {
+		return err
+	}
+	if err := DB.Where(&Option{Key: tokenStatsCacheWatermarkOptionKey}).Delete(&Option{}).Error; err != nil {
+		return err
+	}
+	return DB.Create(&Option{Key: tokenStatsCacheDayBoundaryFixOptionKey, Value: "true"}).Error
 }
 
 // tokenStatsCacheDelta is one row's worth of change to apply to TokenStatsCache.
@@ -207,7 +251,8 @@ func upsertTokenStatsCacheForLog(log *Log) {
 	}
 }
 
-// BackfillTokenStatsCacheDay (re)computes TokenStatsCache for one UTC day from a full
+// BackfillTokenStatsCacheDay (re)computes TokenStatsCache for one local calendar day
+// (see BucketTimestampToDay) from a full
 // raw scan of logs, then applies the result as a set of increments (see
 // upsertTokenStatsCacheIncrement). day must already be day-truncated (see
 // BucketTimestampToDay). It first deletes any existing rows for the day so a retry
@@ -265,7 +310,8 @@ func BackfillTokenStatsCacheDay(day int64) (int64, error) {
 	return scanned, nil
 }
 
-// ceilToDay rounds a Unix timestamp up to the start of its UTC calendar day if it is
+// ceilToDay rounds a Unix timestamp up to the start of its local calendar day (see
+// BucketTimestampToDay) if it is
 // not already day-aligned. Used to make sure a query's cache zone never claims a day
 // that the caller only partially requested (see tokenStatsCacheZonesFor) — the cache
 // stores one row per whole day, so it can only ever answer for whole days.
@@ -282,7 +328,7 @@ func ceilToDay(timestamp int64) int64 {
 // inclusive >=/<= filter semantics) into up to three sub-ranges: Before and After are
 // answered by the original raw logs scan, Cache is answered by TokenStatsCache.
 //
-// Cache only ever claims whole UTC days that are BOTH watermark-covered AND fully
+// Cache only ever claims whole local days that are BOTH watermark-covered AND fully
 // contained in the request — a request whose start or end falls mid-day on its
 // boundary day always pushes that one partial day to a raw scan instead, so a
 // day-granularity cache row is never asked to answer a sub-day question. Before/After

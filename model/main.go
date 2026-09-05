@@ -397,6 +397,9 @@ func migrateLOGDB() error {
 	if err = LOG_DB.AutoMigrate(&Log{}, &TokenStatsCache{}, &WarningLog{}); err != nil {
 		return err
 	}
+	if err = MigrateTokenStatsCacheDayBoundary(); err != nil {
+		return err
+	}
 	return migrateWarningLogColumnsToLongText(LOG_DB, common.LogSqlType == common.DatabaseTypeMySQL)
 }
 

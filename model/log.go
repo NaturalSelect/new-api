@@ -271,7 +271,7 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	}
 	if common.DataExportEnabled {
 		gopool.Go(func() {
-			LogQuotaData(userId, username, params.ModelName, params.Quota, common.GetTimestamp(), params.PromptTokens+params.CompletionTokens)
+			LogQuotaData(userId, username, params.ModelName, params.Quota, common.GetTimestamp(), tokenUsedWithCache(params.PromptTokens, params.CompletionTokens, log.Other))
 		})
 	}
 }
@@ -369,7 +369,7 @@ func RecordPoeConsumeLog(params RecordPoeConsumeLogParams) int {
 	upsertTokenStatsCacheForLog(log)
 	if common.DataExportEnabled {
 		gopool.Go(func() {
-			LogQuotaData(userId, username, params.ModelName, params.Quota, params.CreatedAt, params.PromptTokens+params.CompletionTokens)
+			LogQuotaData(userId, username, params.ModelName, params.Quota, params.CreatedAt, tokenUsedWithCache(params.PromptTokens, params.CompletionTokens, log.Other))
 		})
 	}
 	return log.Id
@@ -618,6 +618,16 @@ func tokenStatsCacheOtherTokens(other string) (cacheReadTokens int64, cacheWrite
 	return cacheReadTokens, cacheWriteTokens, isAnthropic
 }
 
+// NOTE: mirrors TokenStatsCache so quota_data doesn't undercount cached calls.
+func tokenUsedWithCache(promptTokens int, completionTokens int, other string) int {
+	cacheReadTokens, cacheWriteTokens, isAnthropic := tokenStatsCacheOtherTokens(other)
+	total := promptTokens + completionTokens + int(cacheWriteTokens)
+	if isAnthropic {
+		total += int(cacheReadTokens)
+	}
+	return total
+}
+
 func bucketTimestampToHour(timestamp int64) int64 {
 	if timestamp <= 0 {
 		return 0
@@ -640,9 +650,9 @@ func GetSelfTokenDistribution(userId int, startTimestamp int64, endTimestamp int
 }
 
 // getTokenDistributionAggregated serves Token Distribution by splitting the requested
-// range against the TokenStatsCache watermark (see tokenStatsCacheZonesFor): whole UTC
-// days that are both cache-covered and fully contained in the request are answered
-// from TokenStatsCache; everything else (recent/not-yet-backfilled history, today, and
+// range against the TokenStatsCache watermark (see tokenStatsCacheZonesFor): whole
+// local-calendar days that are both cache-covered and fully contained in the request
+// are answered from TokenStatsCache; everything else (recent/not-yet-backfilled history, today, and
 // any partial boundary day) falls back to scanTokenDistribution, the original raw-logs
 // scan. This keeps results complete even before the cache is populated (e.g. right
 // after upgrade, or on a follower node whose synced watermark lags) — the cache can
@@ -867,8 +877,8 @@ func GetSelfKeyDistribution(userId int, startTimestamp int64, endTimestamp int64
 // NOTE: rather than with a single SQL GROUP BY/SUM.
 //
 // Like getTokenDistributionAggregated, it splits the requested range against the
-// TokenStatsCache watermark (see tokenStatsCacheZonesFor): whole UTC days that are
-// both cache-covered and fully contained in the request are answered from
+// TokenStatsCache watermark (see tokenStatsCacheZonesFor): whole local-calendar days
+// that are both cache-covered and fully contained in the request are answered from
 // TokenStatsCache; everything else falls back to scanKeyDistribution, the original raw
 // scan. Key Distribution has no time dimension in its output (unlike Token
 // Distribution's hour buckets), so — unlike there — day-granularity cache storage
@@ -1037,8 +1047,8 @@ type tokenStatsCacheLogRecord struct {
 	Other            string `json:"other"`
 }
 
-// scanLogsForStatsCacheDay scans every LogTypeConsume row for one UTC day (day must
-// already be day-truncated — see BucketTimestampToDay) and aggregates them into the
+// scanLogsForStatsCacheDay scans every LogTypeConsume row for one local calendar day
+// (day must already be day-truncated — see BucketTimestampToDay) and aggregates them into the
 // (day, user, token, model) grain TokenStatsCache stores, using the same keyset
 // pagination and cache-token/Anthropic normalization (tokenStatsCacheOtherTokens) as
 // scanTokenDistribution/scanKeyDistribution so a backfilled day and a raw scan of that

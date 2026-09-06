@@ -16,48 +16,20 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useIsFetching, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useCallback, useEffect, useState } from 'react'
+import { useIsFetching, useQueryClient } from '@tanstack/react-query'
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import { type Table } from '@tanstack/react-table'
 import { useTranslation } from 'react-i18next'
-import { toast } from 'sonner'
-import { formatTimestampToDate } from '@/lib/format'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog'
-import { Button } from '@/components/ui/button'
-import { DateTimePicker } from '@/components/datetime-picker'
 import { CompactDateTimeRangePicker } from '@/features/usage-logs/components/compact-date-time-range-picker'
 import {
   LogsFilterField,
   LogsFilterInput,
   LogsFilterToolbar,
 } from '@/features/usage-logs/components/logs-filter-toolbar'
-import { deleteOldWarningLogs } from '../api'
 import type { WarningLogsFilters } from '../types'
 
 const route = getRouteApi('/_authenticated/warning-logs/')
-
-const HOURS_IN_DAY = 24
-
-function getDateHoursAgo(hours: number) {
-  const date = new Date()
-  date.setHours(date.getHours() - hours)
-  return date
-}
-
-function getDateDaysAgo(days: number) {
-  return getDateHoursAgo(days * HOURS_IN_DAY)
-}
 
 function getDate(value?: number): Date | undefined {
   return value ? new Date(value) : undefined
@@ -65,112 +37,6 @@ function getDate(value?: number): Date | undefined {
 
 interface WarningLogsFilterBarProps<TData> {
   table: Table<TData>
-}
-
-function CleanOldLogsControl() {
-  const { t } = useTranslation()
-  const queryClient = useQueryClient()
-  const [purgeDate, setPurgeDate] = useState<Date | undefined>(() =>
-    getDateDaysAgo(30)
-  )
-  const [confirmOpen, setConfirmOpen] = useState(false)
-
-  const purgeTimestamp = useMemo(
-    () => (purgeDate ? Math.floor(purgeDate.getTime() / 1000) : null),
-    [purgeDate]
-  )
-  const formattedPurgeDate = useMemo(
-    () => (purgeDate ? formatTimestampToDate(purgeDate.getTime(), 'milliseconds') : ''),
-    [purgeDate]
-  )
-
-  const cleanMutation = useMutation({
-    mutationFn: (targetTimestamp: number) =>
-      deleteOldWarningLogs(targetTimestamp),
-    onSuccess: (res) => {
-      if (!res.success) {
-        toast.error(res.message || t('Failed to clean logs'))
-        return
-      }
-      const count = res.data ?? 0
-      toast.success(
-        count > 0
-          ? t('{{count}} log entries removed.', { count })
-          : t('No log entries matched the selected time.')
-      )
-      setConfirmOpen(false)
-      queryClient.invalidateQueries({ queryKey: ['warning-logs'] })
-    },
-    onError: () => {
-      toast.error(t('Failed to clean logs'))
-    },
-  })
-
-  const quickSelectOptions = [
-    { label: '24 hours ago', getValue: () => getDateHoursAgo(24) },
-    { label: '7 days ago', getValue: () => getDateDaysAgo(7) },
-    { label: '30 days ago', getValue: () => getDateDaysAgo(30) },
-  ]
-
-  return (
-    <div className='flex flex-wrap items-center gap-2'>
-      <DateTimePicker value={purgeDate} onChange={setPurgeDate} />
-      {quickSelectOptions.map((option) => (
-        <Button
-          key={option.label}
-          type='button'
-          variant='outline'
-          size='sm'
-          onClick={() => setPurgeDate(option.getValue())}
-        >
-          {t(option.label)}
-        </Button>
-      ))}
-      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <AlertDialogTrigger
-          render={
-            <Button
-              type='button'
-              variant='destructive'
-              size='sm'
-              disabled={!purgeTimestamp || cleanMutation.isPending}
-            />
-          }
-        >
-          {t('Clean logs')}
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('Confirm log cleanup')}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {formattedPurgeDate
-                ? t(
-                    'This will permanently remove all log entries created before {{date}}.',
-                    { date: formattedPurgeDate }
-                  )
-                : t(
-                    'This will permanently remove log entries before the selected timestamp.'
-                  )}{' '}
-              {t('This action cannot be undone.')}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={cleanMutation.isPending}>
-              {t('Cancel')}
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() =>
-                purgeTimestamp && cleanMutation.mutate(purgeTimestamp)
-              }
-              disabled={cleanMutation.isPending}
-            >
-              {cleanMutation.isPending ? t('Cleaning...') : t('Delete logs')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
-  )
 }
 
 export function WarningLogsFilterBar<TData>(
@@ -365,7 +231,6 @@ export function WarningLogsFilterBar<TData>(
   return (
     <LogsFilterToolbar
       table={props.table}
-      stats={<CleanOldLogsControl />}
       primaryFilters={
         <>
           {dateRangeFilter}

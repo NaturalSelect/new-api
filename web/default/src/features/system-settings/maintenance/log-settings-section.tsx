@@ -44,6 +44,7 @@ import {
 } from '@/components/ui/form'
 import { Switch } from '@/components/ui/switch'
 import { DateTimePicker } from '@/components/datetime-picker'
+import { deleteOldWarningLogs } from '@/features/warning-logs/api'
 import { deleteLogsBefore } from '../api'
 import {
   SettingsControlGroup,
@@ -108,6 +109,13 @@ export function LogSettingsSection({
   const [isCleaning, setIsCleaning] = useState(false)
   const [showConfirmDialog, setShowConfirmDialog] = useState(false)
 
+  const [warningPurgeDate, setWarningPurgeDate] = useState<Date | undefined>(
+    () => getDateDaysAgo(30)
+  )
+  const [isCleaningWarningLogs, setIsCleaningWarningLogs] = useState(false)
+  const [showWarningConfirmDialog, setShowWarningConfirmDialog] =
+    useState(false)
+
   useEffect(() => {
     form.reset({ LogConsumeEnabled: defaultEnabled })
   }, [defaultEnabled, form])
@@ -121,6 +129,16 @@ export function LogSettingsSection({
     if (!purgeDate) return ''
     return formatTimestampToDate(purgeDate.getTime(), 'milliseconds')
   }, [purgeDate])
+
+  const warningPurgeTimestamp = useMemo(() => {
+    if (!warningPurgeDate) return null
+    return Math.floor(warningPurgeDate.getTime() / 1000)
+  }, [warningPurgeDate])
+
+  const formattedWarningPurgeDate = useMemo(() => {
+    if (!warningPurgeDate) return ''
+    return formatTimestampToDate(warningPurgeDate.getTime(), 'milliseconds')
+  }, [warningPurgeDate])
 
   const onSubmit = async (values: LogSettingsFormValues) => {
     if (values.LogConsumeEnabled === defaultEnabled) return
@@ -163,6 +181,42 @@ export function LogSettingsSection({
       toast.error(message)
     } finally {
       setIsCleaning(false)
+    }
+  }
+
+  const handleRequestCleanWarningLogs = () => {
+    if (!warningPurgeTimestamp) {
+      toast.error(t('Select a timestamp before clearing logs.'))
+      return
+    }
+
+    setShowWarningConfirmDialog(true)
+  }
+
+  const handleCleanWarningLogs = async () => {
+    if (!warningPurgeTimestamp) {
+      toast.error(t('Select a timestamp before clearing logs.'))
+      return
+    }
+
+    setIsCleaningWarningLogs(true)
+    try {
+      const res = await deleteOldWarningLogs(warningPurgeTimestamp)
+      if (!res.success) {
+        throw new Error(res.message || t('Failed to clean logs'))
+      }
+      const count = res.data ?? 0
+      toast.success(
+        count > 0
+          ? t('{{count}} log entries removed.', { count })
+          : t('No log entries matched the selected time.')
+      )
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : t('Failed to clean logs')
+      toast.error(message)
+    } finally {
+      setIsCleaningWarningLogs(false)
     }
   }
 
@@ -230,6 +284,41 @@ export function LogSettingsSection({
               </Button>
             </div>
           </SettingsControlGroup>
+
+          <SettingsControlGroup className='space-y-3'>
+            <div>
+              <h4 className='text-sm font-medium'>{t('Clean warning logs')}</h4>
+              <p className='text-muted-foreground text-sm'>
+                {t(
+                  'Remove all warning log entries created before the selected timestamp.'
+                )}
+              </p>
+            </div>
+            <DateTimePicker
+              value={warningPurgeDate}
+              onChange={setWarningPurgeDate}
+            />
+            <div className='flex flex-wrap gap-3'>
+              {quickSelectOptions.map((option) => (
+                <Button
+                  key={option.label}
+                  type='button'
+                  variant='outline'
+                  onClick={() => setWarningPurgeDate(option.getValue())}
+                >
+                  {t(option.label)}
+                </Button>
+              ))}
+              <Button
+                type='button'
+                variant='destructive'
+                onClick={handleRequestCleanWarningLogs}
+                disabled={isCleaningWarningLogs}
+              >
+                {isCleaningWarningLogs ? t('Cleaning...') : t('Clean logs')}
+              </Button>
+            </div>
+          </SettingsControlGroup>
         </SettingsForm>
       </Form>
       <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
@@ -254,6 +343,38 @@ export function LogSettingsSection({
             </AlertDialogCancel>
             <AlertDialogAction onClick={handleCleanLogs} disabled={isCleaning}>
               {isCleaning ? t('Cleaning...') : t('Delete logs')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
+        open={showWarningConfirmDialog}
+        onOpenChange={setShowWarningConfirmDialog}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('Confirm log cleanup')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {formattedWarningPurgeDate
+                ? t(
+                    'This will permanently remove all warning log entries created before {{date}}.',
+                    { date: formattedWarningPurgeDate }
+                  )
+                : t(
+                    'This will permanently remove warning log entries before the selected timestamp.'
+                  )}{' '}
+              {t('This action cannot be undone.')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isCleaningWarningLogs}>
+              {t('Cancel')}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleCleanWarningLogs}
+              disabled={isCleaningWarningLogs}
+            >
+              {isCleaningWarningLogs ? t('Cleaning...') : t('Delete logs')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

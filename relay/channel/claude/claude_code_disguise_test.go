@@ -93,6 +93,7 @@ func TestApplyClaudeCodeDisguiseBody_Disabled(t *testing.T) {
 	ApplyClaudeCodeDisguiseBody(c, request, info)
 
 	assert.Nil(t, request.System)
+	// NOTE: mode is 0 (disguise fully off), so metadata.user_id must stay untouched.
 	assert.Nil(t, request.Metadata)
 }
 
@@ -817,7 +818,9 @@ func TestApplyClaudeCodeDisguiseBody_UAOnly_NoBodyChange(t *testing.T) {
 	ApplyClaudeCodeDisguiseBody(c, request, makeRelayInfoMode(dto.ClaudeDisguiseUA))
 
 	assert.Equal(t, "keep me", request.System, "body must NOT be modified when SystemPrompt dimension is off")
-	assert.Nil(t, request.Metadata)
+	// NOTE: mode (UA) is non-zero, so metadata.user_id is still normalized even
+	// though the SystemPrompt dimension itself is off.
+	assert.True(t, len(request.Metadata) > 0)
 }
 
 // TestApplyClaudeCodeDisguiseBody_ModeZeroExplicit_NoBodyChange

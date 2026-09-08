@@ -111,23 +111,29 @@ func ApplyClaudeCodeDisguiseHeaders(c *gin.Context, req *http.Header, info *rela
 	}
 }
 
-// ApplyClaudeCodeDisguiseBody injects Claude Code CLI body fields when the channel's
-// disguise mode bitmask includes dto.ClaudeDisguiseSystemPrompt. It also moves user
-// system prompt entries into the first user message wrapped in <system-reminder>
-// tags, so that only the Claude Code disguise system entries remain in the system
-// field, and normalizes metadata.user_id — all three steps are bundled under the
-// System Prompt dimension since they only make sense together.
+// ApplyClaudeCodeDisguiseBody normalizes metadata.user_id whenever any Claude Code
+// disguise dimension is enabled (mode != 0), and additionally injects Claude Code
+// CLI body fields when the channel's disguise mode bitmask includes
+// dto.ClaudeDisguiseSystemPrompt. In that case it also moves user system prompt
+// entries into the first user message wrapped in <system-reminder> tags, so that
+// only the Claude Code disguise system entries remain in the system field.
+// metadata.user_id normalization is independent of the System Prompt dimension
+// specifically — a malformed user_id can fail upstream identity checks even when
+// only the UA or Header dimension is disguised — but still requires disguise to
+// be enabled in some form; channels with disguise fully off are left untouched.
 func ApplyClaudeCodeDisguiseBody(c *gin.Context, request *dto.ClaudeRequest, info *relaycommon.RelayInfo) {
 	if info == nil {
 		return
 	}
 	mode := info.ChannelOtherSettings.EffectiveClaudeCodeDisguiseMode()
+	if mode != 0 {
+		ensureClaudeCodeMetadataUserID(request)
+	}
 	if mode&dto.ClaudeDisguiseSystemPrompt == 0 {
 		return
 	}
 	injectClaudeCodeSystem(c, request)
 	moveUserSystemToFirstUserMessage(request)
-	ensureClaudeCodeMetadataUserID(request)
 }
 
 // isClaudeCodeDisguiseText reports whether a system entry text belongs to the

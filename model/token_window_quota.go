@@ -334,44 +334,79 @@ func flushTokenWindowSnapshot(tokenId int) bool {
 	return true
 }
 
+// RestoreSkip records why one token/window snapshot was not freshly seeded during a
+// RestoreTokenWindowUsageFromDB run, so callers can log the specific token and reason
+// instead of only a bare count.
+type RestoreSkip struct {
+	TokenId int
+	Window  string
+	Reason  string
+	// Failed is true when a backend error caused the skip (a real problem worth alerting
+	// on). It is false when the bucket was already live (e.g. live traffic or an earlier
+	// restore already recorded it), which is an expected, harmless outcome.
+	Failed bool
+}
+
+// RestoreResult summarizes a RestoreTokenWindowUsageFromDB run.
+type RestoreResult struct {
+	Candidates int // rows read from the DB with a non-expired snapshot
+	Restored   int // tokens where at least one window was freshly seeded
+	Skips      []RestoreSkip
+}
+
 // RestoreTokenWindowUsageFromDB reseeds Redis/memory from the last flushed snapshot for
 // every token whose window hasn't fully elapsed yet. Must run once at startup, before
-// traffic flows. Returns the number of tokens restored.
-func RestoreTokenWindowUsageFromDB() (int, error) {
+// traffic flows.
+func RestoreTokenWindowUsageFromDB() (RestoreResult, error) {
 	now := tokenWindowNow().Unix()
 	var tokens []Token
 	err := DB.Select("id", "quota_used_5h", "quota_reset_5h", "quota_used_7d", "quota_reset_7d").
 		Where("(quota_used_5h > 0 AND quota_reset_5h > ?) OR (quota_used_7d > 0 AND quota_reset_7d > ?)", now, now).
 		Find(&tokens).Error
 	if err != nil {
-		return 0, err
+		return RestoreResult{}, err
 	}
 
-	restored := 0
+	result := RestoreResult{Candidates: len(tokens)}
 	for _, t := range tokens {
 		did := false
 		if t.QuotaUsed5h > 0 && t.QuotaReset5h > now {
-			if seedTokenWindowUsage(t.Id, TokenQuotaWindow5h, t.QuotaUsed5h, t.QuotaReset5h) {
+			outcome := seedTokenWindowUsage(t.Id, TokenQuotaWindow5h, t.QuotaUsed5h, t.QuotaReset5h)
+			if outcome.seeded {
 				did = true
+			} else {
+				result.Skips = append(result.Skips, RestoreSkip{TokenId: t.Id, Window: TokenQuotaWindow5h.Name, Reason: outcome.reason, Failed: outcome.failed})
 			}
 		}
 		if t.QuotaUsed7d > 0 && t.QuotaReset7d > now {
-			if seedTokenWindowUsage(t.Id, TokenQuotaWindow7d, t.QuotaUsed7d, t.QuotaReset7d) {
+			outcome := seedTokenWindowUsage(t.Id, TokenQuotaWindow7d, t.QuotaUsed7d, t.QuotaReset7d)
+			if outcome.seeded {
 				did = true
+			} else {
+				result.Skips = append(result.Skips, RestoreSkip{TokenId: t.Id, Window: TokenQuotaWindow7d.Name, Reason: outcome.reason, Failed: outcome.failed})
 			}
 		}
 		if did {
-			restored++
+			result.Restored++
 		}
 	}
-	return restored, nil
+	return result, nil
+}
+
+// seedOutcome reports what happened when seeding a single token/window bucket from a DB
+// snapshot, distinguishing a harmless skip (bucket already live) from a real backend
+// failure, so RestoreTokenWindowUsageFromDB can report each one accurately.
+type seedOutcome struct {
+	seeded bool
+	failed bool // only meaningful when seeded is false
+	reason string
 }
 
 // seedTokenWindowUsage restores a single bucket positioned so it leaves the window at
 // resetAt, the same instant recorded in the snapshot, holding the snapshotted usage. It
 // only writes when that exact bucket is still empty, so it can never double-count usage
 // that live traffic (or an earlier restore) already recorded.
-func seedTokenWindowUsage(tokenId int, w TokenQuotaWindow, used int64, resetAt int64) bool {
+func seedTokenWindowUsage(tokenId int, w TokenQuotaWindow, used int64, resetAt int64) seedOutcome {
 	bucket := resetAt - w.BucketSeconds
 	if common.RedisEnabled {
 		return redisSeedTokenWindowUsage(tokenId, w, bucket, used)
@@ -379,22 +414,22 @@ func seedTokenWindowUsage(tokenId int, w TokenQuotaWindow, used int64, resetAt i
 	return memorySeedTokenWindowUsage(tokenId, w, bucket, used)
 }
 
-func redisSeedTokenWindowUsage(tokenId int, w TokenQuotaWindow, bucket int64, used int64) bool {
+func redisSeedTokenWindowUsage(tokenId int, w TokenQuotaWindow, bucket int64, used int64) seedOutcome {
 	ctx := context.Background()
 	key := tokenWindowRedisKey(tokenId, w)
 	field := strconv.FormatInt(bucket, 10)
 	ok, err := common.RDB.HSetNX(ctx, key, field, used).Result()
 	if err != nil {
-		common.SysLog("failed to restore token window usage: " + err.Error())
-		return false
+		return seedOutcome{failed: true, reason: "redis error: " + err.Error()}
 	}
-	if ok {
-		common.RDB.Expire(ctx, key, time.Duration(w.Seconds+w.BucketSeconds)*time.Second)
+	if !ok {
+		return seedOutcome{reason: "bucket already live, not overwritten"}
 	}
-	return ok
+	common.RDB.Expire(ctx, key, time.Duration(w.Seconds+w.BucketSeconds)*time.Second)
+	return seedOutcome{seeded: true}
 }
 
-func memorySeedTokenWindowUsage(tokenId int, w TokenQuotaWindow, bucket int64, used int64) bool {
+func memorySeedTokenWindowUsage(tokenId int, w TokenQuotaWindow, bucket int64, used int64) seedOutcome {
 	tokenWindowMemory.startJanitor()
 	tokenWindowMemory.mutex.Lock()
 	defer tokenWindowMemory.mutex.Unlock()
@@ -410,8 +445,8 @@ func memorySeedTokenWindowUsage(tokenId int, w TokenQuotaWindow, bucket int64, u
 		windows[w.Name] = buckets
 	}
 	if _, exists := buckets[bucket]; exists {
-		return false
+		return seedOutcome{reason: "bucket already live, not overwritten"}
 	}
 	buckets[bucket] = used
-	return true
+	return seedOutcome{seeded: true}
 }

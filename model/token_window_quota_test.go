@@ -252,9 +252,11 @@ func TestRestoreTokenWindowUsageFromDB_ReseedsUnexpiredSnapshot(t *testing.T) {
 	require.NoError(t, err)
 	require.EqualValues(t, 0, usage.Used)
 
-	restored, err := RestoreTokenWindowUsageFromDB()
+	result, err := RestoreTokenWindowUsageFromDB()
 	require.NoError(t, err)
-	require.Equal(t, 1, restored)
+	require.Equal(t, 1, result.Candidates)
+	require.Equal(t, 1, result.Restored)
+	require.Empty(t, result.Skips)
 
 	usage, err = GetTokenWindowUsage(token.Id, TokenQuotaWindow5h)
 	require.NoError(t, err)
@@ -275,9 +277,13 @@ func TestRestoreTokenWindowUsageFromDB_SkipsExpiredSnapshot(t *testing.T) {
 	}
 	require.NoError(t, DB.Create(token).Error)
 
-	restored, err := RestoreTokenWindowUsageFromDB()
+	result, err := RestoreTokenWindowUsageFromDB()
 	require.NoError(t, err)
-	require.Equal(t, 0, restored)
+	// The snapshot's reset time has already passed, so it never even qualifies as a
+	// restore candidate: this is an ordinary expired token, not a skip worth reporting.
+	require.Equal(t, 0, result.Candidates)
+	require.Equal(t, 0, result.Restored)
+	require.Empty(t, result.Skips)
 
 	usage, err := GetTokenWindowUsage(token.Id, TokenQuotaWindow5h)
 	require.NoError(t, err)
@@ -308,4 +314,40 @@ func TestRestoreTokenWindowUsageFromDB_DoesNotClobberLiveUsage(t *testing.T) {
 	// The restored bucket (positioned at reset_at - BucketSeconds) lands on a different
 	// bucket than live traffic's current one, so usage adds up instead of being clobbered.
 	require.EqualValues(t, 100, usage.Used)
+}
+
+func TestRestoreTokenWindowUsageFromDB_ReportsSkipWhenBucketAlreadySeeded(t *testing.T) {
+	truncateTables(t)
+	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	newFakeClock(t, base)
+
+	token := &Token{
+		Key:          "restore-twice-key",
+		UserId:       1,
+		QuotaUsed5h:  80,
+		QuotaReset5h: base.Unix() + 1000,
+	}
+	require.NoError(t, DB.Create(token).Error)
+
+	first, err := RestoreTokenWindowUsageFromDB()
+	require.NoError(t, err)
+	require.Equal(t, 1, first.Restored)
+	require.Empty(t, first.Skips)
+
+	// Same snapshot, same target bucket: the second restore (e.g. a duplicate startup
+	// call) must not double count, and must report exactly which token/window it skipped
+	// and that the skip was benign (bucket already live), not a failure.
+	second, err := RestoreTokenWindowUsageFromDB()
+	require.NoError(t, err)
+	require.Equal(t, 1, second.Candidates)
+	require.Equal(t, 0, second.Restored)
+	require.Len(t, second.Skips, 1)
+	require.Equal(t, token.Id, second.Skips[0].TokenId)
+	require.Equal(t, TokenQuotaWindow5h.Name, second.Skips[0].Window)
+	require.False(t, second.Skips[0].Failed)
+	require.NotEmpty(t, second.Skips[0].Reason)
+
+	usage, err := GetTokenWindowUsage(token.Id, TokenQuotaWindow5h)
+	require.NoError(t, err)
+	require.EqualValues(t, 80, usage.Used)
 }

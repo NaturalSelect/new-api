@@ -45,6 +45,8 @@ const (
 	openRouterPresetID          = -102
 	openRouterPresetName        = "OpenRouter 价格预设"
 	openRouterPresetBaseURL     = "https://openrouter.ai/api"
+	openRouterSimplePresetID   = -103
+	openRouterSimplePresetName = "OpenRouter 简化预设"
 	modelsDevHost               = "models.dev"
 	modelsDevPath               = "/api.json"
 	modelsDevInputCostRatioBase = 1000.0
@@ -352,10 +354,16 @@ func FetchUpstreamRatios(c *gin.Context) {
 
 			// type3: OpenRouter /v1/models -> convert per-token pricing to ratios
 			if isOpenRouter {
-				converted, err := convertOpenRouterToRatioData(bytes.NewReader(bodyBytes))
-				if err != nil {
-					logger.LogWarn(c.Request.Context(), "OpenRouter parse failed from "+chItem.Name+": "+err.Error())
-					ch <- upstreamResult{Name: uniqueName, Err: err.Error()}
+				var converted map[string]any
+				var convErr error
+				if chItem.ID == openRouterSimplePresetID {
+					converted, convErr = convertOpenRouterToRatioDataSimplified(bytes.NewReader(bodyBytes))
+				} else {
+					converted, convErr = convertOpenRouterToRatioData(bytes.NewReader(bodyBytes))
+				}
+				if convErr != nil {
+					logger.LogWarn(c.Request.Context(), "OpenRouter parse failed from "+chItem.Name+": "+convErr.Error())
+					ch <- upstreamResult{Name: uniqueName, Err: convErr.Error()}
 					return
 				}
 				ch <- upstreamResult{Name: uniqueName, Data: converted}
@@ -750,6 +758,41 @@ func isModelsDevAPIEndpoint(rawURL string) bool {
 	return path == modelsDevPath
 }
 
+// openRouterPricing maps the pricing fields from OpenRouter's /v1/models response.
+// Fields not currently mapped to the local ratio system (web_search, internal_reasoning,
+// input_cache_write_1h, input_audio_cache) are intentionally omitted.
+type openRouterPricing struct {
+	Prompt          string `json:"prompt"`
+	Completion      string `json:"completion"`
+	InputCacheRead  string `json:"input_cache_read"`
+	InputCacheWrite string `json:"input_cache_write"`
+	Audio           string `json:"audio"`
+	AudioOutput     string `json:"audio_output"`
+	Image           string `json:"image"`
+	ImageOutput     string `json:"image_output"`
+}
+
+type openRouterModel struct {
+	ID      string            `json:"id"`
+	Pricing openRouterPricing `json:"pricing"`
+}
+
+type openRouterResponse struct {
+	Data []openRouterModel `json:"data"`
+}
+
+// parseOpenRouterFloat parses a pricing string; returns (0, false) for empty/invalid/negative.
+func parseOpenRouterFloat(s string) (float64, bool) {
+	if s == "" {
+		return 0, false
+	}
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil || v < 0 {
+		return 0, false
+	}
+	return v, true
+}
+
 // convertOpenRouterToRatioData parses OpenRouter's /v1/models response and converts
 // per-token USD pricing into the local ratio format.
 // model_ratio = prompt_price_per_token * 1_000_000 * (USD / 1000)
@@ -758,16 +801,7 @@ func isModelsDevAPIEndpoint(rawURL string) bool {
 //
 // completion_ratio = completion_price / prompt_price (output/input multiplier)
 func convertOpenRouterToRatioData(reader io.Reader) (map[string]any, error) {
-	var orResp struct {
-		Data []struct {
-			ID      string `json:"id"`
-			Pricing struct {
-				Prompt         string `json:"prompt"`
-				Completion     string `json:"completion"`
-				InputCacheRead string `json:"input_cache_read"`
-			} `json:"pricing"`
-		} `json:"data"`
-	}
+	var orResp openRouterResponse
 
 	if err := common.DecodeJson(reader, &orResp); err != nil {
 		return nil, fmt.Errorf("failed to decode OpenRouter response: %w", err)
@@ -776,27 +810,23 @@ func convertOpenRouterToRatioData(reader io.Reader) (map[string]any, error) {
 	modelRatioMap := make(map[string]any)
 	completionRatioMap := make(map[string]any)
 	cacheRatioMap := make(map[string]any)
+	createCacheRatioMap := make(map[string]any)
+	audioRatioMap := make(map[string]any)
+	audioCompletionRatioMap := make(map[string]any)
+	imageRatioMap := make(map[string]any)
 
 	for _, m := range orResp.Data {
-		promptPrice, promptErr := strconv.ParseFloat(m.Pricing.Prompt, 64)
-		completionPrice, compErr := strconv.ParseFloat(m.Pricing.Completion, 64)
+		promptPrice, hasPrompt := parseOpenRouterFloat(m.Pricing.Prompt)
+		completionPrice, hasCompletion := parseOpenRouterFloat(m.Pricing.Completion)
 
-		if promptErr != nil && compErr != nil {
-			// Both unparseable — skip this model
+		if !hasPrompt && !hasCompletion {
 			continue
 		}
-
-		// Treat parse errors as 0
-		if promptErr != nil {
+		if !hasPrompt {
 			promptPrice = 0
 		}
-		if compErr != nil {
+		if !hasCompletion {
 			completionPrice = 0
-		}
-
-		// Negative values are sentinel values (e.g., -1 for dynamic/variable pricing) — skip
-		if promptPrice < 0 || completionPrice < 0 {
-			continue
 		}
 
 		if promptPrice == 0 && completionPrice == 0 {
@@ -809,22 +839,28 @@ func convertOpenRouterToRatioData(reader io.Reader) (map[string]any, error) {
 			continue
 		}
 
-		// Normal case: promptPrice > 0
-		ratio := promptPrice * 1000 * ratio_setting.USD
-		ratio = roundRatioValue(ratio)
-		modelRatioMap[m.ID] = ratio
+		modelRatioMap[m.ID] = roundRatioValue(promptPrice * 1000 * ratio_setting.USD)
+		completionRatioMap[m.ID] = roundRatioValue(completionPrice / promptPrice)
 
-		compRatio := completionPrice / promptPrice
-		compRatio = roundRatioValue(compRatio)
-		completionRatioMap[m.ID] = compRatio
-
-		// Convert input_cache_read to cache_ratio (= cache_read_price / prompt_price)
-		if m.Pricing.InputCacheRead != "" {
-			if cachePrice, err := strconv.ParseFloat(m.Pricing.InputCacheRead, 64); err == nil && cachePrice >= 0 {
-				cacheRatio := cachePrice / promptPrice
-				cacheRatio = roundRatioValue(cacheRatio)
-				cacheRatioMap[m.ID] = cacheRatio
+		if v, ok := parseOpenRouterFloat(m.Pricing.InputCacheRead); ok {
+			cacheRatioMap[m.ID] = roundRatioValue(v / promptPrice)
+		}
+		if v, ok := parseOpenRouterFloat(m.Pricing.InputCacheWrite); ok {
+			createCacheRatioMap[m.ID] = roundRatioValue(v / promptPrice)
+		}
+		// audio_ratio = audio_input_price / prompt_price
+		if v, ok := parseOpenRouterFloat(m.Pricing.Audio); ok {
+			audioRatioMap[m.ID] = roundRatioValue(v / promptPrice)
+		}
+		// audio_completion_ratio = audio_output_price / audio_input_price
+		if audioPrice, ok := parseOpenRouterFloat(m.Pricing.Audio); ok {
+			if v, ok := parseOpenRouterFloat(m.Pricing.AudioOutput); ok && audioPrice > 0 {
+				audioCompletionRatioMap[m.ID] = roundRatioValue(v / audioPrice)
 			}
+		}
+		// image_ratio is an absolute price (same formula as model_ratio)
+		if v, ok := parseOpenRouterFloat(m.Pricing.Image); ok {
+			imageRatioMap[m.ID] = roundRatioValue(v * 1000 * ratio_setting.USD)
 		}
 	}
 
@@ -837,6 +873,128 @@ func convertOpenRouterToRatioData(reader io.Reader) (map[string]any, error) {
 	}
 	if len(cacheRatioMap) > 0 {
 		converted["cache_ratio"] = cacheRatioMap
+	}
+	if len(createCacheRatioMap) > 0 {
+		converted["create_cache_ratio"] = createCacheRatioMap
+	}
+	if len(audioRatioMap) > 0 {
+		converted["audio_ratio"] = audioRatioMap
+	}
+	if len(audioCompletionRatioMap) > 0 {
+		converted["audio_completion_ratio"] = audioCompletionRatioMap
+	}
+	if len(imageRatioMap) > 0 {
+		converted["image_ratio"] = imageRatioMap
+	}
+
+	return converted, nil
+}
+
+// simplifyOpenRouterModelID strips the "provider/" prefix from OpenRouter model IDs and
+// discards variant entries that contain ":" (e.g. ":nitro", ":free", ":extended", ":batch").
+func simplifyOpenRouterModelID(id string) (string, bool) {
+	if strings.Contains(id, ":") {
+		return "", false
+	}
+	if idx := strings.IndexByte(id, '/'); idx >= 0 {
+		return id[idx+1:], true
+	}
+	return id, true
+}
+
+// convertOpenRouterToRatioDataSimplified is like convertOpenRouterToRatioData but normalizes
+// model IDs: strips the "provider/" prefix and skips ":batch"/variant entries.
+// When multiple upstream entries map to the same simplified ID, the first one wins.
+func convertOpenRouterToRatioDataSimplified(reader io.Reader) (map[string]any, error) {
+	var orResp openRouterResponse
+
+	if err := common.DecodeJson(reader, &orResp); err != nil {
+		return nil, fmt.Errorf("failed to decode OpenRouter response: %w", err)
+	}
+
+	modelRatioMap := make(map[string]any)
+	completionRatioMap := make(map[string]any)
+	cacheRatioMap := make(map[string]any)
+	createCacheRatioMap := make(map[string]any)
+	audioRatioMap := make(map[string]any)
+	audioCompletionRatioMap := make(map[string]any)
+	imageRatioMap := make(map[string]any)
+	seen := make(map[string]struct{})
+
+	for _, m := range orResp.Data {
+		simpleID, ok := simplifyOpenRouterModelID(m.ID)
+		if !ok {
+			continue
+		}
+		if _, exists := seen[simpleID]; exists {
+			continue
+		}
+		seen[simpleID] = struct{}{}
+
+		promptPrice, hasPrompt := parseOpenRouterFloat(m.Pricing.Prompt)
+		completionPrice, hasCompletion := parseOpenRouterFloat(m.Pricing.Completion)
+
+		if !hasPrompt && !hasCompletion {
+			continue
+		}
+		if !hasPrompt {
+			promptPrice = 0
+		}
+		if !hasCompletion {
+			completionPrice = 0
+		}
+
+		if promptPrice == 0 && completionPrice == 0 {
+			modelRatioMap[simpleID] = 0.0
+			continue
+		}
+		if promptPrice <= 0 {
+			continue
+		}
+
+		modelRatioMap[simpleID] = roundRatioValue(promptPrice * 1000 * ratio_setting.USD)
+		completionRatioMap[simpleID] = roundRatioValue(completionPrice / promptPrice)
+
+		if v, ok := parseOpenRouterFloat(m.Pricing.InputCacheRead); ok {
+			cacheRatioMap[simpleID] = roundRatioValue(v / promptPrice)
+		}
+		if v, ok := parseOpenRouterFloat(m.Pricing.InputCacheWrite); ok {
+			createCacheRatioMap[simpleID] = roundRatioValue(v / promptPrice)
+		}
+		if v, ok := parseOpenRouterFloat(m.Pricing.Audio); ok {
+			audioRatioMap[simpleID] = roundRatioValue(v / promptPrice)
+		}
+		if audioPrice, ok := parseOpenRouterFloat(m.Pricing.Audio); ok {
+			if v, ok := parseOpenRouterFloat(m.Pricing.AudioOutput); ok && audioPrice > 0 {
+				audioCompletionRatioMap[simpleID] = roundRatioValue(v / audioPrice)
+			}
+		}
+		if v, ok := parseOpenRouterFloat(m.Pricing.Image); ok {
+			imageRatioMap[simpleID] = roundRatioValue(v * 1000 * ratio_setting.USD)
+		}
+	}
+
+	converted := make(map[string]any)
+	if len(modelRatioMap) > 0 {
+		converted["model_ratio"] = modelRatioMap
+	}
+	if len(completionRatioMap) > 0 {
+		converted["completion_ratio"] = completionRatioMap
+	}
+	if len(cacheRatioMap) > 0 {
+		converted["cache_ratio"] = cacheRatioMap
+	}
+	if len(createCacheRatioMap) > 0 {
+		converted["create_cache_ratio"] = createCacheRatioMap
+	}
+	if len(audioRatioMap) > 0 {
+		converted["audio_ratio"] = audioRatioMap
+	}
+	if len(audioCompletionRatioMap) > 0 {
+		converted["audio_completion_ratio"] = audioCompletionRatioMap
+	}
+	if len(imageRatioMap) > 0 {
+		converted["image_ratio"] = imageRatioMap
 	}
 
 	return converted, nil
@@ -1060,6 +1218,14 @@ func GetSyncableChannels(c *gin.Context) {
 	syncableChannels = append(syncableChannels, dto.SyncableChannel{
 		ID:      openRouterPresetID,
 		Name:    openRouterPresetName,
+		BaseURL: openRouterPresetBaseURL,
+		Status:  1,
+		Type:    constant.ChannelTypeOpenRouter,
+	})
+
+	syncableChannels = append(syncableChannels, dto.SyncableChannel{
+		ID:      openRouterSimplePresetID,
+		Name:    openRouterSimplePresetName,
 		BaseURL: openRouterPresetBaseURL,
 		Status:  1,
 		Type:    constant.ChannelTypeOpenRouter,

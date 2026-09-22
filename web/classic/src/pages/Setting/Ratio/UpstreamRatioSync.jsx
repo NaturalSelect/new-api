@@ -62,6 +62,8 @@ const MODELS_DEV_PRESET_ENDPOINT = 'https://models.dev/api.json';
 const OPENROUTER_PRESET_ID = -102;
 const OPENROUTER_PRESET_NAME = 'OpenRouter 价格预设';
 const OPENROUTER_PRESET_BASE_URL = 'https://openrouter.ai/api';
+const OPENROUTER_SIMPLE_PRESET_ID = -103;
+const OPENROUTER_SIMPLE_PRESET_NAME = 'OpenRouter 简化预设';
 
 function ConflictConfirmModal({ t, visible, items, loading, onOk, onCancel }) {
   const isMobile = useIsMobile();
@@ -179,8 +181,10 @@ export default function UpstreamRatioSync(props) {
               name === MODELS_DEV_PRESET_NAME;
             const isOpenRouterPreset =
               id === OPENROUTER_PRESET_ID ||
+              id === OPENROUTER_SIMPLE_PRESET_ID ||
               base === OPENROUTER_PRESET_BASE_URL ||
-              name === OPENROUTER_PRESET_NAME;
+              name === OPENROUTER_PRESET_NAME ||
+              name === OPENROUTER_SIMPLE_PRESET_NAME;
             const isOpenRouter = channelType === 20;
             if (!merged[id]) {
               if (isModelsDevPreset) {

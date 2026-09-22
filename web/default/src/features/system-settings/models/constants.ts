@@ -46,6 +46,9 @@ export const OPENROUTER_PRESET_ID = -102
 export const OPENROUTER_PRESET_NAME = 'OpenRouter 价格预设'
 export const OPENROUTER_PRESET_BASE_URL = 'https://openrouter.ai/api'
 
+export const OPENROUTER_SIMPLE_PRESET_ID = -103
+export const OPENROUTER_SIMPLE_PRESET_NAME = 'OpenRouter 简化预设'
+
 export const OPENROUTER_ENDPOINT = 'openrouter'
 
 // Backend channel type for OpenRouter (see constant/channel.go: ChannelTypeOpenRouter = 20)

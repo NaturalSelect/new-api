@@ -47,6 +47,7 @@ import {
   OPENROUTER_CHANNEL_TYPE,
   OPENROUTER_ENDPOINT,
   OPENROUTER_PRESET_ID,
+  OPENROUTER_SIMPLE_PRESET_ID,
 } from './constants'
 import {
   NUMERIC_SYNC_FIELDS,
@@ -86,6 +87,7 @@ function getDefaultEndpointForChannel(channel: UpstreamChannel): string {
   if (channel.id === MODELS_DEV_PRESET_ID) return MODELS_DEV_PRESET_ENDPOINT
   if (channel.id === OFFICIAL_CHANNEL_ID) return OFFICIAL_CHANNEL_ENDPOINT
   if (channel.id === OPENROUTER_PRESET_ID) return OPENROUTER_ENDPOINT
+  if (channel.id === OPENROUTER_SIMPLE_PRESET_ID) return OPENROUTER_ENDPOINT
   if (channel.type === OPENROUTER_CHANNEL_TYPE) return OPENROUTER_ENDPOINT
   return DEFAULT_ENDPOINT
 }

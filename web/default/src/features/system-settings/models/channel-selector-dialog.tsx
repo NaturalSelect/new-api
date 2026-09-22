@@ -65,6 +65,7 @@ import {
   MODELS_DEV_PRESET_ID,
   OFFICIAL_CHANNEL_ID,
   OPENROUTER_PRESET_ID,
+  OPENROUTER_SIMPLE_PRESET_ID,
 } from './constants'
 
 type ChannelSelectorDialogProps = {
@@ -84,7 +85,8 @@ function isOfficialChannel(channel: UpstreamChannel): boolean {
   return (
     channel.id === OFFICIAL_CHANNEL_ID ||
     channel.id === MODELS_DEV_PRESET_ID ||
-    channel.id === OPENROUTER_PRESET_ID
+    channel.id === OPENROUTER_PRESET_ID ||
+    channel.id === OPENROUTER_SIMPLE_PRESET_ID
   )
 }
 

@@ -136,6 +136,10 @@ func main() {
 	// per tick, speeding up Token/Key Distribution dashboard reads)
 	service.StartTokenStatsBackfillTask()
 
+	// Token window quota flush task (persists 5h/7d rolling usage snapshots so a
+	// Redis/memory cache loss resumes from the last snapshot instead of resetting to zero)
+	service.StartTokenWindowQuotaFlushTask()
+
 	// Wire task polling adaptor factory (breaks service -> relay import cycle)
 	service.GetTaskAdaptorFunc = func(platform constant.TaskPlatform) service.TaskPollingAdaptor {
 		a := relay.GetTaskAdaptor(platform)

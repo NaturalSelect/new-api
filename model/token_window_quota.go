@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -227,4 +228,190 @@ func memoryGetTokenWindowUsage(tokenId int, w TokenQuotaWindow) TokenWindowUsage
 		resetAt = 0
 	}
 	return TokenWindowUsage{Used: used, ResetAt: resetAt}
+}
+
+// persistence: periodic snapshot + restore
+//
+// Redis/memory above are the only source of truth while the process is up; nothing here
+// ever changes that. The functions below add a durable, best-effort snapshot of that state
+// on the tokens row (quota_used_5h/7d, quota_reset_5h/7d) purely so a Redis/memory loss
+// (restart, eviction, TTL expiry) degrades to "resume from the last snapshot" instead of
+// silently resetting every token's usage to zero.
+
+// FlushActiveTokenWindowUsage persists a snapshot of every currently-active token's
+// rolling window usage into its tokens row. Returns the number of tokens flushed.
+func FlushActiveTokenWindowUsage() (int, error) {
+	var tokenIds []int
+	if common.RedisEnabled {
+		ids, err := activeRedisTokenWindowIds(context.Background())
+		if err != nil {
+			return 0, err
+		}
+		tokenIds = ids
+	} else {
+		tokenIds = activeMemoryTokenWindowIds()
+	}
+
+	flushed := 0
+	for _, tokenId := range tokenIds {
+		if flushTokenWindowSnapshot(tokenId) {
+			flushed++
+		}
+	}
+	return flushed, nil
+}
+
+// activeRedisTokenWindowIds scans (never KEYS, to stay safe on large keyspaces) for
+// token_quota_window:* keys and returns the distinct token ids with a live bucket.
+func activeRedisTokenWindowIds(ctx context.Context) ([]int, error) {
+	seen := make(map[int]struct{})
+	var cursor uint64
+	for {
+		keys, next, err := common.RDB.Scan(ctx, cursor, "token_quota_window:*", 200).Result()
+		if err != nil {
+			return nil, err
+		}
+		for _, key := range keys {
+			parts := strings.Split(key, ":")
+			if len(parts) != 3 {
+				continue
+			}
+			id, err := strconv.Atoi(parts[1])
+			if err != nil {
+				continue
+			}
+			seen[id] = struct{}{}
+		}
+		cursor = next
+		if cursor == 0 {
+			break
+		}
+	}
+	ids := make([]int, 0, len(seen))
+	for id := range seen {
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
+func activeMemoryTokenWindowIds() []int {
+	tokenWindowMemory.mutex.Lock()
+	defer tokenWindowMemory.mutex.Unlock()
+	ids := make([]int, 0, len(tokenWindowMemory.buckets))
+	for id := range tokenWindowMemory.buckets {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+// flushTokenWindowSnapshot writes tokenId's current 5h/7d usage into its tokens row.
+// Best-effort like addTokenWindowUsage: failures are logged, not returned, so one token
+// failing to persist never blocks the rest of the flush.
+func flushTokenWindowSnapshot(tokenId int) bool {
+	usage5h, err := GetTokenWindowUsage(tokenId, TokenQuotaWindow5h)
+	if err != nil {
+		common.SysLog("failed to read token 5h window usage during flush: " + err.Error())
+		return false
+	}
+	usage7d, err := GetTokenWindowUsage(tokenId, TokenQuotaWindow7d)
+	if err != nil {
+		common.SysLog("failed to read token 7d window usage during flush: " + err.Error())
+		return false
+	}
+	if usage5h.Used == 0 && usage7d.Used == 0 {
+		return false
+	}
+	err = DB.Model(&Token{}).Where("id = ?", tokenId).Updates(map[string]interface{}{
+		"quota_used_5h":  usage5h.Used,
+		"quota_reset_5h": usage5h.ResetAt,
+		"quota_used_7d":  usage7d.Used,
+		"quota_reset_7d": usage7d.ResetAt,
+	}).Error
+	if err != nil {
+		common.SysLog("failed to persist token window quota snapshot: " + err.Error())
+		return false
+	}
+	return true
+}
+
+// RestoreTokenWindowUsageFromDB reseeds Redis/memory from the last flushed snapshot for
+// every token whose window hasn't fully elapsed yet. Must run once at startup, before
+// traffic flows. Returns the number of tokens restored.
+func RestoreTokenWindowUsageFromDB() (int, error) {
+	now := tokenWindowNow().Unix()
+	var tokens []Token
+	err := DB.Select("id", "quota_used_5h", "quota_reset_5h", "quota_used_7d", "quota_reset_7d").
+		Where("(quota_used_5h > 0 AND quota_reset_5h > ?) OR (quota_used_7d > 0 AND quota_reset_7d > ?)", now, now).
+		Find(&tokens).Error
+	if err != nil {
+		return 0, err
+	}
+
+	restored := 0
+	for _, t := range tokens {
+		did := false
+		if t.QuotaUsed5h > 0 && t.QuotaReset5h > now {
+			if seedTokenWindowUsage(t.Id, TokenQuotaWindow5h, t.QuotaUsed5h, t.QuotaReset5h) {
+				did = true
+			}
+		}
+		if t.QuotaUsed7d > 0 && t.QuotaReset7d > now {
+			if seedTokenWindowUsage(t.Id, TokenQuotaWindow7d, t.QuotaUsed7d, t.QuotaReset7d) {
+				did = true
+			}
+		}
+		if did {
+			restored++
+		}
+	}
+	return restored, nil
+}
+
+// seedTokenWindowUsage restores a single bucket positioned so it leaves the window at
+// resetAt, the same instant recorded in the snapshot, holding the snapshotted usage. It
+// only writes when that exact bucket is still empty, so it can never double-count usage
+// that live traffic (or an earlier restore) already recorded.
+func seedTokenWindowUsage(tokenId int, w TokenQuotaWindow, used int64, resetAt int64) bool {
+	bucket := resetAt - w.BucketSeconds
+	if common.RedisEnabled {
+		return redisSeedTokenWindowUsage(tokenId, w, bucket, used)
+	}
+	return memorySeedTokenWindowUsage(tokenId, w, bucket, used)
+}
+
+func redisSeedTokenWindowUsage(tokenId int, w TokenQuotaWindow, bucket int64, used int64) bool {
+	ctx := context.Background()
+	key := tokenWindowRedisKey(tokenId, w)
+	field := strconv.FormatInt(bucket, 10)
+	ok, err := common.RDB.HSetNX(ctx, key, field, used).Result()
+	if err != nil {
+		common.SysLog("failed to restore token window usage: " + err.Error())
+		return false
+	}
+	if ok {
+		common.RDB.Expire(ctx, key, time.Duration(w.Seconds+w.BucketSeconds)*time.Second)
+	}
+	return ok
+}
+
+func memorySeedTokenWindowUsage(tokenId int, w TokenQuotaWindow, bucket int64, used int64) bool {
+	tokenWindowMemory.startJanitor()
+	tokenWindowMemory.mutex.Lock()
+	defer tokenWindowMemory.mutex.Unlock()
+
+	windows, ok := tokenWindowMemory.buckets[tokenId]
+	if !ok {
+		windows = make(map[string]map[int64]int64)
+		tokenWindowMemory.buckets[tokenId] = windows
+	}
+	buckets, ok := windows[w.Name]
+	if !ok {
+		buckets = make(map[int64]int64)
+		windows[w.Name] = buckets
+	}
+	if _, exists := buckets[bucket]; exists {
+		return false
+	}
+	buckets[bucket] = used
+	return true
 }

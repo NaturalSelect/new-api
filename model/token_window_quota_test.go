@@ -197,3 +197,115 @@ func TestTokenWindowUsage_UnknownTokenReturnsZero(t *testing.T) {
 	require.EqualValues(t, 0, usage.Used)
 	require.EqualValues(t, 0, usage.ResetAt)
 }
+
+func TestFlushActiveTokenWindowUsage_PersistsSnapshot(t *testing.T) {
+	truncateTables(t)
+	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	newFakeClock(t, base)
+
+	token := &Token{Key: "flush-test-key", UserId: 1}
+	require.NoError(t, DB.Create(token).Error)
+
+	addTokenWindowUsage(token.Id, 100)
+
+	flushed, err := FlushActiveTokenWindowUsage()
+	require.NoError(t, err)
+	require.Equal(t, 1, flushed)
+
+	var reloaded Token
+	require.NoError(t, DB.First(&reloaded, token.Id).Error)
+	require.EqualValues(t, 100, reloaded.QuotaUsed5h)
+	require.EqualValues(t, base.Unix()+TokenQuotaWindow5h.BucketSeconds, reloaded.QuotaReset5h)
+	require.EqualValues(t, 100, reloaded.QuotaUsed7d)
+	require.EqualValues(t, base.Unix()+TokenQuotaWindow7d.BucketSeconds, reloaded.QuotaReset7d)
+}
+
+func TestFlushActiveTokenWindowUsage_SkipsTokensWithNoActivity(t *testing.T) {
+	truncateTables(t)
+	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	newFakeClock(t, base)
+
+	token := &Token{Key: "flush-idle-key", UserId: 1}
+	require.NoError(t, DB.Create(token).Error)
+	// No addTokenWindowUsage call: the token never appears in the active set.
+
+	flushed, err := FlushActiveTokenWindowUsage()
+	require.NoError(t, err)
+	require.Equal(t, 0, flushed)
+}
+
+func TestRestoreTokenWindowUsageFromDB_ReseedsUnexpiredSnapshot(t *testing.T) {
+	truncateTables(t)
+	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	newFakeClock(t, base)
+
+	token := &Token{
+		Key:          "restore-test-key",
+		UserId:       1,
+		QuotaUsed5h:  80,
+		QuotaReset5h: base.Unix() + 1000, // still within the 5h window
+	}
+	require.NoError(t, DB.Create(token).Error)
+
+	// Cache starts empty, simulating a Redis/process restart losing all buckets.
+	usage, err := GetTokenWindowUsage(token.Id, TokenQuotaWindow5h)
+	require.NoError(t, err)
+	require.EqualValues(t, 0, usage.Used)
+
+	restored, err := RestoreTokenWindowUsageFromDB()
+	require.NoError(t, err)
+	require.Equal(t, 1, restored)
+
+	usage, err = GetTokenWindowUsage(token.Id, TokenQuotaWindow5h)
+	require.NoError(t, err)
+	require.EqualValues(t, 80, usage.Used)
+	require.EqualValues(t, base.Unix()+1000, usage.ResetAt)
+}
+
+func TestRestoreTokenWindowUsageFromDB_SkipsExpiredSnapshot(t *testing.T) {
+	truncateTables(t)
+	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	newFakeClock(t, base)
+
+	token := &Token{
+		Key:          "restore-expired-key",
+		UserId:       1,
+		QuotaUsed5h:  80,
+		QuotaReset5h: base.Unix() - 10, // already elapsed before the process even started
+	}
+	require.NoError(t, DB.Create(token).Error)
+
+	restored, err := RestoreTokenWindowUsageFromDB()
+	require.NoError(t, err)
+	require.Equal(t, 0, restored)
+
+	usage, err := GetTokenWindowUsage(token.Id, TokenQuotaWindow5h)
+	require.NoError(t, err)
+	require.EqualValues(t, 0, usage.Used)
+}
+
+func TestRestoreTokenWindowUsageFromDB_DoesNotClobberLiveUsage(t *testing.T) {
+	truncateTables(t)
+	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	newFakeClock(t, base)
+
+	token := &Token{
+		Key:          "restore-live-key",
+		UserId:       1,
+		QuotaUsed5h:  80,
+		QuotaReset5h: base.Unix() + 1000,
+	}
+	require.NoError(t, DB.Create(token).Error)
+
+	// Live traffic already recorded usage in the current bucket before restore runs.
+	addTokenWindowUsage(token.Id, 20)
+
+	_, err := RestoreTokenWindowUsageFromDB()
+	require.NoError(t, err)
+
+	usage, err := GetTokenWindowUsage(token.Id, TokenQuotaWindow5h)
+	require.NoError(t, err)
+	// The restored bucket (positioned at reset_at - BucketSeconds) lands on a different
+	// bucket than live traffic's current one, so usage adds up instead of being clobbered.
+	require.EqualValues(t, 100, usage.Used)
+}

@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -42,12 +43,16 @@ func TokenWindowQuotaLimit() gin.HandlerFunc {
 }
 
 // checkTokenWindowQuota returns true if the request was aborted because the window quota was exceeded.
+// It also exposes the window's used/total quota via response headers so callers can track consumption.
 func checkTokenWindowQuota(c *gin.Context, tokenId int, window model.TokenQuotaWindow, limit int) bool {
 	usage, err := model.GetTokenWindowUsage(tokenId, window)
 	if err != nil {
 		common.SysLog("failed to get token window usage: " + err.Error())
 		return false
 	}
+
+	setTokenWindowQuotaHeaders(c, window, usage.Used, limit)
+
 	if usage.Used < int64(limit) {
 		return false
 	}
@@ -64,4 +69,11 @@ func checkTokenWindowQuota(c *gin.Context, tokenId int, window model.TokenQuotaW
 	})
 	abortWithOpenAiMessage(c, http.StatusTooManyRequests, message, types.ErrorCodeTokenWindowQuotaExceeded)
 	return true
+}
+
+// setTokenWindowQuotaHeaders reports a token's rolling-window usage (e.g. "X-New-Api-Quota-5h-Used",
+// "X-New-Api-Quota-5h-Limit") so clients can track consumption without polling the token API.
+func setTokenWindowQuotaHeaders(c *gin.Context, window model.TokenQuotaWindow, used int64, limit int) {
+	c.Header("X-New-Api-Quota-"+window.Name+"-Used", strconv.FormatInt(used, 10))
+	c.Header("X-New-Api-Quota-"+window.Name+"-Limit", strconv.Itoa(limit))
 }

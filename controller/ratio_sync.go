@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -890,14 +891,23 @@ func convertOpenRouterToRatioData(reader io.Reader) (map[string]any, error) {
 	return converted, nil
 }
 
+// claudeVersionDotPattern matches decimal version numbers (e.g. "4.5" in claude-opus-4.5) so they
+// can be rewritten from OpenRouter's dot form to Anthropic's own dash form (claude-opus-4-5).
+var claudeVersionDotPattern = regexp.MustCompile(`(\d+)\.(\d+)`)
+
 // simplifyOpenRouterModelID strips the "provider/" prefix from OpenRouter model IDs and
 // discards variant entries that contain ":" (e.g. ":nitro", ":free", ":extended", ":batch").
+// For Claude models, OpenRouter's version number uses a dot (e.g. claude-opus-4.5) while
+// Anthropic's own naming uses a dash (e.g. claude-opus-4-5); this normalizes to the latter.
 func simplifyOpenRouterModelID(id string) (string, bool) {
 	if strings.Contains(id, ":") {
 		return "", false
 	}
 	if idx := strings.IndexByte(id, '/'); idx >= 0 {
-		return id[idx+1:], true
+		id = id[idx+1:]
+	}
+	if strings.HasPrefix(id, "claude-") {
+		id = claudeVersionDotPattern.ReplaceAllString(id, "$1-$2")
 	}
 	return id, true
 }

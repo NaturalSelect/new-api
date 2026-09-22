@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/service"
 
@@ -41,6 +42,9 @@ const (
 	modelsDevPresetID           = -101
 	modelsDevPresetName         = "models.dev 价格预设"
 	modelsDevPresetBaseURL      = "https://models.dev"
+	openRouterPresetID          = -102
+	openRouterPresetName        = "OpenRouter 价格预设"
+	openRouterPresetBaseURL     = "https://openrouter.ai/api"
 	modelsDevHost               = "models.dev"
 	modelsDevPath               = "/api.json"
 	modelsDevInputCostRatioBase = 1000.0
@@ -293,8 +297,8 @@ func FetchUpstreamRatios(c *gin.Context) {
 				return
 			}
 
-			// OpenRouter requires Bearer token auth
-			if isOpenRouter && chItem.ID != 0 {
+			// OpenRouter: preset (negative ID) uses public API, real channels require Bearer token
+			if isOpenRouter && chItem.ID > 0 {
 				dbCh, err := model.GetChannelById(chItem.ID, true)
 				if err != nil {
 					ch <- upstreamResult{Name: uniqueName, Err: "failed to get channel key: " + err.Error()}
@@ -310,9 +314,6 @@ func FetchUpstreamRatios(c *gin.Context) {
 					return
 				}
 				httpReq.Header.Set("Authorization", "Bearer "+strings.TrimSpace(key))
-			} else if isOpenRouter {
-				ch <- upstreamResult{Name: uniqueName, Err: "OpenRouter requires a valid channel with API key"}
-				return
 			}
 
 			// 简单重试：最多 3 次，指数退避
@@ -1054,6 +1055,14 @@ func GetSyncableChannels(c *gin.Context) {
 		Name:    modelsDevPresetName,
 		BaseURL: modelsDevPresetBaseURL,
 		Status:  1,
+	})
+
+	syncableChannels = append(syncableChannels, dto.SyncableChannel{
+		ID:      openRouterPresetID,
+		Name:    openRouterPresetName,
+		BaseURL: openRouterPresetBaseURL,
+		Status:  1,
+		Type:    constant.ChannelTypeOpenRouter,
 	})
 
 	c.JSON(http.StatusOK, gin.H{

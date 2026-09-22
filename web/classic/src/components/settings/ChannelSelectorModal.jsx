@@ -37,10 +37,13 @@ import { IconSearch } from '@douyinfe/semi-icons';
 
 const OFFICIAL_RATIO_PRESET_ID = -100;
 const MODELS_DEV_PRESET_ID = -101;
+const OPENROUTER_PRESET_ID = -102;
 const OFFICIAL_RATIO_PRESET_NAME = '官方倍率预设';
 const MODELS_DEV_PRESET_NAME = 'models.dev 价格预设';
+const OPENROUTER_PRESET_NAME = 'OpenRouter 价格预设';
 const OFFICIAL_RATIO_PRESET_BASE_URL = 'https://basellm.github.io';
 const MODELS_DEV_PRESET_BASE_URL = 'https://models.dev';
+const OPENROUTER_PRESET_BASE_URL = 'https://openrouter.ai/api';
 
 const ChannelSelectorModal = forwardRef(
   (
@@ -79,10 +82,13 @@ const ChannelSelectorModal = forwardRef(
       return (
         id === OFFICIAL_RATIO_PRESET_ID ||
         id === MODELS_DEV_PRESET_ID ||
+        id === OPENROUTER_PRESET_ID ||
         base === OFFICIAL_RATIO_PRESET_BASE_URL ||
         base === MODELS_DEV_PRESET_BASE_URL ||
+        base === OPENROUTER_PRESET_BASE_URL ||
         name === OFFICIAL_RATIO_PRESET_NAME ||
-        name === MODELS_DEV_PRESET_NAME
+        name === MODELS_DEV_PRESET_NAME ||
+        name === OPENROUTER_PRESET_NAME
       );
     };
 

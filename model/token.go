@@ -28,6 +28,12 @@ type Token struct {
 	UsedQuota          int            `json:"used_quota" gorm:"default:0"` // used quota
 	Group              string         `json:"group" gorm:"default:''"`
 	CrossGroupRetry    bool           `json:"cross_group_retry"` // 跨分组重试，仅auto分组有效
+	QuotaLimit5h       int            `json:"quota_limit_5h" gorm:"column:quota_limit_5h;default:0"`  // 0 = 不限
+	QuotaLimit7d       int            `json:"quota_limit_7d" gorm:"column:quota_limit_7d;default:0"`  // 0 = 不限
+	QuotaUsed5h        int64          `json:"quota_used_5h" gorm:"-"`
+	QuotaUsed7d        int64          `json:"quota_used_7d" gorm:"-"`
+	QuotaReset5h       int64          `json:"quota_reset_5h" gorm:"-"`
+	QuotaReset7d       int64          `json:"quota_reset_7d" gorm:"-"`
 	DeletedAt          gorm.DeletedAt `gorm:"index"`
 }
 
@@ -295,7 +301,8 @@ func (token *Token) Update() (err error) {
 		}
 	}()
 	err = DB.Model(token).Select("name", "status", "expired_time", "remain_quota", "unlimited_quota",
-		"model_limits_enabled", "model_limits", "allow_ips", "group", "cross_group_retry").Updates(token).Error
+		"model_limits_enabled", "model_limits", "allow_ips", "group", "cross_group_retry",
+		"quota_limit_5h", "quota_limit_7d").Updates(token).Error
 	return err
 }
 
@@ -376,6 +383,7 @@ func IncreaseTokenQuota(tokenId int, key string, quota int) (err error) {
 	if quota < 0 {
 		return errors.New("quota 不能为负数！")
 	}
+	addTokenWindowUsage(tokenId, -int64(quota))
 	if common.RedisEnabled {
 		gopool.Go(func() {
 			err := cacheIncrTokenQuota(key, int64(quota))
@@ -406,6 +414,7 @@ func DecreaseTokenQuota(id int, key string, quota int) (err error) {
 	if quota < 0 {
 		return errors.New("quota 不能为负数！")
 	}
+	addTokenWindowUsage(id, int64(quota))
 	if common.RedisEnabled {
 		gopool.Go(func() {
 			err := cacheDecrTokenQuota(key, int64(quota))

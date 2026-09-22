@@ -181,6 +181,37 @@ function ApiKeysMobileList({
                 </span>
               )}
             </div>
+
+            {(apiKey.quota_limit_5h > 0 || apiKey.quota_limit_7d > 0) && (
+              <div className='flex items-center justify-between gap-2 text-xs'>
+                <span className='text-muted-foreground'>
+                  {t('Rolling Limits')}
+                </span>
+                <span className='font-medium tabular-nums'>
+                  {apiKey.quota_limit_5h > 0 && (
+                    <span>
+                      {t('5h')} {formatQuota(apiKey.quota_used_5h)}
+                      <span className='text-muted-foreground font-normal'>
+                        {' / '}
+                        {formatQuota(apiKey.quota_limit_5h)}
+                      </span>
+                    </span>
+                  )}
+                  {apiKey.quota_limit_5h > 0 && apiKey.quota_limit_7d > 0 && (
+                    <span className='text-muted-foreground'>{' · '}</span>
+                  )}
+                  {apiKey.quota_limit_7d > 0 && (
+                    <span>
+                      {t('7d')} {formatQuota(apiKey.quota_used_7d)}
+                      <span className='text-muted-foreground font-normal'>
+                        {' / '}
+                        {formatQuota(apiKey.quota_limit_7d)}
+                      </span>
+                    </span>
+                  )}
+                </span>
+              </div>
+            )}
           </div>
         )
       })}

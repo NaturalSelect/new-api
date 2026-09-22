@@ -38,19 +38,41 @@ export function getApiKeyFormSchema(t: TFunction) {
       group: z.string().optional(),
       cross_group_retry: z.boolean().optional(),
       tokenCount: z.number().min(1).optional(),
+      quota_limit_5h_dollars: z.number().optional(),
+      quota_limit_7d_dollars: z.number().optional(),
     })
     .superRefine((data, ctx) => {
-      if (data.unlimited_quota) {
-        return
+      if (!data.unlimited_quota) {
+        if (
+          data.remain_quota_dollars === undefined ||
+          data.remain_quota_dollars < 0
+        ) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['remain_quota_dollars'],
+            message: t('Quota must be zero or greater'),
+          })
+        }
       }
 
       if (
-        data.remain_quota_dollars === undefined ||
-        data.remain_quota_dollars < 0
+        data.quota_limit_5h_dollars !== undefined &&
+        data.quota_limit_5h_dollars < 0
       ) {
         ctx.addIssue({
           code: 'custom',
-          path: ['remain_quota_dollars'],
+          path: ['quota_limit_5h_dollars'],
+          message: t('Quota must be zero or greater'),
+        })
+      }
+
+      if (
+        data.quota_limit_7d_dollars !== undefined &&
+        data.quota_limit_7d_dollars < 0
+      ) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['quota_limit_7d_dollars'],
           message: t('Quota must be zero or greater'),
         })
       }
@@ -73,6 +95,8 @@ export const API_KEY_FORM_DEFAULT_VALUES: ApiKeyFormValues = {
   group: DEFAULT_GROUP,
   cross_group_retry: true,
   tokenCount: 1,
+  quota_limit_5h_dollars: 0,
+  quota_limit_7d_dollars: 0,
 }
 
 export function getApiKeyFormDefaultValues(
@@ -109,6 +133,8 @@ export function transformFormDataToPayload(
     allow_ips: data.allow_ips || '',
     group: data.group || '',
     cross_group_retry: data.group === 'auto' ? !!data.cross_group_retry : false,
+    quota_limit_5h: parseQuotaFromDollars(data.quota_limit_5h_dollars || 0),
+    quota_limit_7d: parseQuotaFromDollars(data.quota_limit_7d_dollars || 0),
   }
 }
 
@@ -135,5 +161,7 @@ export function transformApiKeyToFormDefaults(
     group: apiKey.group || DEFAULT_GROUP,
     cross_group_retry: !!apiKey.cross_group_retry,
     tokenCount: 1,
+    quota_limit_5h_dollars: quotaUnitsToDollars(apiKey.quota_limit_5h || 0),
+    quota_limit_7d_dollars: quotaUnitsToDollars(apiKey.quota_limit_7d || 0),
   }
 }

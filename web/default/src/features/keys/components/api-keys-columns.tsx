@@ -47,6 +47,51 @@ function getQuotaProgressColor(percentage: number): string {
   return '[&_[data-slot=progress-indicator]]:bg-emerald-500'
 }
 
+function WindowUsageBar({
+  label,
+  used,
+  limit,
+  resetAt,
+}: {
+  label: string
+  used: number
+  limit: number
+  resetAt: number
+}) {
+  const { t } = useTranslation()
+  const percentage = limit > 0 ? Math.max(0, 100 - (used / limit) * 100) : 0
+
+  return (
+    <Tooltip>
+      <TooltipTrigger render={<div className='w-[150px] space-y-1' />}>
+        <div className='flex justify-between text-xs'>
+          <span className='font-medium tabular-nums'>{label}</span>
+          <span className='text-muted-foreground tabular-nums'>
+            {formatQuota(used)} / {formatQuota(limit)}
+          </span>
+        </div>
+        <Progress
+          value={percentage}
+          className={cn('h-1.5', getQuotaProgressColor(percentage))}
+        />
+      </TooltipTrigger>
+      <TooltipContent>
+        <div className='space-y-1 text-xs'>
+          <div>
+            {t('Used:')} {formatQuota(used)}
+          </div>
+          <div>
+            {t('Limit:')} {formatQuota(limit)}
+          </div>
+          <div>
+            {t('Resets at:')} {formatTimestampToDate(resetAt)}
+          </div>
+        </div>
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
 function useGroupRatios(): Record<string, number> {
   const { data } = useQuery({
     queryKey: ['user-self-groups'],
@@ -190,6 +235,42 @@ export function useApiKeysColumns(): ColumnDef<ApiKey>[] {
         )
       },
       meta: { label: t('Quota') },
+    },
+    {
+      id: 'window_limits',
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Rolling Limits')} />
+      ),
+      cell: ({ row }) => {
+        const apiKey = row.original
+        const hasWindowLimits =
+          apiKey.quota_limit_5h > 0 || apiKey.quota_limit_7d > 0
+        if (!hasWindowLimits) {
+          return <span className='text-muted-foreground text-xs'>-</span>
+        }
+        return (
+          <div className='flex flex-col gap-1.5'>
+            {apiKey.quota_limit_5h > 0 && (
+              <WindowUsageBar
+                label={t('5h')}
+                used={apiKey.quota_used_5h}
+                limit={apiKey.quota_limit_5h}
+                resetAt={apiKey.quota_reset_5h}
+              />
+            )}
+            {apiKey.quota_limit_7d > 0 && (
+              <WindowUsageBar
+                label={t('7d')}
+                used={apiKey.quota_used_7d}
+                limit={apiKey.quota_limit_7d}
+                resetAt={apiKey.quota_reset_7d}
+              />
+            )}
+          </div>
+        )
+      },
+      enableSorting: false,
+      meta: { label: t('Rolling Limits'), mobileHidden: true },
     },
     {
       accessorKey: 'group',

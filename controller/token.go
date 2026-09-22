@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -20,7 +21,39 @@ func buildMaskedTokenResponse(token *model.Token) *model.Token {
 	}
 	maskedToken := *token
 	maskedToken.Key = token.GetMaskedKey()
+	if maskedToken.QuotaLimit5h > 0 {
+		if usage, err := model.GetTokenWindowUsage(token.Id, model.TokenQuotaWindow5h); err == nil {
+			maskedToken.QuotaUsed5h = usage.Used
+			maskedToken.QuotaReset5h = usage.ResetAt
+		} else {
+			common.SysLog("failed to get token 5h window usage: " + err.Error())
+		}
+	}
+	if maskedToken.QuotaLimit7d > 0 {
+		if usage, err := model.GetTokenWindowUsage(token.Id, model.TokenQuotaWindow7d); err == nil {
+			maskedToken.QuotaUsed7d = usage.Used
+			maskedToken.QuotaReset7d = usage.ResetAt
+		} else {
+			common.SysLog("failed to get token 7d window usage: " + err.Error())
+		}
+	}
 	return &maskedToken
+}
+
+// validateTokenWindowQuota validates the 5h/7d rolling quota limit fields (0 = unlimited).
+func validateTokenWindowQuota(c *gin.Context, quotaLimit5h int, quotaLimit7d int) error {
+	maxQuotaValue := int(1000000000 * common.QuotaPerUnit)
+	if quotaLimit5h < 0 || quotaLimit7d < 0 {
+		err := errors.New("quota limit cannot be negative")
+		common.ApiErrorI18n(c, i18n.MsgTokenQuotaNegative)
+		return err
+	}
+	if quotaLimit5h > maxQuotaValue || quotaLimit7d > maxQuotaValue {
+		err := errors.New("quota limit exceeds max")
+		common.ApiErrorI18n(c, i18n.MsgTokenQuotaExceedMax, map[string]any{"Max": maxQuotaValue})
+		return err
+	}
+	return nil
 }
 
 func buildMaskedTokenResponses(tokens []*model.Token) []*model.Token {
@@ -187,6 +220,9 @@ func AddToken(c *gin.Context) {
 			return
 		}
 	}
+	if err := validateTokenWindowQuota(c, token.QuotaLimit5h, token.QuotaLimit7d); err != nil {
+		return
+	}
 	// 检查用户令牌数量是否已达上限
 	maxTokens := operation_setting.GetMaxUserTokens()
 	count, err := model.CountUserTokens(c.GetInt("id"))
@@ -221,6 +257,8 @@ func AddToken(c *gin.Context) {
 		AllowIps:           token.AllowIps,
 		Group:              token.Group,
 		CrossGroupRetry:    token.CrossGroupRetry,
+		QuotaLimit5h:       token.QuotaLimit5h,
+		QuotaLimit7d:       token.QuotaLimit7d,
 	}
 	err = cleanToken.Insert()
 	if err != nil {
@@ -271,6 +309,9 @@ func UpdateToken(c *gin.Context) {
 			return
 		}
 	}
+	if err := validateTokenWindowQuota(c, token.QuotaLimit5h, token.QuotaLimit7d); err != nil {
+		return
+	}
 	cleanToken, err := model.GetTokenByIds(token.Id, userId)
 	if err != nil {
 		common.ApiError(c, err)
@@ -299,6 +340,8 @@ func UpdateToken(c *gin.Context) {
 		cleanToken.AllowIps = token.AllowIps
 		cleanToken.Group = token.Group
 		cleanToken.CrossGroupRetry = token.CrossGroupRetry
+		cleanToken.QuotaLimit5h = token.QuotaLimit5h
+		cleanToken.QuotaLimit7d = token.QuotaLimit7d
 	}
 	err = cleanToken.Update()
 	if err != nil {

@@ -45,6 +45,12 @@ export const apiKeySchema = z.object({
   model_limits_enabled: z.boolean(),
   model_limits: z.string().nullish().default(''),
   allow_ips: z.string().nullish().default(''),
+  quota_limit_5h: z.number().nullable().transform((v) => v ?? 0).default(0),
+  quota_limit_7d: z.number().nullable().transform((v) => v ?? 0).default(0),
+  quota_used_5h: z.number().nullable().transform((v) => v ?? 0).default(0),
+  quota_used_7d: z.number().nullable().transform((v) => v ?? 0).default(0),
+  quota_reset_5h: z.number().nullable().transform((v) => v ?? 0).default(0),
+  quota_reset_7d: z.number().nullable().transform((v) => v ?? 0).default(0),
 })
 
 export type ApiKey = z.infer<typeof apiKeySchema>
@@ -92,6 +98,8 @@ export interface ApiKeyFormData {
   allow_ips: string
   group: string
   cross_group_retry: boolean
+  quota_limit_5h: number
+  quota_limit_7d: number
 }
 
 // ============================================================================

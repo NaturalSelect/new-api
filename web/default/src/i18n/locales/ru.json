@@ -49,6 +49,8 @@
     "{{modality}} not supported": "{{modality}} не поддерживается",
     "{{modality}} supported": "{{modality}} поддерживается",
     "{{n}} model(s) selected": "Выбрано моделей: {{n}}",
+    "Don't ignore unchecked models": "Не игнорировать неотмеченные модели",
+    "Select models to process. Unchecked \"add\" models will stay pending for next time instead of being ignored.": "Выберите модели для обработки. Неотмеченные модели «для добавления» останутся в ожидании до следующего раза вместо того, чтобы быть проигнорированными.",
     "{{value}}ms": "{{value}} мс",
     "{{value}}s": "{{value}} с",
     "@lobehub/icons key": "Ключ @lobehub/icons",

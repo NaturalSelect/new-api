@@ -79,6 +79,7 @@ const ChannelUpstreamUpdateModal = ({
   const [keyword, setKeyword] = useState('');
   const [activeTab, setActiveTab] = useState('add');
   const [partialSubmitConfirmed, setPartialSubmitConfirmed] = useState(false);
+  const [keepUncheckedModels, setKeepUncheckedModels] = useState(true);
 
   const addTabEnabled = normalizedAddModels.length > 0;
   const removeTabEnabled = normalizedRemoveModels.length > 0;
@@ -99,6 +100,7 @@ const ChannelUpstreamUpdateModal = ({
     setSelectedRemoveModels([]);
     setKeyword('');
     setPartialSubmitConfirmed(false);
+    setKeepUncheckedModels(true);
     const normalizedPreferredTab = preferredTab === 'remove' ? 'remove' : 'add';
     if (normalizedPreferredTab === 'remove' && removeTabEnabled) {
       setActiveTab('remove');
@@ -159,6 +161,7 @@ const ChannelUpstreamUpdateModal = ({
     onConfirm?.({
       addModels: selectedAddModels,
       removeModels: selectedRemoveModels,
+      keepUncheckedModels,
     });
   };
 
@@ -222,10 +225,21 @@ const ChannelUpstreamUpdateModal = ({
     >
       <div className='flex flex-col gap-3'>
         <Typography.Text type='secondary' size='small'>
-          {t(
-            '可勾选需要执行的变更：新增会加入渠道模型列表，删除会从渠道模型列表移除。',
-          )}
+          {keepUncheckedModels
+            ? t(
+                '可勾选需要执行的变更：新增会加入渠道模型列表，删除会从渠道模型列表移除；未勾选的新增模型将保留为待处理，不会被忽略。',
+              )
+            : t(
+                '可勾选需要执行的变更：新增会加入渠道模型列表，删除会从渠道模型列表移除。',
+              )}
         </Typography.Text>
+
+        <Checkbox
+          checked={keepUncheckedModels}
+          onChange={(e) => setKeepUncheckedModels(e.target.checked)}
+        >
+          {t('不要忽略未勾选的模型')}
+        </Checkbox>
 
         <Tabs
           type='slash'

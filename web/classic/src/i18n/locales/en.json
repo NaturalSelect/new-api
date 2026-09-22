@@ -1789,6 +1789,8 @@
     "新增 Key 来源": "Add Key Source",
     "新增供应商": "Add vendor",
     "新增失败": "Failed to add",
+    "不要忽略未勾选的模型": "Don't ignore unchecked models",
+    "可勾选需要执行的变更：新增会加入渠道模型列表，删除会从渠道模型列表移除；未勾选的新增模型将保留为待处理，不会被忽略。": "You can check which changes to apply: additions are added to the channel's model list, removals are taken out of it; unchecked additions stay pending instead of being ignored.",
     "新增已选 {{selected}} / {{total}}": "",
     "新增成功": "Added successfully",
     "新增支付方式": "",

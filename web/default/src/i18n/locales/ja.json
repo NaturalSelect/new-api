@@ -49,6 +49,8 @@
     "{{modality}} not supported": "{{modality}} はサポートされていません",
     "{{modality}} supported": "{{modality}} をサポート",
     "{{n}} model(s) selected": "{{n}} 件のモデルを選択済み",
+    "Don't ignore unchecked models": "未選択のモデルを無視しない",
+    "Select models to process. Unchecked \"add\" models will stay pending for next time instead of being ignored.": "処理するモデルを選択してください。チェックを外した「追加」モデルは無視されず、次回のために保留されたままになります。",
     "{{value}}ms": "{{value}}ミリ秒",
     "{{value}}s": "{{value}}秒",
     "@lobehub/icons key": "@lobehub/icons キー",

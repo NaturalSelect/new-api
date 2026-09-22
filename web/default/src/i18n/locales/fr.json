@@ -49,6 +49,8 @@
     "{{modality}} not supported": "{{modality}} non pris en charge",
     "{{modality}} supported": "{{modality}} pris en charge",
     "{{n}} model(s) selected": "{{n}} modèle(s) sélectionné(s)",
+    "Don't ignore unchecked models": "Ne pas ignorer les modèles non cochés",
+    "Select models to process. Unchecked \"add\" models will stay pending for next time instead of being ignored.": "Sélectionnez les modèles à traiter. Les modèles « à ajouter » non cochés resteront en attente pour la prochaine fois au lieu d'être ignorés.",
     "{{value}}ms": "{{value}} ms",
     "{{value}}s": "{{value}} s",
     "@lobehub/icons key": "@lobehub/icons clé",

@@ -29,6 +29,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ConfirmDialog } from '@/components/confirm-dialog'
@@ -40,7 +41,11 @@ interface UpstreamUpdateDialogProps {
   removeModels: string[]
   preferredTab: 'add' | 'remove'
   confirmLoading: boolean
-  onConfirm: (data: { addModels: string[]; removeModels: string[] }) => void
+  onConfirm: (data: {
+    addModels: string[]
+    removeModels: string[]
+    keepUncheckedModels: boolean
+  }) => void
   onCancel: () => void
 }
 
@@ -56,6 +61,7 @@ export function UpstreamUpdateDialog(props: UpstreamUpdateDialogProps) {
     () => new Set(props.removeModels)
   )
   const [partialConfirmOpen, setPartialConfirmOpen] = useState(false)
+  const [keepUncheckedModels, setKeepUncheckedModels] = useState(true)
 
   const filteredAdd = useMemo(
     () =>
@@ -115,6 +121,7 @@ export function UpstreamUpdateDialog(props: UpstreamUpdateDialogProps) {
     props.onConfirm({
       addModels: selectedAddArr,
       removeModels: selectedRemoveArr,
+      keepUncheckedModels,
     })
   }
 
@@ -127,10 +134,30 @@ export function UpstreamUpdateDialog(props: UpstreamUpdateDialogProps) {
           </DialogHeader>
 
           <p className='text-muted-foreground text-sm'>
-            {t(
-              'Select models to process. Unselected "add" models will be ignored.'
-            )}
+            {keepUncheckedModels
+              ? t(
+                  'Select models to process. Unchecked "add" models will stay pending for next time instead of being ignored.'
+                )
+              : t(
+                  'Select models to process. Unselected "add" models will be ignored.'
+                )}
           </p>
+
+          <div className='flex items-center space-x-2'>
+            <Checkbox
+              id='keep-unchecked-add-models'
+              checked={keepUncheckedModels}
+              onCheckedChange={(checked) =>
+                setKeepUncheckedModels(!!checked)
+              }
+            />
+            <Label
+              htmlFor='keep-unchecked-add-models'
+              className='cursor-pointer text-sm font-normal'
+            >
+              {t("Don't ignore unchecked models")}
+            </Label>
+          </div>
 
           <Tabs
             value={activeTab}
@@ -300,6 +327,7 @@ export function UpstreamUpdateDialog(props: UpstreamUpdateDialogProps) {
           props.onConfirm({
             addModels: Array.from(selectedAdd),
             removeModels: Array.from(selectedRemove),
+            keepUncheckedModels,
           })
         }}
       />

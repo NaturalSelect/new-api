@@ -92,6 +92,7 @@ export const useChannelUpstreamUpdates = ({ t, refresh }) => {
   const applyUpstreamUpdates = async ({
     addModels: selectedAddModels = [],
     removeModels: selectedRemoveModels = [],
+    keepUncheckedModels = true,
   } = {}) => {
     if (applyUpstreamUpdatesInFlightRef.current) {
       showInfo(t('正在处理，请稍候'));
@@ -109,9 +110,10 @@ export const useChannelUpstreamUpdates = ({ t, refresh }) => {
       const normalizedSelectedRemoveModels =
         normalizeModelList(selectedRemoveModels);
       const selectedAddSet = new Set(normalizedSelectedAddModels);
-      const ignoreModels = upstreamUpdateAddModels.filter(
-        (model) => !selectedAddSet.has(model),
-      );
+      // 开启后，未勾选的新增候选模型不会被永久加入忽略列表，而是保留为待处理。
+      const ignoreModels = keepUncheckedModels
+        ? []
+        : upstreamUpdateAddModels.filter((model) => !selectedAddSet.has(model));
 
       const res = await API.post(
         '/api/channel/upstream_updates/apply',

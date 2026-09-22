@@ -49,6 +49,8 @@
     "{{modality}} not supported": "不支持 {{modality}}",
     "{{modality}} supported": "支持 {{modality}}",
     "{{n}} model(s) selected": "已选 {{n}} 个模型",
+    "Don't ignore unchecked models": "不要忽略未勾选的模型",
+    "Select models to process. Unchecked \"add\" models will stay pending for next time instead of being ignored.": "勾选要处理的模型；未勾选的「新增」模型将保留为待处理状态，下次仍会展示，而不会被忽略。",
     "{{value}}ms": "{{value}} 毫秒",
     "{{value}}s": "{{value}} 秒",
     "@lobehub/icons key": "@lobehub/icons 键",

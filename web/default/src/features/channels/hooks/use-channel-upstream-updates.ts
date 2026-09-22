@@ -98,9 +98,11 @@ export function useChannelUpstreamUpdates(refresh: () => Promise<void>) {
     async ({
       addModels: selectedAdd = [],
       removeModels: selectedRemove = [],
+      keepUncheckedModels = true,
     }: {
       addModels?: string[]
       removeModels?: string[]
+      keepUncheckedModels?: boolean
     } = {}) => {
       if (applyRef.current) return
       if (!channel?.id) {
@@ -112,7 +114,11 @@ export function useChannelUpstreamUpdates(refresh: () => Promise<void>) {
       try {
         const normSelectedAdd = normalizeModelList(selectedAdd)
         const selectedAddSet = new Set(normSelectedAdd)
-        const ignoreModels = addModels.filter((m) => !selectedAddSet.has(m))
+        // When enabled, unchecked "add" candidates are left pending instead
+        // of being permanently persisted to the channel's ignore list.
+        const ignoreModels = keepUncheckedModels
+          ? []
+          : addModels.filter((m) => !selectedAddSet.has(m))
 
         const res = await api.post(
           '/api/channel/upstream_updates/apply',

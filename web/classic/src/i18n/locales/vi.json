@@ -1754,6 +1754,8 @@
     "新增 Key 来源": "Thêm nguồn Key",
     "新增供应商": "Thêm nhà cung cấp",
     "新增失败": "Thêm thất bại",
+    "不要忽略未勾选的模型": "Không bỏ qua các model chưa chọn",
+    "可勾选需要执行的变更：新增会加入渠道模型列表，删除会从渠道模型列表移除；未勾选的新增模型将保留为待处理，不会被忽略。": "Bạn có thể chọn các thay đổi cần áp dụng: mục thêm sẽ được thêm vào danh sách model của kênh, mục xóa sẽ bị xóa khỏi đó; các mục thêm chưa chọn sẽ vẫn ở trạng thái chờ thay vì bị bỏ qua.",
     "新增已选 {{selected}} / {{total}}": "",
     "新增成功": "Thêm thành công",
     "新增支付方式": "",

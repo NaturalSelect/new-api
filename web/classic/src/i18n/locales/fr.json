@@ -1782,6 +1782,8 @@
     "新增 Key 来源": "Ajouter une source de clé",
     "新增供应商": "Ajouter un fournisseur",
     "新增失败": "Échec de l'ajout",
+    "不要忽略未勾选的模型": "Ne pas ignorer les modèles non cochés",
+    "可勾选需要执行的变更：新增会加入渠道模型列表，删除会从渠道模型列表移除；未勾选的新增模型将保留为待处理，不会被忽略。": "Vous pouvez cocher les modifications à appliquer : les ajouts sont ajoutés à la liste de modèles du canal, les suppressions en sont retirées ; les ajouts non cochés restent en attente au lieu d'être ignorés.",
     "新增已选 {{selected}} / {{total}}": "",
     "新增成功": "Ajouté avec succès",
     "新增支付方式": "",

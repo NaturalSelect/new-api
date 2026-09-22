@@ -49,6 +49,8 @@
     "{{modality}} not supported": "Không hỗ trợ {{modality}}",
     "{{modality}} supported": "Hỗ trợ {{modality}}",
     "{{n}} model(s) selected": "Đã chọn {{n}} model",
+    "Don't ignore unchecked models": "Không bỏ qua các model chưa chọn",
+    "Select models to process. Unchecked \"add\" models will stay pending for next time instead of being ignored.": "Chọn các model cần xử lý. Các model \"thêm mới\" chưa được chọn sẽ vẫn ở trạng thái chờ cho lần sau thay vì bị bỏ qua.",
     "{{value}}ms": "{{value}} ms",
     "{{value}}s": "{{value}} s",
     "@lobehub/icons key": "@lobehub/icons khóa",

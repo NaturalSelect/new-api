@@ -51,7 +51,7 @@ func checkTokenWindowQuota(c *gin.Context, tokenId int, window model.TokenQuotaW
 		return false
 	}
 
-	setTokenWindowQuotaHeaders(c, window, usage.Used, limit)
+	setTokenWindowQuotaHeaders(c, window, usage, limit)
 
 	if usage.Used < int64(limit) {
 		return false
@@ -73,7 +73,18 @@ func checkTokenWindowQuota(c *gin.Context, tokenId int, window model.TokenQuotaW
 
 // setTokenWindowQuotaHeaders reports a token's rolling-window usage (e.g. "X-New-Api-Quota-5h-Used",
 // "X-New-Api-Quota-5h-Limit") so clients can track consumption without polling the token API.
-func setTokenWindowQuotaHeaders(c *gin.Context, window model.TokenQuotaWindow, used int64, limit int) {
-	c.Header("X-New-Api-Quota-"+window.Name+"-Used", strconv.FormatInt(used, 10))
-	c.Header("X-New-Api-Quota-"+window.Name+"-Limit", strconv.Itoa(limit))
+func setTokenWindowQuotaHeaders(c *gin.Context, window model.TokenQuotaWindow, usage model.TokenWindowUsage, limit int) {
+	prefix := "X-New-Api-Quota-" + window.Name
+	c.Header(prefix+"-Used", strconv.FormatInt(usage.Used, 10))
+	c.Header(prefix+"-Limit", strconv.Itoa(limit))
+	if common.QuotaPerUnit > 0 {
+		c.Header(prefix+"-Used-Usd", quotaToUsdString(float64(usage.Used)))
+		c.Header(prefix+"-Limit-Usd", quotaToUsdString(float64(limit)))
+	}
+	// NOTE: 0 means nothing is counted in the window yet, so there is nothing to reset.
+	c.Header(prefix+"-Reset-At", strconv.FormatInt(usage.ResetAt, 10))
+}
+
+func quotaToUsdString(quota float64) string {
+	return strconv.FormatFloat(quota/common.QuotaPerUnit, 'f', 6, 64)
 }

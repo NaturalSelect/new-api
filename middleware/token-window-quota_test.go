@@ -7,6 +7,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -63,4 +64,26 @@ func TestTokenWindowQuotaLimit_BothLimitsConfigured_SetsBothHeaderPairs(t *testi
 	require.Equal(t, "100", recorder.Header().Get("X-New-Api-Quota-5h-Limit"))
 	require.Equal(t, "0", recorder.Header().Get("X-New-Api-Quota-7d-Used"))
 	require.Equal(t, "1000", recorder.Header().Get("X-New-Api-Quota-7d-Limit"))
+	require.Equal(t, "0", recorder.Header().Get("X-New-Api-Quota-5h-Reset-At"))
+	require.Equal(t, "0", recorder.Header().Get("X-New-Api-Quota-7d-Reset-At"))
+}
+
+func TestSetTokenWindowQuotaHeaders_IncludesUsdAndResetAt(t *testing.T) {
+	original := common.QuotaPerUnit
+	common.QuotaPerUnit = 500000
+	t.Cleanup(func() { common.QuotaPerUnit = original })
+
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+
+	usage := model.TokenWindowUsage{Used: 1250000, ResetAt: 1790000000}
+	setTokenWindowQuotaHeaders(c, model.TokenQuotaWindow5h, usage, 5000000)
+
+	h := recorder.Header()
+	require.Equal(t, "1250000", h.Get("X-New-Api-Quota-5h-Used"))
+	require.Equal(t, "5000000", h.Get("X-New-Api-Quota-5h-Limit"))
+	require.Equal(t, "2.500000", h.Get("X-New-Api-Quota-5h-Used-Usd"))
+	require.Equal(t, "10.000000", h.Get("X-New-Api-Quota-5h-Limit-Usd"))
+	require.Equal(t, "1790000000", h.Get("X-New-Api-Quota-5h-Reset-At"))
 }

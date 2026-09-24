@@ -19,8 +19,8 @@ var tokenWindowQuotaFlushOnce sync.Once
 
 // StartTokenWindowQuotaFlushTask restores Redis/memory from the last DB snapshot
 // (model.RestoreTokenWindowUsageFromDB), then starts a background goroutine that
-// periodically snapshots every active token's rolling 5h/7d quota usage back into the
-// tokens table. This closes the persistence gap in model/token_window_quota.go, whose
+// periodically snapshots every active token's rolling 5h/7d quota buckets into the
+// token_window_buckets table. This closes the persistence gap in model/token_window_quota.go, whose
 // counters otherwise only ever live in Redis/memory: without it, a Redis restart/eviction
 // or process restart silently resets every token's usage to zero, letting the 5h/7d limit
 // be bypassed. Only runs on the master node, matching every other singleton background task
@@ -45,9 +45,9 @@ func StartTokenWindowQuotaFlushTask() {
 				result.Candidates, result.Restored, len(result.Skips)))
 			for _, skip := range result.Skips {
 				if skip.Failed {
-					logger.LogWarn(ctx, fmt.Sprintf("token window quota restore failed for token=%d window=%s: %s", skip.TokenId, skip.Window, skip.Reason))
+					logger.LogWarn(ctx, fmt.Sprintf("token window quota restore failed for token=%d window=%s bucket=%d: %s", skip.TokenId, skip.Window, skip.BucketStart, skip.Reason))
 				} else {
-					logger.LogDebug(ctx, fmt.Sprintf("token window quota restore skipped token=%d window=%s: %s", skip.TokenId, skip.Window, skip.Reason))
+					logger.LogDebug(ctx, fmt.Sprintf("token window quota restore skipped token=%d window=%s bucket=%d: %s", skip.TokenId, skip.Window, skip.BucketStart, skip.Reason))
 				}
 			}
 		}

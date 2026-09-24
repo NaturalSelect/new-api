@@ -49,6 +49,7 @@ func TestMain(m *testing.M) {
 		&PerfMetric{},
 		&Option{},
 		&TokenStatsCache{},
+		&TokenWindowBucket{},
 	); err != nil {
 		panic("failed to migrate: " + err.Error())
 	}
@@ -72,6 +73,7 @@ func truncateTables(t *testing.T) {
 		DB.Exec("DELETE FROM perf_metrics")
 		DB.Exec("DELETE FROM options")
 		DB.Exec("DELETE FROM token_stats_cache")
+		DB.Exec("DELETE FROM token_window_buckets")
 	})
 }
 

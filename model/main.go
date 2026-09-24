@@ -283,6 +283,7 @@ func migrateDB() error {
 		&PerfMetric{},
 		&PoeLog{},
 		&PoeLogSyncState{},
+		&TokenWindowBucket{},
 		// TokenStatsCache is derived from logs and always lives on LOG_DB. When
 		// LOG_SQL_DSN is unset, LOG_DB == DB and InitLogDB() returns early without
 		// calling migrateLOGDB() (see below) — so it must also be migrated here to
@@ -346,6 +347,7 @@ func migrateDBFast() error {
 		{&PerfMetric{}, "PerfMetric"},
 		{&PoeLog{}, "PoeLog"},
 		{&PoeLogSyncState{}, "PoeLogSyncState"},
+		{&TokenWindowBucket{}, "TokenWindowBucket"},
 		{&WarningLog{}, "WarningLog"},
 	}
 	// 动态计算migration数量，确保errChan缓冲区足够大

@@ -47,7 +47,7 @@ func newFakeClock(t *testing.T, start time.Time) *fakeClock {
 func resetTokenWindowMemory() {
 	tokenWindowMemory.mutex.Lock()
 	defer tokenWindowMemory.mutex.Unlock()
-	tokenWindowMemory.buckets = make(map[int]map[string]map[int64]int64)
+	tokenWindowMemory.windows = make(map[int]map[string]tokenWindowState)
 }
 
 var testWindowBase = time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -60,12 +60,6 @@ func requireWindowUsage(t *testing.T, tokenId int, w TokenQuotaWindow, used int6
 	return usage
 }
 
-func TestBucketStart(t *testing.T) {
-	require.EqualValues(t, testWindowBase.Unix(), bucketStart(testWindowBase, 300))
-	require.EqualValues(t, testWindowBase.Unix(), bucketStart(testWindowBase.Add(299*time.Second), 300))
-	require.EqualValues(t, testWindowBase.Unix()+300, bucketStart(testWindowBase.Add(300*time.Second), 300))
-}
-
 func TestTokenWindowUsage_BasicAddAndGet(t *testing.T) {
 	newFakeClock(t, testWindowBase)
 	tokenId := 1001
@@ -73,23 +67,24 @@ func TestTokenWindowUsage_BasicAddAndGet(t *testing.T) {
 	addTokenWindowUsage(tokenId, 100)
 
 	usage5h := requireWindowUsage(t, tokenId, TokenQuotaWindow5h, 100)
-	require.EqualValues(t, testWindowBase.Add(5*time.Hour+5*time.Minute).Unix(), usage5h.ResetAt)
+	require.EqualValues(t, testWindowBase.Add(5*time.Hour).Unix(), usage5h.ResetAt)
 
 	usage7d := requireWindowUsage(t, tokenId, TokenQuotaWindow7d, 100)
-	require.EqualValues(t, testWindowBase.Add(7*24*time.Hour+time.Hour).Unix(), usage7d.ResetAt)
+	require.EqualValues(t, testWindowBase.Add(7*24*time.Hour).Unix(), usage7d.ResetAt)
 }
 
-func TestTokenWindowUsage_AccumulatesAcrossBuckets(t *testing.T) {
+func TestTokenWindowUsage_AccumulatesWithinWindow(t *testing.T) {
 	clock := newFakeClock(t, testWindowBase)
 	tokenId := 1002
 
 	addTokenWindowUsage(tokenId, 50)
-	addTokenWindowUsage(tokenId, 30) // same 5h bucket
+	addTokenWindowUsage(tokenId, 30) // same window
 	requireWindowUsage(t, tokenId, TokenQuotaWindow5h, 80)
 
-	clock.Advance(300 * time.Second) // roll into the next 5h bucket
+	clock.Advance(10 * time.Minute) // still well inside the 5h window
 	addTokenWindowUsage(tokenId, 20)
-	requireWindowUsage(t, tokenId, TokenQuotaWindow5h, 100)
+	usage := requireWindowUsage(t, tokenId, TokenQuotaWindow5h, 100)
+	require.EqualValues(t, testWindowBase.Add(5*time.Hour).Unix(), usage.ResetAt, "the window's end does not move just because more usage landed in it")
 }
 
 func TestTokenWindowUsage_ResetAtIsWhenUsageActuallyLeaves(t *testing.T) {
@@ -98,31 +93,34 @@ func TestTokenWindowUsage_ResetAtIsWhenUsageActuallyLeaves(t *testing.T) {
 
 	addTokenWindowUsage(tokenId, 100)
 	clock.Advance(time.Hour)
-	usage := requireWindowUsage(t, tokenId, TokenQuotaWindow5h, 100)
+	addTokenWindowUsage(tokenId, 50) // later charge, same window
+	usage := requireWindowUsage(t, tokenId, TokenQuotaWindow5h, 150)
+	require.EqualValues(t, testWindowBase.Add(5*time.Hour).Unix(), usage.ResetAt)
 	resetAt := time.Unix(usage.ResetAt, 0)
-	require.True(t, resetAt.After(clock.Now()), "reset time must be in the future while usage still counts")
 
 	clock.Advance(resetAt.Sub(clock.Now()) - time.Second)
-	requireWindowUsage(t, tokenId, TokenQuotaWindow5h, 100)
+	requireWindowUsage(t, tokenId, TokenQuotaWindow5h, 150)
 
+	// The whole window, including the later 50, resets together the instant it ends.
 	clock.Advance(time.Second)
 	usage = requireWindowUsage(t, tokenId, TokenQuotaWindow5h, 0)
 	require.EqualValues(t, 0, usage.ResetAt)
 
-	// The 7d window only advanced ~5h, so it still holds the usage.
-	requireWindowUsage(t, tokenId, TokenQuotaWindow7d, 100)
+	// The 7d window only advanced ~5h, so it still holds the full usage.
+	requireWindowUsage(t, tokenId, TokenQuotaWindow7d, 150)
 }
 
-func TestTokenWindowUsage_ResetAtTracksEarliestBucket(t *testing.T) {
+func TestTokenWindowUsage_NewWindowOpensOnFirstChargeAfterReset(t *testing.T) {
 	clock := newFakeClock(t, testWindowBase)
 	tokenId := 1006
 
-	addTokenWindowUsage(tokenId, 10) // bucket at base
-	clock.Advance(300 * time.Second) // next 5h bucket
-	addTokenWindowUsage(tokenId, 20)
+	addTokenWindowUsage(tokenId, 100)
+	clock.Advance(6 * time.Hour) // past the 5h window's end
+	requireWindowUsage(t, tokenId, TokenQuotaWindow5h, 0)
 
+	addTokenWindowUsage(tokenId, 30)
 	usage := requireWindowUsage(t, tokenId, TokenQuotaWindow5h, 30)
-	require.EqualValues(t, TokenQuotaWindow5h.expiresAt(testWindowBase.Unix()), usage.ResetAt)
+	require.EqualValues(t, clock.Now().Add(5*time.Hour).Unix(), usage.ResetAt, "the new window starts at this charge, not at the old window's boundary")
 }
 
 func TestIncreaseTokenQuota_DoesNotReduceWindowUsage(t *testing.T) {
@@ -180,12 +178,12 @@ func TestTokenWindowMemoryCleanup_UsesEachWindowLength(t *testing.T) {
 	tokenWindowMemory.cleanup()
 
 	tokenWindowMemory.mutex.Lock()
-	windows := tokenWindowMemory.buckets[tokenId]
+	windows := tokenWindowMemory.windows[tokenId]
 	_, has5h := windows[TokenQuotaWindow5h.Name]
 	_, has7d := windows[TokenQuotaWindow7d.Name]
 	tokenWindowMemory.mutex.Unlock()
-	require.False(t, has5h, "expired 5h buckets should be dropped")
-	require.True(t, has7d, "7d buckets are still inside their window")
+	require.False(t, has5h, "the ended 5h window should be dropped")
+	require.True(t, has7d, "the 7d window is still inside its lifetime")
 
 	clock.Advance(7 * 24 * time.Hour)
 	tokenWindowMemory.cleanup()
@@ -205,7 +203,7 @@ func TestFlushActiveTokenWindowUsage_PersistsBuckets(t *testing.T) {
 	tokenId := 3001
 
 	addTokenWindowUsage(tokenId, 100)
-	clock.Advance(10 * time.Minute)
+	clock.Advance(10 * time.Minute) // still the same 5h/7d window
 	addTokenWindowUsage(tokenId, 20)
 
 	flushed, err := FlushActiveTokenWindowUsage()
@@ -213,8 +211,7 @@ func TestFlushActiveTokenWindowUsage_PersistsBuckets(t *testing.T) {
 	require.Equal(t, 1, flushed)
 
 	require.Equal(t, []TokenWindowBucket{
-		{TokenId: tokenId, WindowName: "5h", BucketStart: testWindowBase.Unix(), Used: 100},
-		{TokenId: tokenId, WindowName: "5h", BucketStart: testWindowBase.Add(10 * time.Minute).Unix(), Used: 20},
+		{TokenId: tokenId, WindowName: "5h", BucketStart: testWindowBase.Unix(), Used: 120},
 		{TokenId: tokenId, WindowName: "7d", BucketStart: testWindowBase.Unix(), Used: 120},
 	}, persistedTokenWindowBuckets(t, tokenId))
 
@@ -243,7 +240,7 @@ func TestFlushActiveTokenWindowUsage_RemovesExpiredBucketsOfActiveToken(t *testi
 	require.NoError(t, err)
 	require.Len(t, persistedTokenWindowBuckets(t, tokenId), 2)
 
-	// The 5h bucket expires while the token stays active through its 7d bucket.
+	// The 5h window ends while the token's 7d window is still open.
 	clock.Advance(6 * time.Hour)
 	flushed, err := FlushActiveTokenWindowUsage()
 	require.NoError(t, err)
@@ -258,6 +255,26 @@ func TestFlushActiveTokenWindowUsage_RemovesExpiredBucketsOfActiveToken(t *testi
 	require.NoError(t, err)
 	requireWindowUsage(t, tokenId, TokenQuotaWindow5h, 0)
 	requireWindowUsage(t, tokenId, TokenQuotaWindow7d, 100)
+}
+
+func TestFlushActiveTokenWindowUsage_ReplacesRowWhenNewWindowOpens(t *testing.T) {
+	truncateTables(t)
+	clock := newFakeClock(t, testWindowBase)
+	tokenId := 3008
+
+	addTokenWindowUsage(tokenId, 100)
+	_, err := FlushActiveTokenWindowUsage()
+	require.NoError(t, err)
+
+	clock.Advance(6 * time.Hour) // 5h window rolls over; 7d window is still the same one
+	addTokenWindowUsage(tokenId, 30)
+	_, err = FlushActiveTokenWindowUsage()
+	require.NoError(t, err)
+
+	require.Equal(t, []TokenWindowBucket{
+		{TokenId: tokenId, WindowName: "5h", BucketStart: testWindowBase.Add(6 * time.Hour).Unix(), Used: 30},
+		{TokenId: tokenId, WindowName: "7d", BucketStart: testWindowBase.Unix(), Used: 130},
+	}, persistedTokenWindowBuckets(t, tokenId))
 }
 
 func TestFlushActiveTokenWindowUsage_PrunesExpiredRows(t *testing.T) {
@@ -284,13 +301,13 @@ func TestRestoreTokenWindowUsageFromDB_ResumesAfterRestart(t *testing.T) {
 	tokenId := 3004
 
 	addTokenWindowUsage(tokenId, 100)
-	clock.Advance(2 * time.Hour)
+	clock.Advance(2 * time.Hour) // still inside the 5h window
 	addTokenWindowUsage(tokenId, 20)
 	_, err := FlushActiveTokenWindowUsage()
 	require.NoError(t, err)
 	before := requireWindowUsage(t, tokenId, TokenQuotaWindow5h, 120)
 
-	// Simulate a Redis/process restart losing all buckets.
+	// Simulate a Redis/process restart losing all window state.
 	resetTokenWindowMemory()
 	clock.Advance(time.Minute)
 	requireWindowUsage(t, tokenId, TokenQuotaWindow5h, 0)
@@ -305,9 +322,10 @@ func TestRestoreTokenWindowUsageFromDB_ResumesAfterRestart(t *testing.T) {
 	require.Equal(t, before.ResetAt, after.ResetAt)
 	requireWindowUsage(t, tokenId, TokenQuotaWindow7d, 120)
 
-	// Each restored bucket still expires on its own schedule.
+	// The whole window resets together once it ends, regardless of when within it each
+	// charge landed.
 	clock.Advance(time.Unix(after.ResetAt, 0).Sub(clock.Now()))
-	requireWindowUsage(t, tokenId, TokenQuotaWindow5h, 20)
+	requireWindowUsage(t, tokenId, TokenQuotaWindow5h, 0)
 }
 
 func TestRestoreTokenWindowUsageFromDB_SkipsExpiredBuckets(t *testing.T) {
@@ -334,12 +352,14 @@ func TestRestoreTokenWindowUsageFromDB_DoesNotClobberLiveUsage(t *testing.T) {
 	earlier := testWindowBase.Add(-time.Hour).Unix()
 	require.NoError(t, DB.Create(&TokenWindowBucket{TokenId: tokenId, WindowName: "5h", BucketStart: earlier, Used: 80}).Error)
 
-	// Live traffic already recorded usage in the current bucket before restore runs.
+	// Live traffic already opened a fresh window before restore runs, because the
+	// persisted window's data had not yet been seeded back.
 	addTokenWindowUsage(tokenId, 20)
 
 	_, err := RestoreTokenWindowUsageFromDB()
 	require.NoError(t, err)
-	requireWindowUsage(t, tokenId, TokenQuotaWindow5h, 100)
+	usage := requireWindowUsage(t, tokenId, TokenQuotaWindow5h, 100)
+	require.EqualValues(t, TokenQuotaWindow5h.endsAt(earlier), usage.ResetAt, "the merged window keeps the persisted (earlier) start")
 }
 
 func TestRestoreTokenWindowUsageFromDB_ReportsSkipWhenBucketAlreadySeeded(t *testing.T) {
@@ -355,9 +375,9 @@ func TestRestoreTokenWindowUsageFromDB_ReportsSkipWhenBucketAlreadySeeded(t *tes
 	require.Equal(t, 1, first.Restored)
 	require.Empty(t, first.Skips)
 
-	// Same snapshot, same target bucket: the second restore (e.g. a duplicate startup
-	// call) must not double count, and must report exactly which bucket it skipped and
-	// that the skip was benign (bucket already live), not a failure.
+	// Same snapshot, same target window: the second restore (e.g. a duplicate startup
+	// call) must not double count, and must report exactly which window it skipped and
+	// that the skip was benign (window already live), not a failure.
 	second, err := RestoreTokenWindowUsageFromDB()
 	require.NoError(t, err)
 	require.Equal(t, 1, second.Candidates)
@@ -365,9 +385,33 @@ func TestRestoreTokenWindowUsageFromDB_ReportsSkipWhenBucketAlreadySeeded(t *tes
 	require.Len(t, second.Skips, 1)
 	require.Equal(t, tokenId, second.Skips[0].TokenId)
 	require.Equal(t, TokenQuotaWindow5h.Name, second.Skips[0].Window)
-	require.Equal(t, bucket, second.Skips[0].BucketStart)
+	require.Equal(t, bucket, second.Skips[0].WindowStart)
 	require.False(t, second.Skips[0].Failed)
 	require.NotEmpty(t, second.Skips[0].Reason)
 
 	requireWindowUsage(t, tokenId, TokenQuotaWindow5h, 80)
+}
+
+func TestRestoreTokenWindowUsageFromDB_MergesLegacyBucketRows(t *testing.T) {
+	truncateTables(t)
+	newFakeClock(t, testWindowBase)
+	tokenId := 3009
+
+	// Two rows left over from the previous bucketed implementation, both still unexpired.
+	earlier := testWindowBase.Add(-4 * time.Hour).Unix()
+	later := testWindowBase.Add(-2 * time.Hour).Unix()
+	require.NoError(t, DB.Create(&TokenWindowBucket{TokenId: tokenId, WindowName: "5h", BucketStart: earlier, Used: 30}).Error)
+	require.NoError(t, DB.Create(&TokenWindowBucket{TokenId: tokenId, WindowName: "5h", BucketStart: later, Used: 50}).Error)
+
+	result, err := RestoreTokenWindowUsageFromDB()
+	require.NoError(t, err)
+	require.Equal(t, 1, result.Restored)
+	usage := requireWindowUsage(t, tokenId, TokenQuotaWindow5h, 80)
+	require.EqualValues(t, TokenQuotaWindow5h.endsAt(earlier), usage.ResetAt)
+
+	_, err = FlushActiveTokenWindowUsage()
+	require.NoError(t, err)
+	require.Equal(t, []TokenWindowBucket{
+		{TokenId: tokenId, WindowName: "5h", BucketStart: earlier, Used: 80},
+	}, persistedTokenWindowBuckets(t, tokenId))
 }

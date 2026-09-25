@@ -14,7 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// TokenWindowQuotaLimit enforces the per-token rolling 5h/7d quota limits (0 = unlimited).
+// TokenWindowQuotaLimit enforces the per-token 5h/7d quota limits (0 = unlimited).
 // It must run after TokenAuth() so token_id/token_quota_limit_5h/7d are already in context.
 func TokenWindowQuotaLimit() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -71,7 +71,7 @@ func checkTokenWindowQuota(c *gin.Context, tokenId int, window model.TokenQuotaW
 	return true
 }
 
-// setTokenWindowQuotaHeaders reports a token's rolling-window usage (e.g. "X-New-Api-Quota-5h-Used",
+// setTokenWindowQuotaHeaders reports a token's window usage (e.g. "X-New-Api-Quota-5h-Used",
 // "X-New-Api-Quota-5h-Limit") so clients can track consumption without polling the token API.
 func setTokenWindowQuotaHeaders(c *gin.Context, window model.TokenQuotaWindow, usage model.TokenWindowUsage, limit int) {
 	prefix := "X-New-Api-Quota-" + window.Name
@@ -81,7 +81,7 @@ func setTokenWindowQuotaHeaders(c *gin.Context, window model.TokenQuotaWindow, u
 		c.Header(prefix+"-Used-Usd", quotaToUsdString(float64(usage.Used)))
 		c.Header(prefix+"-Limit-Usd", quotaToUsdString(float64(limit)))
 	}
-	// NOTE: 0 means nothing is counted in the window yet, so there is nothing to reset.
+	// NOTE: 0 means there is no open window yet, so there is nothing to reset.
 	c.Header(prefix+"-Reset-At", strconv.FormatInt(usage.ResetAt, 10))
 }
 

@@ -379,7 +379,7 @@ func DeleteTokenById(id int, userId int) (err error) {
 	return token.Delete()
 }
 
-// NOTE: refunds only restore the token balance; rolling 5h/7d usage is deliberately never reduced.
+// NOTE: refunds only restore the token balance; 5h/7d window usage is deliberately never reduced.
 func IncreaseTokenQuota(tokenId int, key string, quota int) (err error) {
 	if quota < 0 {
 		return errors.New("quota 不能为负数！")

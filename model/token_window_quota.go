@@ -2,26 +2,30 @@ package model
 
 import (
 	"context"
+	_ "embed"
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/go-redis/redis/v8"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
-// TokenQuotaWindow describes a rolling window used for per-token quota limiting.
+// TokenQuotaWindow describes a fixed-length quota window used for per-token limiting. A
+// window opens on a token's first charge after the previous window has ended and lasts
+// Seconds; the next charge after it ends opens a fresh window with Used starting at 0.
 type TokenQuotaWindow struct {
-	Name          string
-	Seconds       int64
-	BucketSeconds int64
+	Name    string
+	Seconds int64
 }
 
 var (
-	TokenQuotaWindow5h = TokenQuotaWindow{Name: "5h", Seconds: 5 * 3600, BucketSeconds: 300}
-	TokenQuotaWindow7d = TokenQuotaWindow{Name: "7d", Seconds: 7 * 86400, BucketSeconds: 3600}
+	TokenQuotaWindow5h = TokenQuotaWindow{Name: "5h", Seconds: 5 * 3600}
+	TokenQuotaWindow7d = TokenQuotaWindow{Name: "7d", Seconds: 7 * 86400}
 
 	tokenQuotaWindows = []TokenQuotaWindow{TokenQuotaWindow5h, TokenQuotaWindow7d}
 )
@@ -35,36 +39,35 @@ func tokenQuotaWindowByName(name string) (TokenQuotaWindow, bool) {
 	return TokenQuotaWindow{}, false
 }
 
-// expiresAt is the unix second at which a bucket stops counting toward the window.
-func (w TokenQuotaWindow) expiresAt(bucket int64) int64 {
-	return bucket + w.BucketSeconds + w.Seconds
+// endsAt is the unix second at which a window that started at start stops counting and its
+// usage resets to 0.
+func (w TokenQuotaWindow) endsAt(start int64) int64 {
+	return start + w.Seconds
 }
 
-func (w TokenQuotaWindow) isLive(bucket int64, now int64) bool {
-	return w.expiresAt(bucket) > now
+func (w TokenQuotaWindow) isLive(start int64, now int64) bool {
+	return w.endsAt(start) > now
 }
 
-func (w TokenQuotaWindow) retention() time.Duration {
-	return time.Duration(w.Seconds+w.BucketSeconds) * time.Second
-}
-
-// TokenWindowUsage is the aggregated usage for a token within a rolling window.
+// TokenWindowUsage is a token's usage within its current quota window.
 type TokenWindowUsage struct {
 	Used    int64
-	ResetAt int64 // unix seconds when the earliest non-zero bucket leaves the window; 0 if no usage
+	ResetAt int64 // unix seconds when the current window ends and Used resets to 0; 0 if no window is open
 }
 
 // tokenWindowNow allows tests to control the clock.
 var tokenWindowNow = time.Now
 
-func bucketStart(t time.Time, bucketSeconds int64) int64 {
-	sec := t.Unix()
-	return sec - sec%bucketSeconds
+// tokenWindowState is a token's current window for one TokenQuotaWindow: it opened at
+// Start and has accumulated Used so far.
+type tokenWindowState struct {
+	Start int64
+	Used  int64
 }
 
-// addTokenWindowUsage records a charge for a token in the current bucket of every rolling
-// window. Best-effort: failures are logged, never returned to the caller, since quota
-// accounting must not block the billing hot path.
+// addTokenWindowUsage records a charge for a token against every quota window. Best-effort:
+// failures are logged, never returned to the caller, since quota accounting must not block
+// the billing hot path.
 func addTokenWindowUsage(tokenId int, amount int64) {
 	if amount <= 0 {
 		return
@@ -82,91 +85,101 @@ func addTokenWindowUsage(tokenId int, amount int64) {
 
 // GetTokenWindowUsage returns the aggregated usage for a token within the given window.
 func GetTokenWindowUsage(tokenId int, w TokenQuotaWindow) (TokenWindowUsage, error) {
-	if common.RedisEnabled {
-		return redisGetTokenWindowUsage(tokenId, w)
+	state, ok, err := readTokenWindowState(tokenId, w)
+	if err != nil {
+		return TokenWindowUsage{}, err
 	}
-	return memoryGetTokenWindowUsage(tokenId, w), nil
+	return summarizeTokenWindowState(w, state, ok, tokenWindowNow().Unix()), nil
 }
 
-func summarizeTokenWindowBuckets(w TokenQuotaWindow, buckets map[int64]int64, now int64) TokenWindowUsage {
-	var used int64
-	var resetAt int64
-	for bucket, value := range buckets {
-		if value <= 0 || !w.isLive(bucket, now) {
-			continue
-		}
-		used += value
-		if at := w.expiresAt(bucket); resetAt == 0 || at < resetAt {
-			resetAt = at
-		}
+// readTokenWindowState returns a token's current window state for w, dispatching to
+// Redis or the in-memory store. ok is false when no window has ever been opened (or the
+// backend has lost it); callers must still check isLive themselves since a stored state can
+// belong to a window that has already ended.
+func readTokenWindowState(tokenId int, w TokenQuotaWindow) (tokenWindowState, bool, error) {
+	if common.RedisEnabled {
+		return redisGetTokenWindowState(tokenId, w)
 	}
-	return TokenWindowUsage{Used: used, ResetAt: resetAt}
+	state, ok := memoryGetTokenWindowState(tokenId, w)
+	return state, ok, nil
 }
+
+func summarizeTokenWindowState(w TokenQuotaWindow, state tokenWindowState, ok bool, now int64) TokenWindowUsage {
+	if !ok || state.Used <= 0 || !w.isLive(state.Start, now) {
+		return TokenWindowUsage{}
+	}
+	return TokenWindowUsage{Used: state.Used, ResetAt: w.endsAt(state.Start)}
+}
+
+const tokenWindowRedisKeyPrefix = "token_quota_fixed_window"
 
 func tokenWindowRedisKey(tokenId int, w TokenQuotaWindow) string {
-	return "token_quota_window:" + strconv.Itoa(tokenId) + ":" + w.Name
+	return tokenWindowRedisKeyPrefix + ":" + strconv.Itoa(tokenId) + ":" + w.Name
 }
 
-func parseRedisTokenWindowBuckets(fields map[string]string) map[int64]int64 {
-	buckets := make(map[int64]int64, len(fields))
-	for field, valueStr := range fields {
-		bucket, err := strconv.ParseInt(field, 10, 64)
-		if err != nil {
-			continue
-		}
-		value, err := strconv.ParseInt(valueStr, 10, 64)
-		if err != nil {
-			continue
-		}
-		buckets[bucket] = value
-	}
-	return buckets
-}
+// The open/accumulate decision (and, on restore, the merge decision) requires a
+// read-then-write sequence that must be atomic under concurrent charges for the same
+// token, so both are Lua scripts rather than plain pipelined commands.
+//
+//go:embed lua/token_window_add.lua
+var tokenWindowAddLuaSrc string
+
+//go:embed lua/token_window_seed.lua
+var tokenWindowSeedLuaSrc string
+
+var (
+	tokenWindowAddScript  = redis.NewScript(tokenWindowAddLuaSrc)
+	tokenWindowSeedScript = redis.NewScript(tokenWindowSeedLuaSrc)
+)
 
 func redisAddTokenWindowUsage(tokenId int, w TokenQuotaWindow, amount int64) error {
 	ctx := context.Background()
 	key := tokenWindowRedisKey(tokenId, w)
-	field := strconv.FormatInt(bucketStart(tokenWindowNow(), w.BucketSeconds), 10)
-
-	txn := common.RDB.TxPipeline()
-	txn.HIncrBy(ctx, key, field, amount)
-	txn.Expire(ctx, key, w.retention())
-	_, err := txn.Exec(ctx)
-	return err
+	now := tokenWindowNow().Unix()
+	return tokenWindowAddScript.Run(ctx, common.RDB, []string{key}, now, w.Seconds, amount).Err()
 }
 
-func redisGetTokenWindowUsage(tokenId int, w TokenQuotaWindow) (TokenWindowUsage, error) {
+// redisGetTokenWindowState reads the raw stored state without judging whether the window is
+// still live; ok is false only when the hash (or a field of it) is missing.
+func redisGetTokenWindowState(tokenId int, w TokenQuotaWindow) (tokenWindowState, bool, error) {
 	ctx := context.Background()
 	key := tokenWindowRedisKey(tokenId, w)
-	fields, err := common.RDB.HGetAll(ctx, key).Result()
+	values, err := common.RDB.HMGet(ctx, key, "start", "used").Result()
 	if err != nil {
-		return TokenWindowUsage{}, err
+		return tokenWindowState{}, false, err
 	}
-
-	now := tokenWindowNow().Unix()
-	buckets := parseRedisTokenWindowBuckets(fields)
-	var expiredFields []string
-	for bucket := range buckets {
-		if !w.isLive(bucket, now) {
-			expiredFields = append(expiredFields, strconv.FormatInt(bucket, 10))
-		}
+	if len(values) != 2 || values[0] == nil || values[1] == nil {
+		return tokenWindowState{}, false, nil
 	}
-	if len(expiredFields) > 0 {
-		common.RDB.HDel(ctx, key, expiredFields...)
+	startStr, ok := values[0].(string)
+	if !ok {
+		return tokenWindowState{}, false, nil
 	}
-	return summarizeTokenWindowBuckets(w, buckets, now), nil
+	usedStr, ok := values[1].(string)
+	if !ok {
+		return tokenWindowState{}, false, nil
+	}
+	start, err := strconv.ParseInt(startStr, 10, 64)
+	if err != nil {
+		return tokenWindowState{}, false, nil
+	}
+	used, err := strconv.ParseInt(usedStr, 10, 64)
+	if err != nil {
+		return tokenWindowState{}, false, nil
+	}
+	return tokenWindowState{Start: start, Used: used}, true, nil
 }
 
 // in-memory fallback
 
 type tokenWindowMemoryStore struct {
 	mutex   sync.Mutex
-	buckets map[int]map[string]map[int64]int64 // tokenId -> windowName -> bucketStart -> value
+	windows map[int]map[string]tokenWindowState // tokenId -> windowName -> state
 	once    sync.Once
 }
 
 var tokenWindowMemory = &tokenWindowMemoryStore{
-	buckets: make(map[int]map[string]map[int64]int64),
+	windows: make(map[int]map[string]tokenWindowState),
 }
 
 func (s *tokenWindowMemoryStore) startJanitor() {
@@ -184,41 +197,37 @@ func (s *tokenWindowMemoryStore) cleanup() {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	now := tokenWindowNow().Unix()
-	for tokenId, windows := range s.buckets {
-		for name, buckets := range windows {
+	for tokenId, windows := range s.windows {
+		for name, state := range windows {
 			w, known := tokenQuotaWindowByName(name)
-			for bucket := range buckets {
-				if !known || !w.isLive(bucket, now) {
-					delete(buckets, bucket)
-				}
-			}
-			if len(buckets) == 0 {
+			if !known || !w.isLive(state.Start, now) {
 				delete(windows, name)
 			}
 		}
 		if len(windows) == 0 {
-			delete(s.buckets, tokenId)
+			delete(s.windows, tokenId)
 		}
 	}
 }
 
-// windowBucketsLocked returns the bucket map for tokenId/w, creating it when create is set.
-// Caller must hold s.mutex.
-func (s *tokenWindowMemoryStore) windowBucketsLocked(tokenId int, w TokenQuotaWindow, create bool) map[int64]int64 {
-	windows, ok := s.buckets[tokenId]
+// getLocked returns tokenId's stored state for w. Caller must hold s.mutex.
+func (s *tokenWindowMemoryStore) getLocked(tokenId int, w TokenQuotaWindow) (tokenWindowState, bool) {
+	windows, ok := s.windows[tokenId]
 	if !ok {
-		if !create {
-			return nil
-		}
-		windows = make(map[string]map[int64]int64)
-		s.buckets[tokenId] = windows
+		return tokenWindowState{}, false
 	}
-	buckets, ok := windows[w.Name]
-	if !ok && create {
-		buckets = make(map[int64]int64)
-		windows[w.Name] = buckets
+	state, ok := windows[w.Name]
+	return state, ok
+}
+
+// setLocked stores tokenId's state for w. Caller must hold s.mutex.
+func (s *tokenWindowMemoryStore) setLocked(tokenId int, w TokenQuotaWindow, state tokenWindowState) {
+	windows, ok := s.windows[tokenId]
+	if !ok {
+		windows = make(map[string]tokenWindowState)
+		s.windows[tokenId] = windows
 	}
-	return buckets
+	windows[w.Name] = state
 }
 
 func memoryAddTokenWindowUsage(tokenId int, w TokenQuotaWindow, amount int64) {
@@ -226,27 +235,33 @@ func memoryAddTokenWindowUsage(tokenId int, w TokenQuotaWindow, amount int64) {
 	tokenWindowMemory.mutex.Lock()
 	defer tokenWindowMemory.mutex.Unlock()
 
-	buckets := tokenWindowMemory.windowBucketsLocked(tokenId, w, true)
-	buckets[bucketStart(tokenWindowNow(), w.BucketSeconds)] += amount
+	now := tokenWindowNow().Unix()
+	state, ok := tokenWindowMemory.getLocked(tokenId, w)
+	if !ok || !w.isLive(state.Start, now) {
+		state = tokenWindowState{Start: now, Used: amount}
+	} else {
+		state.Used += amount
+	}
+	tokenWindowMemory.setLocked(tokenId, w, state)
 }
 
-func memoryGetTokenWindowUsage(tokenId int, w TokenQuotaWindow) TokenWindowUsage {
+func memoryGetTokenWindowState(tokenId int, w TokenQuotaWindow) (tokenWindowState, bool) {
 	tokenWindowMemory.mutex.Lock()
 	defer tokenWindowMemory.mutex.Unlock()
 
-	buckets := tokenWindowMemory.windowBucketsLocked(tokenId, w, false)
-	return summarizeTokenWindowBuckets(w, buckets, tokenWindowNow().Unix())
+	return tokenWindowMemory.getLocked(tokenId, w)
 }
 
 // persistence: periodic snapshot + restore
 //
 // Redis/memory above are the only source of truth while the process is up. The functions
-// below keep a durable, best-effort per-bucket copy in token_window_buckets purely so a
-// Redis/memory loss (restart, eviction, TTL expiry) resumes from the last snapshot instead
-// of silently resetting every token's usage to zero. Buckets are stored individually so
-// each restored bucket still leaves its window at the moment it originally would have.
+// below keep a durable, best-effort copy of each token's current window in
+// token_window_buckets purely so a Redis/memory loss (restart, eviction, TTL expiry)
+// resumes the same window instead of silently resetting every token's usage to zero.
 
-// TokenWindowBucket is one persisted rolling-window bucket of a token's usage.
+// TokenWindowBucket is one persisted quota-window snapshot of a token's usage. BucketStart
+// holds the window's start time (not a sub-window bucket boundary) so a Redis/memory loss
+// can resume the exact same window instead of losing track of when it opened.
 type TokenWindowBucket struct {
 	TokenId     int    `gorm:"primaryKey;autoIncrement:false"`
 	WindowName  string `gorm:"primaryKey;type:varchar(16)"`
@@ -258,9 +273,9 @@ func (TokenWindowBucket) TableName() string {
 	return "token_window_buckets"
 }
 
-// FlushActiveTokenWindowUsage persists a snapshot of every currently-active token's
-// rolling window buckets and prunes rows that have left every window. Returns the number
-// of tokens whose snapshot was written.
+// FlushActiveTokenWindowUsage persists a snapshot of every currently-active token's current
+// window state and prunes rows for windows that have since ended. Returns the number of
+// tokens whose snapshot was written.
 func FlushActiveTokenWindowUsage() (int, error) {
 	var tokenIds []int
 	if common.RedisEnabled {
@@ -282,7 +297,7 @@ func FlushActiveTokenWindowUsage() (int, error) {
 
 	now := tokenWindowNow().Unix()
 	for _, w := range tokenQuotaWindows {
-		err := DB.Where("window_name = ? AND bucket_start <= ?", w.Name, now-w.Seconds-w.BucketSeconds).
+		err := DB.Where("window_name = ? AND bucket_start <= ?", w.Name, now-w.Seconds).
 			Delete(&TokenWindowBucket{}).Error
 		if err != nil {
 			common.SysLog("failed to prune expired token window buckets: " + err.Error())
@@ -292,12 +307,12 @@ func FlushActiveTokenWindowUsage() (int, error) {
 }
 
 // activeRedisTokenWindowIds scans (never KEYS, to stay safe on large keyspaces) for
-// token_quota_window:* keys and returns the distinct token ids with a live bucket.
+// token_quota_fixed_window:* keys and returns the distinct token ids with a live window.
 func activeRedisTokenWindowIds(ctx context.Context) ([]int, error) {
 	seen := make(map[int]struct{})
 	var cursor uint64
 	for {
-		keys, next, err := common.RDB.Scan(ctx, cursor, "token_quota_window:*", 200).Result()
+		keys, next, err := common.RDB.Scan(ctx, cursor, tokenWindowRedisKeyPrefix+":*", 200).Result()
 		if err != nil {
 			return nil, err
 		}
@@ -327,52 +342,29 @@ func activeRedisTokenWindowIds(ctx context.Context) ([]int, error) {
 func activeMemoryTokenWindowIds() []int {
 	tokenWindowMemory.mutex.Lock()
 	defer tokenWindowMemory.mutex.Unlock()
-	ids := make([]int, 0, len(tokenWindowMemory.buckets))
-	for id := range tokenWindowMemory.buckets {
+	ids := make([]int, 0, len(tokenWindowMemory.windows))
+	for id := range tokenWindowMemory.windows {
 		ids = append(ids, id)
 	}
 	return ids
 }
 
-func loadTokenWindowBuckets(tokenId int, w TokenQuotaWindow) (map[int64]int64, error) {
-	if common.RedisEnabled {
-		fields, err := common.RDB.HGetAll(context.Background(), tokenWindowRedisKey(tokenId, w)).Result()
-		if err != nil {
-			return nil, err
-		}
-		return parseRedisTokenWindowBuckets(fields), nil
-	}
-	tokenWindowMemory.mutex.Lock()
-	defer tokenWindowMemory.mutex.Unlock()
-	buckets := make(map[int64]int64)
-	for bucket, value := range tokenWindowMemory.windowBucketsLocked(tokenId, w, false) {
-		buckets[bucket] = value
-	}
-	return buckets, nil
-}
-
-type tokenWindowBucketKey struct {
-	window string
-	bucket int64
-}
-
-// flushTokenWindowSnapshot syncs tokenId's persisted buckets to its live ones: changed
-// buckets are upserted and buckets that were refunded to zero or have expired are deleted.
-// Best-effort like addTokenWindowUsage: failures are logged, not returned, so one token
-// failing to persist never blocks the rest of the flush.
+// flushTokenWindowSnapshot syncs tokenId's persisted window rows to its live state: a
+// changed or newly-opened window is upserted, and a row belonging to a window that has
+// since ended or rolled over to a new start is deleted. Best-effort like
+// addTokenWindowUsage: failures are logged, not returned, so one token failing to persist
+// never blocks the rest of the flush.
 func flushTokenWindowSnapshot(tokenId int) bool {
 	now := tokenWindowNow().Unix()
-	live := make(map[tokenWindowBucketKey]int64)
+	live := make(map[string]tokenWindowState) // windowName -> state
 	for _, w := range tokenQuotaWindows {
-		buckets, err := loadTokenWindowBuckets(tokenId, w)
+		state, ok, err := readTokenWindowState(tokenId, w)
 		if err != nil {
 			common.SysLog("failed to read token " + w.Name + " window usage during flush: " + err.Error())
 			return false
 		}
-		for bucket, value := range buckets {
-			if value > 0 && w.isLive(bucket, now) {
-				live[tokenWindowBucketKey{window: w.Name, bucket: bucket}] = value
-			}
+		if ok && state.Used > 0 && w.isLive(state.Start, now) {
+			live[w.Name] = state
 		}
 	}
 
@@ -384,19 +376,18 @@ func flushTokenWindowSnapshot(tokenId int) bool {
 	var upserts []TokenWindowBucket
 	var stale []TokenWindowBucket
 	for _, row := range persisted {
-		key := tokenWindowBucketKey{window: row.WindowName, bucket: row.BucketStart}
-		value, ok := live[key]
-		if !ok {
+		state, ok := live[row.WindowName]
+		if !ok || state.Start != row.BucketStart {
 			stale = append(stale, row)
 			continue
 		}
-		if value != row.Used {
-			upserts = append(upserts, TokenWindowBucket{TokenId: tokenId, WindowName: row.WindowName, BucketStart: row.BucketStart, Used: value})
+		if state.Used != row.Used {
+			upserts = append(upserts, TokenWindowBucket{TokenId: tokenId, WindowName: row.WindowName, BucketStart: state.Start, Used: state.Used})
 		}
-		delete(live, key)
+		delete(live, row.WindowName)
 	}
-	for key, value := range live {
-		upserts = append(upserts, TokenWindowBucket{TokenId: tokenId, WindowName: key.window, BucketStart: key.bucket, Used: value})
+	for name, state := range live {
+		upserts = append(upserts, TokenWindowBucket{TokenId: tokenId, WindowName: name, BucketStart: state.Start, Used: state.Used})
 	}
 	if len(upserts) == 0 && len(stale) == 0 {
 		return false
@@ -425,30 +416,32 @@ func flushTokenWindowSnapshot(tokenId int) bool {
 	return true
 }
 
-// RestoreSkip records why one persisted bucket was not freshly seeded during a
+// RestoreSkip records why one persisted window was not freshly seeded during a
 // RestoreTokenWindowUsageFromDB run, so callers can log the specific token and reason
 // instead of only a bare count.
 type RestoreSkip struct {
 	TokenId     int
 	Window      string
-	BucketStart int64
+	WindowStart int64
 	Reason      string
 	// Failed is true when a backend error caused the skip (a real problem worth alerting
-	// on). It is false when the bucket was already live (e.g. live traffic or an earlier
+	// on). It is false when the window was already live (e.g. live traffic or an earlier
 	// restore already recorded it), which is an expected, harmless outcome.
 	Failed bool
 }
 
 // RestoreResult summarizes a RestoreTokenWindowUsageFromDB run.
 type RestoreResult struct {
-	Candidates int // tokens with at least one persisted bucket still inside its window
-	Restored   int // tokens where at least one bucket was freshly seeded
+	Candidates int // tokens with at least one persisted window still inside its lifetime
+	Restored   int // tokens where at least one window was freshly seeded
 	Skips      []RestoreSkip
 }
 
 // RestoreTokenWindowUsageFromDB reseeds Redis/memory from the last flushed snapshot with
-// every persisted bucket that is still inside its window. Must run once at startup, before
-// traffic flows.
+// every persisted window that has not yet ended. Must run once at startup, before traffic
+// flows. A token can still have more than one persisted row per window immediately after
+// upgrading from the previous bucketed implementation; those are merged in Go (earliest
+// start, summed usage) into a single window before seeding.
 func RestoreTokenWindowUsageFromDB() (RestoreResult, error) {
 	now := tokenWindowNow().Unix()
 	candidates := make(map[int]struct{})
@@ -456,22 +449,37 @@ func RestoreTokenWindowUsageFromDB() (RestoreResult, error) {
 	var result RestoreResult
 	for _, w := range tokenQuotaWindows {
 		var rows []TokenWindowBucket
-		err := DB.Where("window_name = ? AND bucket_start > ? AND used > 0", w.Name, now-w.Seconds-w.BucketSeconds).
+		err := DB.Where("window_name = ? AND bucket_start > ? AND used > 0", w.Name, now-w.Seconds).
 			Find(&rows).Error
 		if err != nil {
 			return RestoreResult{}, err
 		}
+
+		merged := make(map[int]TokenWindowBucket, len(rows))
 		for _, row := range rows {
 			candidates[row.TokenId] = struct{}{}
-			outcome := seedTokenWindowUsage(row.TokenId, w, row.BucketStart, row.Used)
+			existing, ok := merged[row.TokenId]
+			if !ok {
+				merged[row.TokenId] = row
+				continue
+			}
+			if row.BucketStart < existing.BucketStart {
+				existing.BucketStart = row.BucketStart
+			}
+			existing.Used += row.Used
+			merged[row.TokenId] = existing
+		}
+
+		for tokenId, row := range merged {
+			outcome := seedTokenWindowUsage(tokenId, w, row.BucketStart, row.Used)
 			if outcome.seeded {
-				restored[row.TokenId] = struct{}{}
+				restored[tokenId] = struct{}{}
 				continue
 			}
 			result.Skips = append(result.Skips, RestoreSkip{
-				TokenId:     row.TokenId,
+				TokenId:     tokenId,
 				Window:      w.Name,
-				BucketStart: row.BucketStart,
+				WindowStart: row.BucketStart,
 				Reason:      outcome.reason,
 				Failed:      outcome.failed,
 			})
@@ -482,8 +490,8 @@ func RestoreTokenWindowUsageFromDB() (RestoreResult, error) {
 	return result, nil
 }
 
-// seedOutcome reports what happened when seeding a single token/window bucket from a DB
-// snapshot, distinguishing a harmless skip (bucket already live) from a real backend
+// seedOutcome reports what happened when seeding a single token/window from a DB snapshot,
+// distinguishing a harmless skip (a live window already covers it) from a real backend
 // failure, so RestoreTokenWindowUsageFromDB can report each one accurately.
 type seedOutcome struct {
 	seeded bool
@@ -491,40 +499,58 @@ type seedOutcome struct {
 	reason string
 }
 
-// seedTokenWindowUsage restores one persisted bucket. It only writes when that exact bucket
-// is still empty, so it can never double-count usage that live traffic (or an earlier
-// restore) already recorded.
-func seedTokenWindowUsage(tokenId int, w TokenQuotaWindow, bucket int64, used int64) seedOutcome {
+// seedTokenWindowUsage restores one persisted window. When a live window already exists
+// and started no later than the persisted one, it is left untouched (it is the
+// authoritative, possibly fresher, source). When a live window exists but opened after the
+// persisted window's start, meaning the persisted window had not actually ended when data
+// was lost, the two are merged instead of one clobbering the other.
+func seedTokenWindowUsage(tokenId int, w TokenQuotaWindow, start int64, used int64) seedOutcome {
 	if common.RedisEnabled {
-		return redisSeedTokenWindowUsage(tokenId, w, bucket, used)
+		return redisSeedTokenWindowUsage(tokenId, w, start, used)
 	}
-	return memorySeedTokenWindowUsage(tokenId, w, bucket, used)
+	return memorySeedTokenWindowUsage(tokenId, w, start, used)
 }
 
-func redisSeedTokenWindowUsage(tokenId int, w TokenQuotaWindow, bucket int64, used int64) seedOutcome {
+func redisSeedTokenWindowUsage(tokenId int, w TokenQuotaWindow, start int64, used int64) seedOutcome {
 	ctx := context.Background()
 	key := tokenWindowRedisKey(tokenId, w)
-	field := strconv.FormatInt(bucket, 10)
-	ok, err := common.RDB.HSetNX(ctx, key, field, used).Result()
+	now := tokenWindowNow().Unix()
+	res, err := tokenWindowSeedScript.Run(ctx, common.RDB, []string{key}, now, w.Seconds, start, used).Result()
 	if err != nil {
 		return seedOutcome{failed: true, reason: "redis error: " + err.Error()}
 	}
+	code, ok := res.(int64)
 	if !ok {
-		return seedOutcome{reason: "bucket already live, not overwritten"}
+		return seedOutcome{failed: true, reason: fmt.Sprintf("unexpected token window seed result: %v", res)}
 	}
-	common.RDB.Expire(ctx, key, w.retention())
-	return seedOutcome{seeded: true}
+	switch code {
+	case 1:
+		return seedOutcome{seeded: true}
+	case 2:
+		return seedOutcome{reason: "window already live, not overwritten"}
+	default:
+		return seedOutcome{reason: "persisted window already expired"}
+	}
 }
 
-func memorySeedTokenWindowUsage(tokenId int, w TokenQuotaWindow, bucket int64, used int64) seedOutcome {
+func memorySeedTokenWindowUsage(tokenId int, w TokenQuotaWindow, start int64, used int64) seedOutcome {
 	tokenWindowMemory.startJanitor()
 	tokenWindowMemory.mutex.Lock()
 	defer tokenWindowMemory.mutex.Unlock()
 
-	buckets := tokenWindowMemory.windowBucketsLocked(tokenId, w, true)
-	if _, exists := buckets[bucket]; exists {
-		return seedOutcome{reason: "bucket already live, not overwritten"}
+	now := tokenWindowNow().Unix()
+	if !w.isLive(start, now) {
+		return seedOutcome{reason: "persisted window already expired"}
 	}
-	buckets[bucket] = used
+
+	state, ok := tokenWindowMemory.getLocked(tokenId, w)
+	if !ok || !w.isLive(state.Start, now) {
+		tokenWindowMemory.setLocked(tokenId, w, tokenWindowState{Start: start, Used: used})
+		return seedOutcome{seeded: true}
+	}
+	if state.Start <= start {
+		return seedOutcome{reason: "window already live, not overwritten"}
+	}
+	tokenWindowMemory.setLocked(tokenId, w, tokenWindowState{Start: start, Used: used + state.Used})
 	return seedOutcome{seeded: true}
 }

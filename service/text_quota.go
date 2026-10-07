@@ -333,13 +333,17 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 
 	// NOTE: Poe channels do not charge internal quota; actual cost is tracked
 	// via the PoeLog module (synced from the Poe usage API). When PoeLog sync
-	// is enabled, only zero out the internal quota — real token counts are
-	// still recorded in the standard prompt_tokens/completion_tokens columns
-	// so the dashboard token distribution works correctly (including free
-	// models whose tokens are not available from the Poe usage API).
+	// and its sync-to-consume-log option are both enabled, the synced entries
+	// become the consume log, so only then zero out the internal quota — real
+	// token counts are still recorded in the standard prompt_tokens/
+	// completion_tokens columns so the dashboard token distribution works
+	// correctly (including free models whose tokens are not available from
+	// the Poe usage API).
 	isPoeChannel := relayInfo.ChannelType == constant.ChannelTypePoeOpenAI ||
 		relayInfo.ChannelType == constant.ChannelTypePoeAnthropic
-	isPoeLogEnabled := isPoeChannel && operation_setting.IsPoeLogSyncEnabled()
+	isPoeLogEnabled := isPoeChannel &&
+		operation_setting.IsPoeLogSyncEnabled() &&
+		operation_setting.IsPoeLogSyncToConsumeLogEnabled()
 	if isPoeLogEnabled {
 		summary.Quota = 0
 		// NOTE: keep TotalTokens as-is; if it is 0 (free model with no usage),

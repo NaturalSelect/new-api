@@ -194,6 +194,11 @@ export const CHANNEL_OPTIONS = [
     color: 'indigo',
     label: 'Poe Anthropic',
   },
+  {
+    value: 60,
+    color: 'purple',
+    label: 'NovelAI',
+  },
 ];
 
 // Channel types that support upstream model list fetching in UI.

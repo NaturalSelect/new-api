@@ -156,6 +156,17 @@ export const CHANNEL_TYPE_CONFIGS: Record<number, ChannelTypeConfig> = {
       models: 'Use Poe Anthropic-compatible model IDs',
     },
   },
+  60: {
+    id: 60,
+    name: CHANNEL_TYPES[60],
+    icon: 'openai',
+    defaultBaseUrl: 'https://image.novelai.net',
+    hints: {
+      baseUrl: 'Default: https://image.novelai.net',
+      key: 'NovelAI persistent API token (pst-...), one per line for multiple accounts',
+      models: 'Use NovelAI model IDs, e.g. nai-diffusion-4-5-full',
+    },
+  },
 }
 
 /**

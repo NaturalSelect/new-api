@@ -12,6 +12,8 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 )
 
+// parseUserOptions merges, from lowest to highest priority: top-level fields,
+// a literal "extra_body" object that some SDKs forward without flattening, and "extra_fields".
 func parseUserOptions(req dto.ImageRequest) (userOptions, error) {
 	var opts userOptions
 	if len(req.Extra) > 0 {
@@ -21,6 +23,11 @@ func parseUserOptions(req dto.ImageRequest) (userOptions, error) {
 		}
 		if err := common.Unmarshal(raw, &opts); err != nil {
 			return opts, fmt.Errorf("novelai adaptor: invalid extra params: %w", err)
+		}
+	}
+	if raw, ok := req.Extra[extraBodyKey]; ok {
+		if err := common.Unmarshal(raw, &opts); err != nil {
+			return opts, fmt.Errorf("novelai adaptor: invalid %s: %w", extraBodyKey, err)
 		}
 	}
 	if len(req.ExtraFields) > 0 {

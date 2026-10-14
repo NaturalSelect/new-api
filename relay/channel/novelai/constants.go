@@ -4,6 +4,7 @@ const (
 	ChannelName = "novelai"
 
 	generateImagePath = "/ai/generate-image-stream"
+	extraBodyKey      = "extra_body"
 	defaultSize       = "1024x1024"
 	sizeStep          = 64
 

@@ -58,6 +58,16 @@ func parseSize(size string) (int, int, error) {
 	return width, height, nil
 }
 
+func validateSubscriptionLimits(width, height int, opts userOptions) error {
+	if width*height > maxPixels {
+		return fmt.Errorf("novelai adaptor: size %dx%d exceeds the %d pixel limit", width, height, maxPixels)
+	}
+	if steps := valueOr(opts.Steps, defaultSteps); steps > maxSteps {
+		return fmt.Errorf("novelai adaptor: steps %d exceeds the limit of %d", steps, maxSteps)
+	}
+	return nil
+}
+
 func isV5Model(model string) bool {
 	return strings.Contains(model, "diffusion-5")
 }

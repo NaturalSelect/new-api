@@ -101,6 +101,9 @@ func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInf
 	if err != nil {
 		return nil, err
 	}
+	if err := validateSubscriptionLimits(width, height, opts); err != nil {
+		return nil, err
+	}
 	seed := valueOr(opts.Seed, rand.Uint32())
 
 	body, contentType, err := buildMultipartBody(buildGenerateRequest(model, request.Prompt, width, height, opts, seed))

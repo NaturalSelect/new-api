@@ -43,6 +43,21 @@ func createConsumeLogWithOther(t *testing.T, userId int, username string, tokenI
 	require.NoError(t, LOG_DB.Create(log).Error)
 }
 
+func createConsumeLogWithQuota(t *testing.T, userId int, tokenId int, modelName string, quota int, createdAt int64) {
+	t.Helper()
+	log := &Log{
+		UserId:    userId,
+		Username:  "user",
+		CreatedAt: createdAt,
+		Type:      LogTypeConsume,
+		TokenId:   tokenId,
+		TokenName: "key",
+		ModelName: modelName,
+		Quota:     quota,
+	}
+	require.NoError(t, LOG_DB.Create(log).Error)
+}
+
 func findKeyDistributionItem(data []*KeyDistributionData, tokenId int, modelName string) *KeyDistributionData {
 	for _, item := range data {
 		if item.TokenId == tokenId && item.ModelName == modelName {
@@ -71,6 +86,26 @@ func TestGetKeyDistribution_SumsSameKeyAndModel(t *testing.T) {
 	require.Equal(t, 130, item.OutputTokens)
 	require.Equal(t, 430, item.TotalTokens)
 	require.Equal(t, 2, item.Count)
+}
+
+// Quota (cost) must accumulate per key + model, and stay separate across models.
+func TestGetKeyDistribution_SumsQuotaPerKeyAndModel(t *testing.T) {
+	truncateTables(t)
+
+	createConsumeLogWithQuota(t, 1, 10, "gpt-4", 300, 1000)
+	createConsumeLogWithQuota(t, 1, 10, "gpt-4", 200, 1010)
+	createConsumeLogWithQuota(t, 1, 10, "gpt-4o", 50, 1020)
+
+	result, err := GetKeyDistribution(0, 0, "")
+	require.NoError(t, err)
+
+	gpt4 := findKeyDistributionItem(result, 10, "gpt-4")
+	require.NotNil(t, gpt4)
+	require.Equal(t, 500, gpt4.Quota)
+
+	gpt4o := findKeyDistributionItem(result, 10, "gpt-4o")
+	require.NotNil(t, gpt4o)
+	require.Equal(t, 50, gpt4o.Quota)
 }
 
 // Different keys and/or different models must be aggregated into separate rows.

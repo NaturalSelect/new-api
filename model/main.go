@@ -402,6 +402,9 @@ func migrateLOGDB() error {
 	if err = MigrateTokenStatsCacheDayBoundary(); err != nil {
 		return err
 	}
+	if err = MigrateTokenStatsCacheQuotaColumn(); err != nil {
+		return err
+	}
 	return migrateWarningLogColumnsToLongText(LOG_DB, common.LogSqlType == common.DatabaseTypeMySQL)
 }
 

@@ -151,6 +151,7 @@ export interface KeyDistributionDataItem {
   cache_write_tokens: number
   total_tokens: number
   count: number
+  quota: number
 }
 
 // ============================================================================

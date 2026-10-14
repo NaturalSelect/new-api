@@ -21,6 +21,7 @@ import { useQuery } from '@tanstack/react-query'
 import { VChart } from '@visactor/react-vchart'
 import { AlertCircle, Key } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { formatQuota } from '@/lib/format'
 import { VCHART_OPTION } from '@/lib/vchart'
 import { useThemeCustomization } from '@/context/theme-customization-provider'
 import { useTheme } from '@/context/theme-provider'
@@ -41,6 +42,7 @@ type KeyMetric =
   | 'output_tokens'
   | 'cache_read_tokens'
   | 'cache_write_tokens'
+  | 'quota'
 
 const KEY_METRIC_OPTIONS: { value: KeyMetric; labelKey: string }[] = [
   { value: 'total_tokens', labelKey: 'Total Tokens' },
@@ -49,6 +51,7 @@ const KEY_METRIC_OPTIONS: { value: KeyMetric; labelKey: string }[] = [
   { value: 'output_tokens', labelKey: 'Output Tokens' },
   { value: 'cache_read_tokens', labelKey: 'Input (Cache Hit)' },
   { value: 'cache_write_tokens', labelKey: 'Cache Write' },
+  { value: 'quota', labelKey: 'Cost' },
 ]
 
 // Max items visible without scrolling
@@ -96,8 +99,10 @@ function buildKeyRankSpec(
   metric: KeyMetric,
   labels: KeyRankLabels
 ) {
-  const formatInt = (value: number) =>
-    Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(value)
+  const formatMetricValue = (value: number) =>
+    metric === 'quota'
+      ? formatQuota(value)
+      : Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(value)
 
   // Global per-model totals (across all keys) keep the top-N model set —
   // and therefore the legend/color set — stable across every key row.
@@ -186,7 +191,7 @@ function buildKeyRankSpec(
     bar: { state: { hover: { stroke: '#000', lineWidth: 1 } } },
     totalLabel: {
       visible: true,
-      formatMethod: (value: number) => formatInt(value),
+      formatMethod: (value: number) => formatMetricValue(value),
       style: { fontSize: 11 },
     },
     axes: [
@@ -199,7 +204,7 @@ function buildKeyRankSpec(
           {
             key: (datum: Record<string, unknown>) => datum?.Model,
             value: (datum: Record<string, unknown>) =>
-              formatInt(Number(datum?.Value) || 0),
+              formatMetricValue(Number(datum?.Value) || 0),
           },
         ],
       },
@@ -219,9 +224,9 @@ function buildKeyRankSpec(
           for (let i = 0; i < array.length; i++) {
             const v = Number(array[i].value) || 0
             sum += v
-            array[i].value = formatInt(v)
+            array[i].value = formatMetricValue(v)
           }
-          array.unshift({ key: labels.totalLabel, value: formatInt(sum) })
+          array.unshift({ key: labels.totalLabel, value: formatMetricValue(sum) })
           return array
         },
       },

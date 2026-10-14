@@ -61,6 +61,7 @@ type TokenStatsCache struct {
 	CacheReadTokens  int64  `json:"cache_read_tokens" gorm:"default:0"`
 	CacheWriteTokens int64  `json:"cache_write_tokens" gorm:"default:0"`
 	Count            int64  `json:"count" gorm:"default:0"`
+	Quota            int64  `json:"quota" gorm:"default:0"`
 }
 
 func (TokenStatsCache) TableName() string {
@@ -123,15 +124,32 @@ const tokenStatsCacheDayBoundaryFixOptionKey = "TokenStatsCacheDayBoundaryFixed"
 // old UTC-day grain is wrong once local time diverges from UTC, and would silently
 // double-count once new local-day rows are backfilled alongside it (the two grains'
 // day values don't line up, so neither the unique index nor the backfill's per-day
-// delete would ever collide with or clean up the stale rows). This clears the cache
-// table and resets the watermark option so GetTokenStatsCacheWatermark falls back to
-// "today" (nothing covered) and the existing background task (see
-// StartTokenStatsBackfillTask) rebuilds it from scratch under the new boundaries.
-// Cache reads always fall back to a raw logs scan for anything not (re)covered yet, so
-// this is safe to run against a live table.
+// delete would ever collide with or clean up the stale rows). It clears the cache so
+// the background task rebuilds it under the new boundaries.
 func MigrateTokenStatsCacheDayBoundary() error {
+	return resetTokenStatsCacheOnce(tokenStatsCacheDayBoundaryFixOptionKey)
+}
+
+// tokenStatsCacheQuotaColumnOptionKey guards MigrateTokenStatsCacheQuotaColumn so it
+// only ever runs once per deployment.
+const tokenStatsCacheQuotaColumnOptionKey = "TokenStatsCacheQuotaColumnAdded"
+
+// MigrateTokenStatsCacheQuotaColumn is a one-time fixup for the quota column added to
+// TokenStatsCache: rows cached before it existed hold quota = 0, which would silently
+// understate Key Distribution cost for every cache-covered day. It clears the cache so
+// the background task rebuilds it with quota populated.
+func MigrateTokenStatsCacheQuotaColumn() error {
+	return resetTokenStatsCacheOnce(tokenStatsCacheQuotaColumnOptionKey)
+}
+
+// resetTokenStatsCacheOnce clears the cache table and resets the watermark option so
+// GetTokenStatsCacheWatermark falls back to "today" (nothing covered) and the existing
+// background task (see StartTokenStatsBackfillTask) rebuilds it from scratch. Cache
+// reads always fall back to a raw logs scan for anything not (re)covered yet, so this
+// is safe to run against a live table. guardOptionKey makes the reset run only once.
+func resetTokenStatsCacheOnce(guardOptionKey string) error {
 	var existing Option
-	err := DB.Where(&Option{Key: tokenStatsCacheDayBoundaryFixOptionKey}).First(&existing).Error
+	err := DB.Where(&Option{Key: guardOptionKey}).First(&existing).Error
 	if err == nil {
 		return nil
 	}
@@ -145,7 +163,7 @@ func MigrateTokenStatsCacheDayBoundary() error {
 	if err := DB.Where(&Option{Key: tokenStatsCacheWatermarkOptionKey}).Delete(&Option{}).Error; err != nil {
 		return err
 	}
-	return DB.Create(&Option{Key: tokenStatsCacheDayBoundaryFixOptionKey, Value: "true"}).Error
+	return DB.Create(&Option{Key: guardOptionKey, Value: "true"}).Error
 }
 
 // tokenStatsCacheDelta is one row's worth of change to apply to TokenStatsCache.
@@ -161,6 +179,7 @@ type tokenStatsCacheDelta struct {
 	CacheReadTokens  int64
 	CacheWriteTokens int64
 	Count            int64
+	Quota            int64
 }
 
 // upsertTokenStatsCacheIncrement atomically adds delta's metrics onto the matching
@@ -182,7 +201,7 @@ type tokenStatsCacheDelta struct {
 // which only exercises a live write landing after backfill has already returned).
 func upsertTokenStatsCacheIncrement(delta tokenStatsCacheDelta) error {
 	if delta.Count == 0 && delta.InputTokens == 0 && delta.OutputTokens == 0 &&
-		delta.CacheReadTokens == 0 && delta.CacheWriteTokens == 0 {
+		delta.CacheReadTokens == 0 && delta.CacheWriteTokens == 0 && delta.Quota == 0 {
 		return nil
 	}
 	row := &TokenStatsCache{
@@ -197,6 +216,7 @@ func upsertTokenStatsCacheIncrement(delta tokenStatsCacheDelta) error {
 		CacheReadTokens:  delta.CacheReadTokens,
 		CacheWriteTokens: delta.CacheWriteTokens,
 		Count:            delta.Count,
+		Quota:            delta.Quota,
 	}
 	return LOG_DB.Clauses(clause.OnConflict{
 		Columns: []clause.Column{
@@ -209,6 +229,7 @@ func upsertTokenStatsCacheIncrement(delta tokenStatsCacheDelta) error {
 			"cache_read_tokens":  gorm.Expr("token_stats_cache.cache_read_tokens + ?", delta.CacheReadTokens),
 			"cache_write_tokens": gorm.Expr("token_stats_cache.cache_write_tokens + ?", delta.CacheWriteTokens),
 			"count":              gorm.Expr("token_stats_cache.count + ?", delta.Count),
+			"quota":              gorm.Expr("token_stats_cache.quota + ?", delta.Quota),
 		}),
 	}).Create(row).Error
 }
@@ -236,6 +257,7 @@ func upsertTokenStatsCacheForLog(log *Log) {
 		InputTokens:  int64(log.PromptTokens),
 		OutputTokens: int64(log.CompletionTokens),
 		Count:        1,
+		Quota:        int64(log.Quota),
 	}
 	cacheReadTokens, cacheWriteTokens, isAnthropic := tokenStatsCacheOtherTokens(log.Other)
 	// NOTE: see isAnthropicUsageSemantic in log.go — Claude/Anthropic semantic
@@ -285,6 +307,7 @@ func BackfillTokenStatsCacheDay(day int64) (int64, error) {
 				CacheReadTokens:  delta.CacheReadTokens,
 				CacheWriteTokens: delta.CacheWriteTokens,
 				Count:            delta.Count,
+				Quota:            delta.Quota,
 			}
 			if err := tx.Clauses(clause.OnConflict{
 				Columns: []clause.Column{
@@ -297,6 +320,7 @@ func BackfillTokenStatsCacheDay(day int64) (int64, error) {
 					"cache_read_tokens":  gorm.Expr("token_stats_cache.cache_read_tokens + ?", delta.CacheReadTokens),
 					"cache_write_tokens": gorm.Expr("token_stats_cache.cache_write_tokens + ?", delta.CacheWriteTokens),
 					"count":              gorm.Expr("token_stats_cache.count + ?", delta.Count),
+					"quota":              gorm.Expr("token_stats_cache.quota + ?", delta.Quota),
 				}),
 			}).Create(row).Error; err != nil {
 				return err
@@ -400,6 +424,7 @@ type tokenStatsCacheDayRow struct {
 	CacheReadTokens  int64
 	CacheWriteTokens int64
 	Count            int64
+	Quota            int64
 }
 
 // queryTokenStatsCacheForTokenDistribution reads the cache-covered portion of Token
@@ -447,7 +472,7 @@ func queryTokenStatsCacheForTokenDistribution(firstDay, lastDay int64, filter di
 // in the output, so unlike Token Distribution there is no granularity trade-off here).
 func queryTokenStatsCacheForKeyDistribution(firstDay, lastDay int64, filter distributionFilter) ([]*KeyDistributionData, error) {
 	tx := LOG_DB.Table("token_stats_cache").
-		Select("token_id, token_name, model_name, SUM(input_tokens) as input_tokens, SUM(output_tokens) as output_tokens, SUM(cache_read_tokens) as cache_read_tokens, SUM(cache_write_tokens) as cache_write_tokens, SUM(count) as count").
+		Select("token_id, token_name, model_name, SUM(input_tokens) as input_tokens, SUM(output_tokens) as output_tokens, SUM(cache_read_tokens) as cache_read_tokens, SUM(cache_write_tokens) as cache_write_tokens, SUM(count) as count, SUM(quota) as quota").
 		Where("day >= ? AND day <= ?", firstDay, lastDay).
 		Group("token_id, token_name, model_name")
 	if filter.UserId != 0 {
@@ -471,6 +496,7 @@ func queryTokenStatsCacheForKeyDistribution(firstDay, lastDay int64, filter dist
 			CacheReadTokens:  int(r.CacheReadTokens),
 			CacheWriteTokens: int(r.CacheWriteTokens),
 			Count:            int(r.Count),
+			Quota:            int(r.Quota),
 		}
 		item.TotalTokens = item.InputTokens + item.OutputTokens + item.CacheWriteTokens
 		result = append(result, item)

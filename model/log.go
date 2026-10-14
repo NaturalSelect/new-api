@@ -833,6 +833,7 @@ type KeyDistributionData struct {
 	CacheWriteTokens int    `json:"cache_write_tokens"`
 	TotalTokens      int    `json:"total_tokens"`
 	Count            int    `json:"count"`
+	Quota            int    `json:"quota"`
 }
 
 // keyDistributionLogRecord is the raw per-log row read from the logs table before
@@ -844,6 +845,7 @@ type keyDistributionLogRecord struct {
 	ModelName        string `json:"model_name"`
 	PromptTokens     int    `json:"prompt_tokens"`
 	CompletionTokens int    `json:"completion_tokens"`
+	Quota            int    `json:"quota"`
 	Other            string `json:"other"`
 }
 
@@ -939,6 +941,7 @@ func mergeKeyDistributionData(segments ...[]*KeyDistributionData) []*KeyDistribu
 			existing.CacheReadTokens += item.CacheReadTokens
 			existing.CacheWriteTokens += item.CacheWriteTokens
 			existing.Count += item.Count
+			existing.Quota += item.Quota
 			existing.TotalTokens += item.TotalTokens
 		}
 	}
@@ -952,7 +955,7 @@ func mergeKeyDistributionData(segments ...[]*KeyDistributionData) []*KeyDistribu
 // scanKeyDistribution is the original full raw-logs scan behind getKeyDistributionAggregated,
 // and also the oracle scanLogsForStatsCacheDay's backfill must agree with.
 func scanKeyDistribution(startTimestamp int64, endTimestamp int64, filter distributionFilter) ([]*KeyDistributionData, error) {
-	base := LOG_DB.Table("logs").Select("id, token_id, token_name, model_name, prompt_tokens, completion_tokens, other").Where("type = ?", LogTypeConsume)
+	base := LOG_DB.Table("logs").Select("id, token_id, token_name, model_name, prompt_tokens, completion_tokens, quota, other").Where("type = ?", LogTypeConsume)
 	if startTimestamp != 0 {
 		base = base.Where("created_at >= ?", startTimestamp)
 	}
@@ -996,6 +999,7 @@ func scanKeyDistribution(startTimestamp int64, endTimestamp int64, filter distri
 			item.InputTokens += record.PromptTokens
 			item.OutputTokens += record.CompletionTokens
 			item.Count += 1
+			item.Quota += record.Quota
 
 			if record.Other != "" {
 				otherMap := make(map[string]interface{})
@@ -1044,6 +1048,7 @@ type tokenStatsCacheLogRecord struct {
 	ModelName        string `json:"model_name"`
 	PromptTokens     int    `json:"prompt_tokens"`
 	CompletionTokens int    `json:"completion_tokens"`
+	Quota            int    `json:"quota"`
 	Other            string `json:"other"`
 }
 
@@ -1056,7 +1061,7 @@ type tokenStatsCacheLogRecord struct {
 // BackfillTokenStatsCacheDay; the returned deltas fully replace that day's cache rows.
 func scanLogsForStatsCacheDay(day int64) ([]tokenStatsCacheDelta, int64, error) {
 	base := LOG_DB.Table("logs").
-		Select("id, user_id, username, token_id, token_name, model_name, prompt_tokens, completion_tokens, other").
+		Select("id, user_id, username, token_id, token_name, model_name, prompt_tokens, completion_tokens, quota, other").
 		Where("type = ?", LogTypeConsume).
 		Where("created_at >= ? AND created_at < ?", day, day+86400)
 
@@ -1095,6 +1100,7 @@ func scanLogsForStatsCacheDay(day int64) ([]tokenStatsCacheDelta, int64, error) 
 			item.InputTokens += int64(record.PromptTokens)
 			item.OutputTokens += int64(record.CompletionTokens)
 			item.Count++
+			item.Quota += int64(record.Quota)
 
 			cacheReadTokens, cacheWriteTokens, isAnthropic := tokenStatsCacheOtherTokens(record.Other)
 			if isAnthropic {

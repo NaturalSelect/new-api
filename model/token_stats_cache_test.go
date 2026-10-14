@@ -444,6 +444,51 @@ func TestGetKeyDistribution_MergesCacheAndRawWithoutChangingResults(t *testing.T
 	}
 }
 
+// A cache-covered day must report the same per-key cost as the raw scan it replaces.
+func TestGetKeyDistribution_CacheCoveredQuotaMatchesRawScan(t *testing.T) {
+	truncateTables(t)
+	resetTokenStatsCacheWatermark(t)
+
+	today := BucketTimestampToDay(common.GetTimestamp())
+	pastDay := today - 3*86400
+
+	createConsumeLogWithQuota(t, 1, 10, "gpt-4", 300, pastDay+100)
+	createConsumeLogWithQuota(t, 1, 10, "gpt-4", 200, pastDay+3700)
+	createConsumeLogWithQuota(t, 1, 10, "gpt-4", 40, common.GetTimestamp())
+
+	_, err := BackfillTokenStatsCacheDay(pastDay)
+	require.NoError(t, err)
+	require.NoError(t, AdvanceTokenStatsCacheWatermark(pastDay))
+
+	result, err := GetKeyDistribution(0, 0, "")
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+	require.Equal(t, 540, result[0].Quota)
+}
+
+// Cache rows written before the quota column existed hold quota = 0 and would
+// understate cost, so the one-time migration must clear them exactly once.
+func TestMigrateTokenStatsCacheQuotaColumn_ClearsCacheOnce(t *testing.T) {
+	truncateTables(t)
+	resetTokenStatsCacheWatermark(t)
+
+	pastDay := BucketTimestampToDay(common.GetTimestamp()) - 3*86400
+	createConsumeLogWithQuota(t, 1, 10, "gpt-4", 300, pastDay+100)
+	_, err := BackfillTokenStatsCacheDay(pastDay)
+	require.NoError(t, err)
+
+	require.NoError(t, MigrateTokenStatsCacheQuotaColumn())
+	var count int64
+	require.NoError(t, LOG_DB.Model(&TokenStatsCache{}).Count(&count).Error)
+	require.EqualValues(t, 0, count)
+
+	_, err = BackfillTokenStatsCacheDay(pastDay)
+	require.NoError(t, err)
+	require.NoError(t, MigrateTokenStatsCacheQuotaColumn())
+	require.NoError(t, LOG_DB.Model(&TokenStatsCache{}).Count(&count).Error)
+	require.EqualValues(t, 1, count)
+}
+
 // A request whose start/end falls mid-day on a cache-covered boundary day must not
 // use the cache for that partial day — the day-granularity cache row cannot answer a
 // sub-day question, so it must fall back to the raw scan for that one day instead of
@@ -492,6 +537,7 @@ func TestRecordTaskBillingLog_UpdatesTokenStatsCacheOnlyForConsume(t *testing.T)
 	var row TokenStatsCache
 	require.NoError(t, LOG_DB.Where("user_id = ? AND token_id = ?", 1, 10).First(&row).Error)
 	require.EqualValues(t, 1, row.Count)
+	require.EqualValues(t, 100, row.Quota)
 }
 
 // RecordPoeConsumeLog must update the cache, including for backdated entries (Poe log

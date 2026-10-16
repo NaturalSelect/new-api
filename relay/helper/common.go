@@ -1,9 +1,12 @@
 package helper
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
@@ -13,6 +16,123 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 )
+
+// streamKeepAliveWriter 在首个业务写入前保活，写入开始时同步交接给流处理器。
+type streamKeepAliveWriter struct {
+	gin.ResponseWriter
+	mutex       sync.Mutex
+	cancel      context.CancelFunc
+	done        chan struct{}
+	pingContext *gin.Context
+}
+
+func (writer *streamKeepAliveWriter) stop() {
+	writer.cancel()
+	<-writer.done
+}
+
+func (writer *streamKeepAliveWriter) Write(data []byte) (int, error) {
+	writer.stop()
+	return writer.ResponseWriter.Write(data)
+}
+
+func (writer *streamKeepAliveWriter) WriteString(data string) (int, error) {
+	writer.stop()
+	return writer.ResponseWriter.WriteString(data)
+}
+
+func (writer *streamKeepAliveWriter) WriteHeader(status int) {
+	writer.stop()
+	writer.ResponseWriter.WriteHeader(status)
+}
+
+func (writer *streamKeepAliveWriter) WriteHeaderNow() {
+	writer.stop()
+	writer.ResponseWriter.WriteHeaderNow()
+}
+
+func (writer *streamKeepAliveWriter) Flush() {
+	writer.stop()
+	writer.ResponseWriter.Flush()
+}
+
+func (writer *streamKeepAliveWriter) Status() int {
+	writer.mutex.Lock()
+	defer writer.mutex.Unlock()
+	return writer.ResponseWriter.Status()
+}
+
+func (writer *streamKeepAliveWriter) Size() int {
+	writer.mutex.Lock()
+	defer writer.mutex.Unlock()
+	return writer.ResponseWriter.Size()
+}
+
+func (writer *streamKeepAliveWriter) Written() bool {
+	writer.mutex.Lock()
+	defer writer.mutex.Unlock()
+	return writer.ResponseWriter.Written()
+}
+
+func (writer *streamKeepAliveWriter) ping() error {
+	writer.mutex.Lock()
+	defer writer.mutex.Unlock()
+	return PingData(writer.pingContext)
+}
+
+// StartStreamKeepAlive 立即发送心跳，覆盖请求准备和渠道重试；首个业务写入会停止它。
+// 已有请求级保活时返回空操作，渠道层的 defer 不会提前结束请求级保活。
+func StartStreamKeepAlive(c *gin.Context, interval time.Duration) func() {
+	if previous, ok := c.Writer.(*streamKeepAliveWriter); ok {
+		select {
+		case <-previous.done:
+			c.Writer = previous.ResponseWriter
+		default:
+			return func() {}
+		}
+	}
+	if c.Request.Context().Err() != nil {
+		return func() {}
+	}
+	if interval <= 0 {
+		interval = DefaultPingInterval
+	}
+	SetEventStreamHeaders(c)
+	ctx, cancel := context.WithCancel(c.Request.Context())
+	pingContext := c.Copy()
+	// 心跳直接使用原 writer，业务写入才会触发保活交接。
+	pingContext.Writer = c.Writer
+	writer := &streamKeepAliveWriter{ResponseWriter: c.Writer, cancel: cancel, done: make(chan struct{}), pingContext: pingContext}
+	c.Writer = writer
+	if err := writer.ping(); err != nil {
+		cancel()
+		close(writer.done)
+		return writer.stop
+	}
+	go writer.keepAlive(ctx, interval)
+	return writer.stop
+}
+
+func (writer *streamKeepAliveWriter) keepAlive(ctx context.Context, interval time.Duration) {
+	defer close(writer.done)
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			common.SysError(fmt.Sprintf("SSE keepalive panic: %v", recovered))
+		}
+	}()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if ctx.Err() != nil || writer.ping() != nil {
+				return
+			}
+		}
+	}
+}
 
 func FlushWriter(c *gin.Context) (err error) {
 	defer func() {

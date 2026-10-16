@@ -1,15 +1,90 @@
 package channel
 
 import (
+	"bufio"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/relay/helper"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+func TestDoRequestKeepAliveAcrossRetry(t *testing.T) {
+	service.InitHttpClient()
+	var attempts atomic.Int32
+	secondRequest := make(chan struct{})
+	release := make(chan struct{})
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if attempts.Add(1) == 1 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		close(secondRequest)
+		select {
+		case <-release:
+			_, _ = io.WriteString(w, "data: ok\n\n")
+		case <-r.Context().Done():
+		}
+	}))
+	defer upstream.Close()
+	engine := gin.New()
+	engine.GET("/stream", func(c *gin.Context) {
+		stop := helper.StartStreamKeepAlive(c, 10*time.Millisecond)
+		defer stop()
+		info := &relaycommon.RelayInfo{IsStream: true, ChannelMeta: &relaycommon.ChannelMeta{}}
+		for attempt := 0; attempt < 2; attempt++ {
+			request, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, upstream.URL, strings.NewReader("{}"))
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			response, err := DoRequest(c, request, info)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			if response.StatusCode == http.StatusTooManyRequests {
+				response.Body.Close()
+				continue
+			}
+			_, _ = io.Copy(c.Writer, response.Body)
+			response.Body.Close()
+		}
+	})
+	server := httptest.NewServer(engine)
+	defer server.Close()
+	client := &http.Client{Timeout: 3 * time.Second}
+	response, err := client.Get(server.URL + "/stream")
+	require.NoError(t, err)
+	defer response.Body.Close()
+	select {
+	case <-secondRequest:
+	case <-time.After(time.Second):
+		t.Fatal("second upstream request did not start")
+	}
+	reader := bufio.NewReader(response.Body)
+	for frame := 0; frame < 2; frame++ {
+		line, readErr := reader.ReadString('\n')
+		require.NoError(t, readErr)
+		require.Equal(t, ": PING\n", line)
+		_, readErr = reader.ReadString('\n')
+		require.NoError(t, readErr)
+	}
+	close(release)
+	body, err := io.ReadAll(reader)
+	require.NoError(t, err)
+	require.Contains(t, string(body), "data: ok\n\n")
+	require.Equal(t, int32(2), attempts.Load())
+}
 
 func TestProcessHeaderOverride_ChannelTestSkipsPassthroughRules(t *testing.T) {
 	t.Parallel()

@@ -263,19 +263,7 @@ func (c *ClaudeRequest) GetTokenCountMeta() *types.TokenCountMeta {
 			}
 		} else {
 			systemMedia := c.ParseSystem()
-			for _, media := range systemMedia {
-				switch media.Type {
-				case "text":
-					texts = append(texts, media.GetText())
-				case "image":
-					if source := media.ToFileSource(); source != nil {
-						fileMeta = append(fileMeta, &types.FileMeta{
-							FileType: types.FileTypeImage,
-							Source:   source,
-						})
-					}
-				}
-			}
+			appendClaudeTokenContent(systemMedia, &texts, &fileMeta)
 		}
 	}
 
@@ -292,32 +280,7 @@ func (c *ClaudeRequest) GetTokenCountMeta() *types.TokenCountMeta {
 		}
 
 		content, _ := message.ParseContent()
-		for _, media := range content {
-			switch media.Type {
-			case "text":
-				texts = append(texts, media.GetText())
-			case "image":
-				if source := media.ToFileSource(); source != nil {
-					fileMeta = append(fileMeta, &types.FileMeta{
-						FileType: types.FileTypeImage,
-						Source:   source,
-					})
-				}
-			case "tool_use":
-				if media.Name != "" {
-					texts = append(texts, media.Name)
-				}
-				if media.Input != nil {
-					b, _ := common.Marshal(media.Input)
-					texts = append(texts, string(b))
-				}
-			case "tool_result":
-				if media.Content != nil {
-					b, _ := common.Marshal(media.Content)
-					texts = append(texts, string(b))
-				}
-			}
-		}
+		appendClaudeTokenContent(content, &texts, &fileMeta)
 	}
 
 	// tools
@@ -356,6 +319,38 @@ func (c *ClaudeRequest) GetTokenCountMeta() *types.TokenCountMeta {
 	tokenCountMeta.CombineText = strings.Join(texts, "\n")
 	tokenCountMeta.Files = fileMeta
 	return &tokenCountMeta
+}
+
+func appendClaudeTokenContent(content []ClaudeMediaMessage, texts *[]string, files *[]*types.FileMeta) {
+	for _, media := range content {
+		switch media.Type {
+		case "text":
+			*texts = append(*texts, media.GetText())
+		case "image", "document":
+			if source := media.ToFileSource(); source != nil {
+				fileType := types.FileTypeImage
+				if media.Type == "document" {
+					fileType = types.FileTypeFile
+				}
+				*files = append(*files, &types.FileMeta{FileType: fileType, Source: source})
+			}
+		case "tool_use":
+			if media.Name != "" {
+				*texts = append(*texts, media.Name)
+			}
+			if media.Input != nil {
+				encoded, _ := common.Marshal(media.Input)
+				*texts = append(*texts, string(encoded))
+			}
+		case "tool_result":
+			if media.IsStringContent() {
+				*texts = append(*texts, media.GetStringContent())
+			} else {
+				// 媒体使用文件估算路径，不能把 base64 放进文本分词或敏感词扫描。
+				appendClaudeTokenContent(media.ParseMediaContent(), texts, files)
+			}
+		}
+	}
 }
 
 func (c *ClaudeRequest) IsStream(ctx *gin.Context) bool {

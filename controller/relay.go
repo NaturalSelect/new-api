@@ -93,6 +93,10 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		if newAPIError != nil {
 			logger.LogError(c, fmt.Sprintf("relay error: %s", common.LocalLogPreview(newAPIError.Error())))
 			newAPIError.SetMessage(common.MessageWithRequestId(newAPIError.Error(), requestId))
+			if c.Writer.Written() && strings.HasPrefix(c.Writer.Header().Get("Content-Type"), "text/event-stream") {
+				writeRelayStreamError(c, relayFormat, newAPIError)
+				return
+			}
 			switch relayFormat {
 			case types.RelayFormatOpenAIRealtime:
 				helper.WssError(c, ws, newAPIError.ToOpenAIError())
@@ -130,6 +134,12 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		recordEasterEggConsumeLog(c, relayInfo)
 		newAPIError = relay.EasterEggHelper(c, relayInfo)
 		return
+	}
+
+	generalSettings := operation_setting.GetGeneralSetting()
+	if relayFormat == types.RelayFormatClaude && relayInfo.IsStream && !relayInfo.DisablePing && generalSettings.PingIntervalEnabled {
+		stopKeepAlive := helper.StartStreamKeepAlive(c, time.Duration(generalSettings.PingIntervalSeconds)*time.Second)
+		defer stopKeepAlive()
 	}
 
 	needSensitiveCheck := setting.ShouldCheckPromptSensitive()
@@ -280,6 +290,16 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			perfmetrics.RecordRelaySample(relayInfo, false, 0)
 		})
 	}
+}
+
+func writeRelayStreamError(c *gin.Context, format types.RelayFormat, apiError *types.NewAPIError) {
+	// 心跳已提交 SSE 响应头，最终错误必须通过同一个流传给客户端。
+	if format == types.RelayFormatClaude {
+		_ = helper.ClaudeData(c, dto.ClaudeResponse{Type: "error", Error: apiError.ToClaudeError()})
+		return
+	}
+	_ = helper.ObjectData(c, gin.H{"error": apiError.ToOpenAIError()})
+	helper.Done(c)
 }
 
 var upgrader = websocket.Upgrader{

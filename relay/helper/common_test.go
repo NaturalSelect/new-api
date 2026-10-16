@@ -85,7 +85,7 @@ func TestStreamKeepAliveHandoffAndCancellation(t *testing.T) {
 			requestContext, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			c.Request = httptest.NewRequest(http.MethodGet, "/stream", nil).WithContext(requestContext)
-			stop := StartStreamKeepAlive(c, time.Millisecond)
+			stop := StartStreamKeepAlive(c, time.Hour)
 			defer stop()
 			writer := c.Writer.(*streamKeepAliveWriter)
 			switch action {
@@ -108,7 +108,7 @@ func TestStreamKeepAliveHandoffAndCancellation(t *testing.T) {
 				t.Fatal("keepalive did not stop")
 			}
 			stop()
-			require.True(t, strings.HasPrefix(recorder.Body.String(), ": PING\n\n"))
+			require.NotContains(t, recorder.Body.String(), ": PING\n\n")
 			if action == "write" || action == "write-string" {
 				require.True(t, strings.HasSuffix(recorder.Body.String(), "data: ok\n\n"), fmt.Sprintf("interleaved output: %q", recorder.Body.String()))
 			}

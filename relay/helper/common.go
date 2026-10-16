@@ -80,7 +80,7 @@ func (writer *streamKeepAliveWriter) ping() error {
 	return PingData(writer.pingContext)
 }
 
-// StartStreamKeepAlive 立即发送心跳，覆盖请求准备和渠道重试；首个业务写入会停止它。
+// StartStreamKeepAlive 按配置间隔发送心跳，覆盖请求准备和渠道重试；首个业务写入会停止它。
 // 已有请求级保活时返回空操作，渠道层的 defer 不会提前结束请求级保活。
 func StartStreamKeepAlive(c *gin.Context, interval time.Duration) func() {
 	if previous, ok := c.Writer.(*streamKeepAliveWriter); ok {
@@ -104,11 +104,6 @@ func StartStreamKeepAlive(c *gin.Context, interval time.Duration) func() {
 	pingContext.Writer = c.Writer
 	writer := &streamKeepAliveWriter{ResponseWriter: c.Writer, cancel: cancel, done: make(chan struct{}), pingContext: pingContext}
 	c.Writer = writer
-	if err := writer.ping(); err != nil {
-		cancel()
-		close(writer.done)
-		return writer.stop
-	}
 	go writer.keepAlive(ctx, interval)
 	return writer.stop
 }

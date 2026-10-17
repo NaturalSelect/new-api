@@ -100,7 +100,9 @@ func PingData(c *gin.Context) error {
 		return fmt.Errorf("request context done: %w", c.Request.Context().Err())
 	}
 
-	if _, err := c.Writer.Write([]byte(": PING\n\n")); err != nil {
+	n, err := c.Writer.Write([]byte(pingFrame))
+	recordKeepAliveBytes(c, n)
+	if err != nil {
 		return fmt.Errorf("write ping data failed: %w", err)
 	}
 	return FlushWriter(c)
@@ -126,7 +128,12 @@ func Done(c *gin.Context) {
 // silently swallowed. format should be the original client request format
 // (info.RelayFormat), not the upstream conversion format.
 func SendStreamError(c *gin.Context, format types.RelayFormat, err error) {
-	apiErr := types.NewOpenAIError(err, types.ErrorCodeReadResponseBodyFailed, http.StatusBadGateway)
+	WriteStreamError(c, format, types.NewOpenAIError(err, types.ErrorCodeReadResponseBodyFailed, http.StatusBadGateway))
+}
+
+// WriteStreamError writes apiErr as an in-stream SSE error event in the client's protocol.
+// Use it once the response is already committed and the HTTP status can no longer change.
+func WriteStreamError(c *gin.Context, format types.RelayFormat, apiErr *types.NewAPIError) {
 	switch format {
 	case types.RelayFormatClaude:
 		_ = ClaudeData(c, dto.ClaudeResponse{

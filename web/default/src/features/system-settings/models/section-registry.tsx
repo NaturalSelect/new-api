@@ -60,6 +60,8 @@ const MODELS_SECTIONS = [
               settings['general_setting.ping_interval_enabled'],
             ping_interval_seconds:
               settings['general_setting.ping_interval_seconds'],
+            ping_before_upstream_response_enabled:
+              settings['general_setting.ping_before_upstream_response_enabled'],
           },
         }}
       />

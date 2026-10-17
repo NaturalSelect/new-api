@@ -72,6 +72,7 @@ const defaultGlobalSettingInputs = {
   'global.chat_completions_to_responses_policy': '{}',
   'general_setting.ping_interval_enabled': true,
   'general_setting.ping_interval_seconds': 60,
+  'general_setting.ping_before_upstream_response_enabled': false,
 };
 
 export default function SettingGlobalModel(props) {
@@ -367,7 +368,7 @@ export default function SettingGlobalModel(props) {
                   <Banner
                     type='warning'
                     description={t(
-                      '警告：启用保活后，如果已经写入保活数据后渠道出错，系统无法重试，如果必须开启，推荐设置尽可能大的Ping间隔',
+                      '保活默认只在上游返回成功状态后发送。开启“上游响应前保活”后,若所有渠道都失败,客户端会收到 HTTP 200 和流内错误事件,而不是真实错误码。',
                     )}
                   />
                 </Col>
@@ -397,6 +398,25 @@ export default function SettingGlobalModel(props) {
                       })
                     }
                     min={1}
+                    disabled={!inputs['general_setting.ping_interval_enabled']}
+                  />
+                </Col>
+                <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                  <Form.Switch
+                    label={t('上游响应前保活')}
+                    field={
+                      'general_setting.ping_before_upstream_response_enabled'
+                    }
+                    onChange={(value) =>
+                      setInputs({
+                        ...inputs,
+                        'general_setting.ping_before_upstream_response_enabled':
+                          value,
+                      })
+                    }
+                    extraText={t(
+                      '开启后，等待上游响应期间也会发送ping数据。仅当CDN或反向代理会在上游响应前断开连接时才需要开启；若所有渠道都失败，客户端会收到 HTTP 200 和流内错误事件，而不是真实错误码。',
+                    )}
                     disabled={!inputs['general_setting.ping_interval_enabled']}
                   />
                 </Col>

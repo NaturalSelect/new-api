@@ -14,6 +14,8 @@ type GeneralSetting struct {
 	DocsLink            string `json:"docs_link"`
 	PingIntervalEnabled bool   `json:"ping_interval_enabled"`
 	PingIntervalSeconds int    `json:"ping_interval_seconds"`
+	// 上游返回响应前是否也发送 ping（默认仅在上游返回响应后发送）
+	PingBeforeUpstreamResponseEnabled bool `json:"ping_before_upstream_response_enabled"`
 	// 当前站点额度展示类型：USD / CNY / TOKENS
 	QuotaDisplayType string `json:"quota_display_type"`
 	// 自定义货币符号，用于 CUSTOM 展示类型

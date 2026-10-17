@@ -68,6 +68,33 @@ func geminiRelayHandler(c *gin.Context, info *relaycommon.RelayInfo) *types.NewA
 	return err
 }
 
+// renderRelayError writes the final relay error to the client. Once the response is committed the HTTP
+// status can no longer change, so SSE responses get an in-stream error event and anything else is left untouched.
+func renderRelayError(c *gin.Context, relayFormat types.RelayFormat, ws *websocket.Conn, apiErr *types.NewAPIError) {
+	common.SetContextKey(c, constant.ContextKeyRelayFailed, true)
+	switch {
+	case relayFormat == types.RelayFormatOpenAIRealtime:
+		helper.WssError(c, ws, apiErr.ToOpenAIError())
+	case !c.Writer.Written():
+		// NOTE: Stream headers may have been set before the upstream answered; the error body is JSON.
+		c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+		if relayFormat == types.RelayFormatClaude {
+			c.JSON(apiErr.StatusCode, gin.H{
+				"type":  "error",
+				"error": apiErr.ToClaudeError(),
+			})
+		} else {
+			c.JSON(apiErr.StatusCode, gin.H{
+				"error": apiErr.ToOpenAIError(),
+			})
+		}
+	case strings.HasPrefix(c.Writer.Header().Get("Content-Type"), "text/event-stream"):
+		helper.WriteStreamError(c, relayFormat, apiErr)
+	default:
+		logger.LogWarn(c, "relay error after response committed, skip writing error body")
+	}
+}
+
 func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	requestId := c.GetString(common.RequestIdKey)
@@ -93,19 +120,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		if newAPIError != nil {
 			logger.LogError(c, fmt.Sprintf("relay error: %s", common.LocalLogPreview(newAPIError.Error())))
 			newAPIError.SetMessage(common.MessageWithRequestId(newAPIError.Error(), requestId))
-			switch relayFormat {
-			case types.RelayFormatOpenAIRealtime:
-				helper.WssError(c, ws, newAPIError.ToOpenAIError())
-			case types.RelayFormatClaude:
-				c.JSON(newAPIError.StatusCode, gin.H{
-					"type":  "error",
-					"error": newAPIError.ToClaudeError(),
-				})
-			default:
-				c.JSON(newAPIError.StatusCode, gin.H{
-					"error": newAPIError.ToOpenAIError(),
-				})
-			}
+			renderRelayError(c, relayFormat, ws, newAPIError)
 		}
 	}()
 
@@ -242,7 +257,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 				return
 			}
 
-			if newAPIError.StatusCode == http.StatusTooManyRequests && inPlaceAttempt < inPlaceMax {
+			if newAPIError.StatusCode == http.StatusTooManyRequests && inPlaceAttempt < inPlaceMax && !helper.HasWrittenPayload(c) {
 				logger.LogInfo(c, fmt.Sprintf("渠道 #%d 返回 429，原地重试 %d/%d", channel.Id, inPlaceAttempt+1, inPlaceMax))
 				record429RetryConsumeLog(c, relayInfo, channel, inPlaceAttempt, inPlaceMax, common.LocalLogPreview(newAPIError.Error()))
 				select {
@@ -430,6 +445,9 @@ func recordEasterEggConsumeLog(c *gin.Context, info *relaycommon.RelayInfo) {
 
 func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) bool {
 	if openaiErr == nil {
+		return false
+	}
+	if helper.HasWrittenPayload(c) {
 		return false
 	}
 	if service.ShouldSkipRetryAfterChannelAffinityFailure(c) {

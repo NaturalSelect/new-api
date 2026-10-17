@@ -57,6 +57,11 @@ const (
 
 	ContextKeyLocalCountTokens ContextKey = "local_count_tokens"
 
+	// ContextKeyStreamKeepAliveBytes stores the *atomic.Int64 counting keep-alive bytes written to the client.
+	ContextKeyStreamKeepAliveBytes ContextKey = "stream_keepalive_bytes"
+	// ContextKeyRelayFailed marks a relay request that ended in error, even if the committed HTTP status is 200.
+	ContextKeyRelayFailed ContextKey = "relay_failed"
+
 	ContextKeySystemPromptOverride ContextKey = "system_prompt_override"
 
 	// ContextKeyFileSourcesToCleanup stores file sources that need cleanup when request ends

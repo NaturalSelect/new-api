@@ -94,6 +94,7 @@ const schema = z.object({
   general_setting: z.object({
     ping_interval_enabled: z.boolean(),
     ping_interval_seconds: z.coerce.number().min(1),
+    ping_before_upstream_response_enabled: z.boolean(),
   }),
 })
 
@@ -106,6 +107,7 @@ type FlatGlobalModelSettings = {
   'global.chat_completions_to_responses_policy': string
   'general_setting.ping_interval_enabled': boolean
   'general_setting.ping_interval_seconds': number
+  'general_setting.ping_before_upstream_response_enabled': boolean
 }
 
 const flattenGlobalValues = (
@@ -125,6 +127,8 @@ const flattenGlobalValues = (
     values.general_setting.ping_interval_enabled,
   'general_setting.ping_interval_seconds':
     values.general_setting.ping_interval_seconds,
+  'general_setting.ping_before_upstream_response_enabled':
+    values.general_setting.ping_before_upstream_response_enabled,
 })
 
 function normalizeJsonText(value: string, fallback: string) {
@@ -357,7 +361,7 @@ export function GlobalSettingsCard({ defaultValues }: GlobalSettingsCardProps) {
                   <FormLabel>{t('Keep-alive Ping')}</FormLabel>
                   <FormDescription>
                     {t(
-                      'Periodically send ping frames to keep streaming connections active.'
+                      'Send SSE keep-alive comments while a stream waits for data. Pings start only after the upstream returns a successful status.'
                     )}
                   </FormDescription>
                 </SettingsSwitchContent>
@@ -401,6 +405,30 @@ export function GlobalSettingsCard({ defaultValues }: GlobalSettingsCardProps) {
                 </FormDescription>
                 <FormMessage />
               </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name='general_setting.ping_before_upstream_response_enabled'
+            render={({ field }) => (
+              <SettingsSwitchItem>
+                <SettingsSwitchContent>
+                  <FormLabel>{t('Ping before upstream responds')}</FormLabel>
+                  <FormDescription>
+                    {t(
+                      'Also send pings while waiting for the upstream to respond. Enable only if a CDN or reverse proxy drops connections before the upstream responds; if every channel then fails, clients receive HTTP 200 with an in-stream error event instead of the real status code.'
+                    )}
+                  </FormDescription>
+                </SettingsSwitchContent>
+                <FormControl>
+                  <Switch
+                    checked={field.value}
+                    disabled={!pingEnabled}
+                    onCheckedChange={field.onChange}
+                  />
+                </FormControl>
+              </SettingsSwitchItem>
             )}
           />
         </SettingsForm>

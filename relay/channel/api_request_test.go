@@ -3,10 +3,15 @@ package channel
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -286,4 +291,74 @@ func TestApplyDisguiseHeaderProtection_NilHeader(t *testing.T) {
 	require.NotPanics(t, func() {
 		applyDisguiseHeaderProtection(nil, info)
 	})
+}
+
+type lockedRecorder struct {
+	*httptest.ResponseRecorder
+	mu sync.Mutex
+}
+
+func (l *lockedRecorder) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.ResponseRecorder.Write(p)
+}
+
+func (l *lockedRecorder) bodyString() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.Body.String()
+}
+
+// doRequestAgainstSlowUpstream runs doRequest against an upstream that answers after upstreamDelay.
+func doRequestAgainstSlowUpstream(t *testing.T, upstreamDelay time.Duration, pingBeforeResponse bool) (*lockedRecorder, *gin.Context) {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	service.InitHttpClient()
+
+	settings := operation_setting.GetGeneralSetting()
+	oldEnabled, oldSeconds, oldBefore := settings.PingIntervalEnabled, settings.PingIntervalSeconds, settings.PingBeforeUpstreamResponseEnabled
+	settings.PingIntervalEnabled, settings.PingIntervalSeconds, settings.PingBeforeUpstreamResponseEnabled = true, 1, pingBeforeResponse
+	t.Cleanup(func() {
+		settings.PingIntervalEnabled, settings.PingIntervalSeconds, settings.PingBeforeUpstreamResponseEnabled = oldEnabled, oldSeconds, oldBefore
+	})
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(upstreamDelay)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	t.Cleanup(upstream.Close)
+
+	recorder := &lockedRecorder{ResponseRecorder: httptest.NewRecorder()}
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader("{}"))
+
+	req, err := http.NewRequest(http.MethodPost, upstream.URL, strings.NewReader("{}"))
+	require.NoError(t, err)
+	info := &relaycommon.RelayInfo{IsStream: true, ChannelMeta: &relaycommon.ChannelMeta{}}
+
+	resp, err := doRequest(c, req, info)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	return recorder, c
+}
+
+func TestDoRequest_DefaultSendsNothingBeforeUpstreamResponds(t *testing.T) {
+	recorder, c := doRequestAgainstSlowUpstream(t, 2500*time.Millisecond, false)
+
+	require.False(t, c.Writer.Written(), "no byte may reach the client before the upstream status is known")
+	require.NotContains(t, recorder.bodyString(), ": PING")
+	require.NotContains(t, c.Writer.Header().Get("Content-Type"), "text/event-stream")
+}
+
+func TestDoRequest_PingBeforeUpstreamResponseWhenEnabled(t *testing.T) {
+	recorder, c := doRequestAgainstSlowUpstream(t, 2500*time.Millisecond, true)
+
+	require.GreaterOrEqual(t, strings.Count(recorder.bodyString(), ": PING"), 2)
+	require.Contains(t, c.Writer.Header().Get("Content-Type"), "text/event-stream")
+
+	sizeAfterReturn := len(recorder.bodyString())
+	time.Sleep(1500 * time.Millisecond)
+	require.Equal(t, sizeAfterReturn, len(recorder.bodyString()), "keep-alive must have stopped once doRequest returned")
 }

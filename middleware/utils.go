@@ -2,8 +2,10 @@ package middleware
 
 import (
 	"fmt"
+	"net/http"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
@@ -34,4 +36,9 @@ func abortWithMidjourneyMessage(c *gin.Context, statusCode int, code int, descri
 	})
 	c.Abort()
 	logger.LogError(c.Request.Context(), description)
+}
+
+// relaySucceeded is false when the relay failed after the 200 status was already committed (e.g. a stream error).
+func relaySucceeded(c *gin.Context) bool {
+	return c.Writer.Status() < http.StatusBadRequest && !common.GetContextKeyBool(c, constant.ContextKeyRelayFailed)
 }

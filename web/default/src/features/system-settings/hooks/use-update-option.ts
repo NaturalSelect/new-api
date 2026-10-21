@@ -38,6 +38,7 @@ const STATUS_RELATED_KEYS = [
   'general_setting.custom_currency_exchange_rate',
   'secure_verification.require_for_channel_key',
   'secure_verification.require_password_for_channel_key',
+  'intelligence_setting.enabled',
 ]
 
 export function useUpdateOption() {

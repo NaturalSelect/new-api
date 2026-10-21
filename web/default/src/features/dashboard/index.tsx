@@ -28,6 +28,7 @@ import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/auth-store'
 import { ROLE } from '@/lib/roles'
+import { useStatus } from '@/hooks/use-status'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { SectionPageLayout } from '@/components/layout'
@@ -196,7 +197,9 @@ export function Dashboard() {
   const [modelFilters, setModelFilters] = useState<DashboardFilters>(() =>
     buildDefaultDashboardFilters(getSavedChartPreferences())
   )
+  const { status } = useStatus()
   const isAdmin = Boolean(userRole && userRole >= ROLE.ADMIN)
+  const showIntelligenceChart = isAdmin && status?.intelligence_enabled === true
   const meta = SECTION_META[activeSection] ?? SECTION_META.overview
 
   const handleFilterChange = useCallback((filters: DashboardFilters) => {
@@ -384,7 +387,7 @@ export function Dashboard() {
                   />
                 </Suspense>
               </FadeIn>
-              {isAdmin && (
+              {showIntelligenceChart && (
                 <FadeIn delay={0.2}>
                   <Suspense fallback={<ModelChartsFallback />}>
                     <LazyIntelligenceChart />

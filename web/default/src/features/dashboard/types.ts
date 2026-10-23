@@ -166,7 +166,6 @@ export interface IntelligenceScoreItem {
   valid_tasks: number
   average_price_usd: number
   average_minutes: number
-  combined_cost_index: number
   latest_graded_at: string
 }
 

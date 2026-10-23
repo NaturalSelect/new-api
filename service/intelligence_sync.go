@@ -15,48 +15,57 @@ import (
 )
 
 const (
-	intelligenceSourceURL    = "https://codexradar.com/api/intelligence-efficiency-metrics?refresh=1"
+	intelligenceSourceURL    = "https://codexradar.com/degradation-codex-latest.json"
 	intelligenceHTTPTimeout  = 30 * time.Second
 	intelligenceMaxBodyBytes = 10 << 20 // 10MB
+
+	intelligenceScoredStatus = "scored"
+	intelligenceIQScale      = 100
 )
 
 // IntelligenceScore is one model+effort combo's benchmark result, exposed to
 // the frontend via GetIntelligenceScores. This is our own stable API
 // contract; its JSON tags do not necessarily match the upstream response
-// shape (see intelligencePoint), which is mapped into this type on fetch.
+// shape (see intelligenceAPIResponse), which is mapped into this type on fetch.
 type IntelligenceScore struct {
-	Model             string  `json:"model"`
-	Effort            string  `json:"effort"`
-	IQ                float64 `json:"iq"`
-	Passed            float64 `json:"passed"`
-	ValidTasks        float64 `json:"valid_tasks"`
-	AveragePriceUSD   float64 `json:"average_price_usd"`
-	AverageMinutes    float64 `json:"average_minutes"`
-	CombinedCostIndex float64 `json:"combined_cost_index"`
-	LatestGradedAt    string  `json:"latest_graded_at"`
+	Model           string  `json:"model"`
+	Effort          string  `json:"effort"`
+	IQ              float64 `json:"iq"`
+	Passed          float64 `json:"passed"`
+	ValidTasks      float64 `json:"valid_tasks"`
+	AveragePriceUSD float64 `json:"average_price_usd"`
+	AverageMinutes  float64 `json:"average_minutes"`
+	LatestGradedAt  string  `json:"latest_graded_at"`
 }
 
-// intelligencePoint mirrors one entry of the "points" array returned by
-// https://codexradar.com/api/intelligence-efficiency-metrics. weighted_passed/
-// weighted_total are the rolling-weighted counts backing iq; the sibling
-// plain passed/total fields are raw non-weighted counts and are not used.
-type intelligencePoint struct {
-	Model             string  `json:"model"`
-	Effort            string  `json:"effort"`
-	IQ                float64 `json:"iq"`
-	WeightedPassed    float64 `json:"weighted_passed"`
-	WeightedTotal     float64 `json:"weighted_total"`
-	AveragePriceUSD   float64 `json:"average_price_usd"`
-	AverageMinutes    float64 `json:"average_minutes"`
-	CombinedCostIndex float64 `json:"combined_cost_index"`
-	SourceUpdatedAt   string  `json:"source_updated_at"`
+type intelligenceSetting struct {
+	Model  string `json:"model"`
+	Effort string `json:"effort"`
 }
 
-// intelligenceAPIResponse mirrors the subset of fields consumed from
-// https://codexradar.com/api/intelligence-efficiency-metrics
+type intelligenceTask struct {
+	ID     string  `json:"id"`
+	Weight float64 `json:"weight"`
+}
+
+type intelligenceTaskResult struct {
+	Status  string  `json:"status"`
+	Reward  float64 `json:"reward"`
+	Seconds float64 `json:"seconds"`
+	Cost    struct {
+		USD *float64 `json:"usd"`
+	} `json:"cost"`
+}
+
+// NOTE: Mirrors the subset of https://codexradar.com/degradation-codex-latest.json
+// we consume. round.results is keyed by "model|effort", then by task id.
 type intelligenceAPIResponse struct {
-	SourceUpdatedAt string              `json:"source_updated_at"`
-	Points          []intelligencePoint `json:"points"`
+	Settings []intelligenceSetting `json:"settings"`
+	Tasks    []intelligenceTask    `json:"tasks"`
+	Round    struct {
+		CompletedAt string                                       `json:"completed_at"`
+		Results     map[string]map[string]intelligenceTaskResult `json:"results"`
+	} `json:"round"`
 }
 
 var (
@@ -141,23 +150,61 @@ func runIntelligenceSyncOnce() {
 		return
 	}
 
-	scores := make([]IntelligenceScore, len(parsed.Points))
-	for i, p := range parsed.Points {
-		scores[i] = IntelligenceScore{
-			Model:             p.Model,
-			Effort:            p.Effort,
-			IQ:                p.IQ,
-			Passed:            p.WeightedPassed,
-			ValidTasks:        p.WeightedTotal,
-			AveragePriceUSD:   p.AveragePriceUSD,
-			AverageMinutes:    p.AverageMinutes,
-			CombinedCostIndex: p.CombinedCostIndex,
-			LatestGradedAt:    p.SourceUpdatedAt,
-		}
+	scores := buildIntelligenceScores(parsed)
+	if len(scores) == 0 {
+		logger.LogError(ctx, "intelligence sync: response contained no scorable results, keeping previous cache")
+		return
 	}
 
 	intelligenceCacheMutex.Lock()
 	intelligenceCacheScores = scores
 	intelligenceCacheUpdatedAt = time.Now().Unix()
 	intelligenceCacheMutex.Unlock()
+}
+
+// buildIntelligenceScores folds the per-task rewards of each model+effort
+// setting into one IntelligenceScore. Only scored tasks listed in resp.Tasks
+// contribute; settings with no such task are omitted. Cost and duration
+// averages cover only the tasks that reported them.
+func buildIntelligenceScores(resp intelligenceAPIResponse) []IntelligenceScore {
+	scores := make([]IntelligenceScore, 0, len(resp.Settings))
+	for _, setting := range resp.Settings {
+		results := resp.Round.Results[setting.Model+"|"+setting.Effort]
+
+		var weightedPassed, weightedTotal, totalSeconds, totalUSD float64
+		var scoredCount, pricedCount int
+		// NOTE: iterate resp.Tasks (not the results map) so float summation order is deterministic.
+		for _, task := range resp.Tasks {
+			result, ok := results[task.ID]
+			if !ok || result.Status != intelligenceScoredStatus {
+				continue
+			}
+			weightedPassed += task.Weight * result.Reward
+			weightedTotal += task.Weight
+			totalSeconds += result.Seconds
+			scoredCount++
+			if result.Cost.USD != nil {
+				totalUSD += *result.Cost.USD
+				pricedCount++
+			}
+		}
+		if scoredCount == 0 || weightedTotal <= 0 {
+			continue
+		}
+
+		score := IntelligenceScore{
+			Model:          setting.Model,
+			Effort:         setting.Effort,
+			IQ:             weightedPassed / weightedTotal * intelligenceIQScale,
+			Passed:         weightedPassed,
+			ValidTasks:     weightedTotal,
+			AverageMinutes: totalSeconds / float64(scoredCount) / 60,
+			LatestGradedAt: resp.Round.CompletedAt,
+		}
+		if pricedCount > 0 {
+			score.AveragePriceUSD = totalUSD / float64(pricedCount)
+		}
+		scores = append(scores, score)
+	}
+	return scores
 }

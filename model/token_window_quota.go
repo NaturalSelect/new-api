@@ -30,13 +30,17 @@ var (
 	tokenQuotaWindows = []TokenQuotaWindow{TokenQuotaWindow5h, TokenQuotaWindow7d}
 )
 
-func tokenQuotaWindowByName(name string) (TokenQuotaWindow, bool) {
+func TokenQuotaWindowByName(name string) (TokenQuotaWindow, bool) {
 	for _, w := range tokenQuotaWindows {
 		if w.Name == name {
 			return w, true
 		}
 	}
 	return TokenQuotaWindow{}, false
+}
+
+func TokenQuotaWindows() []TokenQuotaWindow {
+	return append([]TokenQuotaWindow(nil), tokenQuotaWindows...)
 }
 
 // endsAt is the unix second at which a window that started at start stops counting and its
@@ -199,7 +203,7 @@ func (s *tokenWindowMemoryStore) cleanup() {
 	now := tokenWindowNow().Unix()
 	for tokenId, windows := range s.windows {
 		for name, state := range windows {
-			w, known := tokenQuotaWindowByName(name)
+			w, known := TokenQuotaWindowByName(name)
 			if !known || !w.isLive(state.Start, now) {
 				delete(windows, name)
 			}
@@ -250,6 +254,54 @@ func memoryGetTokenWindowState(tokenId int, w TokenQuotaWindow) (tokenWindowStat
 	defer tokenWindowMemory.mutex.Unlock()
 
 	return tokenWindowMemory.getLocked(tokenId, w)
+}
+
+func memoryResetTokenWindowUsage(tokenId int, windows []TokenQuotaWindow) {
+	tokenWindowMemory.mutex.Lock()
+	defer tokenWindowMemory.mutex.Unlock()
+
+	states, ok := tokenWindowMemory.windows[tokenId]
+	if !ok {
+		return
+	}
+	for _, w := range windows {
+		delete(states, w.Name)
+	}
+	if len(states) == 0 {
+		delete(tokenWindowMemory.windows, tokenId)
+	}
+}
+
+func redisResetTokenWindowUsage(tokenId int, windows []TokenQuotaWindow) error {
+	keys := make([]string, 0, len(windows))
+	for _, w := range windows {
+		keys = append(keys, tokenWindowRedisKey(tokenId, w))
+	}
+	return common.RDB.Del(context.Background(), keys...).Err()
+}
+
+// ResetTokenWindowUsage discards tokenId's current state for each of windows, both live
+// (Redis/memory) and persisted, so the next charge opens a fresh window. Unlike the
+// best-effort charge path, failures are returned because a reset is an explicit user action.
+func ResetTokenWindowUsage(tokenId int, windows []TokenQuotaWindow) error {
+	if len(windows) == 0 {
+		return nil
+	}
+	// NOTE: Live state goes first so a later flush finds nothing to re-persist and treats any
+	// leftover row as stale; deleting the row first would let a flush write it back.
+	if common.RedisEnabled {
+		if err := redisResetTokenWindowUsage(tokenId, windows); err != nil {
+			return err
+		}
+	} else {
+		memoryResetTokenWindowUsage(tokenId, windows)
+	}
+
+	names := make([]string, 0, len(windows))
+	for _, w := range windows {
+		names = append(names, w.Name)
+	}
+	return DB.Where("token_id = ? AND window_name IN ?", tokenId, names).Delete(&TokenWindowBucket{}).Error
 }
 
 // persistence: periodic snapshot + restore

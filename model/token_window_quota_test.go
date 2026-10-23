@@ -295,6 +295,76 @@ func TestFlushActiveTokenWindowUsage_PrunesExpiredRows(t *testing.T) {
 	require.Empty(t, persistedTokenWindowBuckets(t, tokenId))
 }
 
+func TestResetTokenWindowUsage_ClearsLiveAndPersistedState(t *testing.T) {
+	truncateTables(t)
+	clock := newFakeClock(t, testWindowBase)
+	tokenId := 3010
+
+	addTokenWindowUsage(tokenId, 100)
+	_, err := FlushActiveTokenWindowUsage()
+	require.NoError(t, err)
+	require.Len(t, persistedTokenWindowBuckets(t, tokenId), 2)
+
+	require.NoError(t, ResetTokenWindowUsage(tokenId, TokenQuotaWindows()))
+	requireWindowUsage(t, tokenId, TokenQuotaWindow5h, 0)
+	requireWindowUsage(t, tokenId, TokenQuotaWindow7d, 0)
+	require.Empty(t, persistedTokenWindowBuckets(t, tokenId))
+
+	// A restart must not bring the discarded usage back.
+	resetTokenWindowMemory()
+	clock.Advance(time.Minute)
+	_, err = RestoreTokenWindowUsageFromDB()
+	require.NoError(t, err)
+	requireWindowUsage(t, tokenId, TokenQuotaWindow5h, 0)
+	requireWindowUsage(t, tokenId, TokenQuotaWindow7d, 0)
+}
+
+func TestResetTokenWindowUsage_OnlyRequestedWindow(t *testing.T) {
+	truncateTables(t)
+	newFakeClock(t, testWindowBase)
+	tokenId := 3011
+
+	addTokenWindowUsage(tokenId, 100)
+	_, err := FlushActiveTokenWindowUsage()
+	require.NoError(t, err)
+
+	require.NoError(t, ResetTokenWindowUsage(tokenId, []TokenQuotaWindow{TokenQuotaWindow5h}))
+	requireWindowUsage(t, tokenId, TokenQuotaWindow5h, 0)
+	requireWindowUsage(t, tokenId, TokenQuotaWindow7d, 100)
+	require.Equal(t, []TokenWindowBucket{
+		{TokenId: tokenId, WindowName: "7d", BucketStart: testWindowBase.Unix(), Used: 100},
+	}, persistedTokenWindowBuckets(t, tokenId))
+}
+
+func TestResetTokenWindowUsage_DoesNotAffectOtherTokens(t *testing.T) {
+	truncateTables(t)
+	newFakeClock(t, testWindowBase)
+	resetTokenId, otherTokenId := 3012, 3013
+
+	addTokenWindowUsage(resetTokenId, 100)
+	addTokenWindowUsage(otherTokenId, 70)
+	_, err := FlushActiveTokenWindowUsage()
+	require.NoError(t, err)
+
+	require.NoError(t, ResetTokenWindowUsage(resetTokenId, TokenQuotaWindows()))
+	requireWindowUsage(t, otherTokenId, TokenQuotaWindow5h, 70)
+	require.Len(t, persistedTokenWindowBuckets(t, otherTokenId), 2)
+}
+
+func TestResetTokenWindowUsage_NextChargeOpensFreshWindow(t *testing.T) {
+	truncateTables(t)
+	clock := newFakeClock(t, testWindowBase)
+	tokenId := 3014
+
+	addTokenWindowUsage(tokenId, 100)
+	require.NoError(t, ResetTokenWindowUsage(tokenId, TokenQuotaWindows()))
+
+	clock.Advance(time.Hour)
+	addTokenWindowUsage(tokenId, 30)
+	usage5h := requireWindowUsage(t, tokenId, TokenQuotaWindow5h, 30)
+	require.EqualValues(t, clock.Now().Add(5*time.Hour).Unix(), usage5h.ResetAt)
+}
+
 func TestRestoreTokenWindowUsageFromDB_ResumesAfterRestart(t *testing.T) {
 	truncateTables(t)
 	clock := newFakeClock(t, testWindowBase)

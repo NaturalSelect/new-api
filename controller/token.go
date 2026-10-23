@@ -127,6 +127,47 @@ func GetTokenKey(c *gin.Context) {
 	})
 }
 
+// ResetTokenWindowQuota discards the current 5h/7d rolling usage of one of the caller's
+// tokens. The optional "window" query parameter limits the reset to a single window.
+func ResetTokenWindowQuota(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	userId := c.GetInt("id")
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	token, err := model.GetTokenByIds(id, userId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	windows := model.TokenQuotaWindows()
+	if name := c.Query("window"); name != "" {
+		window, ok := model.TokenQuotaWindowByName(name)
+		if !ok {
+			common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+			return
+		}
+		windows = []model.TokenQuotaWindow{window}
+	}
+
+	clearedUsage := make([]string, 0, len(windows))
+	for _, window := range windows {
+		var used int64
+		if usage, err := model.GetTokenWindowUsage(token.Id, window); err == nil {
+			used = usage.Used
+		}
+		clearedUsage = append(clearedUsage, fmt.Sprintf("%s used=%d", window.Name, used))
+	}
+	if err := model.ResetTokenWindowUsage(token.Id, windows); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	model.RecordLog(userId, model.LogTypeManage, fmt.Sprintf(
+		"reset rolling window usage for token %s (#%d): %s", token.Name, token.Id, strings.Join(clearedUsage, ", ")))
+	common.ApiSuccess(c, buildMaskedTokenResponse(token))
+}
+
 func GetTokenStatus(c *gin.Context) {
 	tokenId := c.GetInt("token_id")
 	userId := c.GetInt("id")

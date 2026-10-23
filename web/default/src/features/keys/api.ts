@@ -98,6 +98,14 @@ export async function updateApiKeyStatus(
   return res.data
 }
 
+// Reset the current 5h/7d rolling limit usage of an API key
+export async function resetApiKeyWindowQuota(
+  id: number
+): Promise<ApiResponse<ApiKey>> {
+  const res = await api.post(`/api/token/${id}/window_quota/reset`)
+  return res.data
+}
+
 // Fetch the real (unmasked) key for a token by ID
 export async function fetchTokenKey(
   id: number

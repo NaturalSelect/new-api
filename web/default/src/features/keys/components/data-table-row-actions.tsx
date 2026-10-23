@@ -28,6 +28,7 @@ import {
   Copy,
   Link,
   Loader2,
+  RotateCcw,
   MoreHorizontal as DotsHorizontalIcon,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -309,6 +310,19 @@ export function DataTableRowActions<TData>({
                 ))}
               </DropdownMenuSubContent>
             </DropdownMenuSub>
+          )}
+          {(apiKey.quota_limit_5h > 0 || apiKey.quota_limit_7d > 0) && (
+            <DropdownMenuItem
+              onClick={() => {
+                setCurrentRow(apiKey)
+                setOpen('reset-window-quota')
+              }}
+            >
+              {t('Reset Rolling Usage')}
+              <DropdownMenuShortcut>
+                <RotateCcw size={16} />
+              </DropdownMenuShortcut>
+            </DropdownMenuItem>
           )}
           <DropdownMenuSeparator />
           <DropdownMenuItem

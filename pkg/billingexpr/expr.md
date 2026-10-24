@@ -186,6 +186,17 @@ Backend: `InjectTieredBillingInfo()` adds `billing_mode`, `expr_b64` (base64 exp
 
 Frontend: Detects `billing_mode === "tiered_expr"`, decodes `expr_b64`, parses tiers via shared `parseTiersFromExpr()`, and renders pricing breakdown.
 
+### 6. Model List Pricing (read-only)
+
+**Files**: `pkg/billingexpr/probe.go`, `service/model_pricing.go`
+
+`/v1/models` exposes OpenRouter-style per-token prices. For `tiered_expr` models, `ProbeUnitPrices()` derives them without parsing the expression:
+- Evaluates the expression at the zero vector (`Request`, the constant term) and at one unit vector per referenced token variable; the difference is that variable's price in $/1M tokens.
+- `len` stays 0, so the default (first) tier is read. Higher tiers are not exposed.
+- The request is empty, so request rules (`param()` / `header()`) resolve to their "not matched" branch and multiply by 1.
+- Time functions (`hour()` etc.) are evaluated at call time, so the result can change with the clock.
+- `max` / `min` style non-linear expressions only yield an approximation around the zero vector.
+
 ---
 
 ## Key Design Decisions
@@ -240,6 +251,7 @@ This enables future evolution without breaking existing expressions.
 | Layer | Files |
 |-------|-------|
 | Expression engine | `pkg/billingexpr/compile.go`, `run.go`, `settle.go`, `round.go`, `types.go` |
+| Model list pricing | `pkg/billingexpr/probe.go`, `service/model_pricing.go` |
 | Storage | `setting/billing_setting/tiered_billing.go` |
 | Pre-consume | `relay/helper/price.go`, `relay/helper/billing_expr_request.go` |
 | Settlement | `service/tiered_settle.go`, `service/quota.go` |

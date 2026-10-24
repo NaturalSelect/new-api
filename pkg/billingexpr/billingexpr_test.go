@@ -1072,6 +1072,70 @@ func TestLen_ZeroDefaultsToZero(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// ProbeUnitPrices: default-tier linear prices
+// ---------------------------------------------------------------------------
+
+func assertProbe(t *testing.T, exprStr string, wantRequest float64, wantTokens map[string]float64) {
+	t.Helper()
+	got, err := billingexpr.ProbeUnitPrices(exprStr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if math.Abs(got.Request-wantRequest) > 1e-9 {
+		t.Errorf("request = %f, want %f", got.Request, wantRequest)
+	}
+	if len(got.Tokens) != len(wantTokens) {
+		t.Errorf("tokens = %v, want %v", got.Tokens, wantTokens)
+	}
+	for name, want := range wantTokens {
+		have, ok := got.Tokens[name]
+		if !ok {
+			t.Errorf("missing token var %q in %v", name, got.Tokens)
+			continue
+		}
+		if math.Abs(have-want) > 1e-9 {
+			t.Errorf("%s = %f, want %f", name, have, want)
+		}
+	}
+}
+
+func TestProbeUnitPrices_Flat(t *testing.T) {
+	assertProbe(t, `tier("base", p * 2.5 + c * 15 + cr * 0.25)`, 0,
+		map[string]float64{"p": 2.5, "c": 15, "cr": 0.25})
+}
+
+func TestProbeUnitPrices_LenTierPicksDefault(t *testing.T) {
+	assertProbe(t, `len <= 200000 ? tier("standard", p*3+c*15) : tier("long", p*6+c*22.5)`, 0,
+		map[string]float64{"p": 3, "c": 15})
+}
+
+func TestProbeUnitPrices_RequestRuleNotMatched(t *testing.T) {
+	assertProbe(t, `(tier("base", p * 5 + c * 25)) * (param("service_tier") == "fast" ? 2 : 1)`, 0,
+		map[string]float64{"p": 5, "c": 25})
+}
+
+func TestProbeUnitPrices_ConstantTerm(t *testing.T) {
+	assertProbe(t, `tier("base", p * 1 + 0.5)`, 0.5, map[string]float64{"p": 1})
+}
+
+func TestProbeUnitPrices_AllVariables(t *testing.T) {
+	assertProbe(t, `tier("base", p * 3 + c * 15 + cr * 0.3 + cc * 3.75 + cc1h * 6 + img * 2 + img_o * 30 + ai * 10 + ao * 40)`, 0,
+		map[string]float64{"p": 3, "c": 15, "cr": 0.3, "cc": 3.75, "cc1h": 6, "img": 2, "img_o": 30, "ai": 10, "ao": 40})
+}
+
+func TestProbeUnitPrices_InvalidExpr(t *testing.T) {
+	if _, err := billingexpr.ProbeUnitPrices(`tier("base", p *`); err == nil {
+		t.Error("expected error for invalid expression")
+	}
+}
+
+func TestProbeUnitPrices_NonFiniteRejected(t *testing.T) {
+	if _, err := billingexpr.ProbeUnitPrices(`tier("base", p / (1 - p))`); err == nil {
+		t.Error("expected error for non-finite result at p=1")
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Benchmarks: compile vs cached execution
 // ---------------------------------------------------------------------------
 

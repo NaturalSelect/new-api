@@ -205,6 +205,35 @@ func getModelListGroups(c *gin.Context) (modelListGroups, error) {
 	}, nil
 }
 
+func pricingGroupForModel(groups modelListGroups, modelName string) string {
+	if len(groups.ownerGroups) == 0 {
+		return groups.userGroup
+	}
+	if groups.tokenGroup != "auto" {
+		return groups.ownerGroups[0]
+	}
+	enabledGroups := model.GetModelEnableGroups(modelName)
+	for _, group := range groups.ownerGroups {
+		if common.StringsContains(enabledGroups, group) {
+			return group
+		}
+	}
+	return groups.ownerGroups[0]
+}
+
+func attachOpenRouterPricing(models []dto.OpenAIModels, groups modelListGroups) {
+	groupRatios := make(map[string]float64)
+	for i := range models {
+		group := pricingGroupForModel(groups, models[i].Id)
+		groupRatio, ok := groupRatios[group]
+		if !ok {
+			groupRatio = service.GetUserGroupRatio(groups.userGroup, group)
+			groupRatios[group] = groupRatio
+		}
+		models[i].Pricing = service.BuildOpenRouterPricing(models[i].Id, groupRatio)
+	}
+}
+
 func ListModels(c *gin.Context, modelType int) {
 	acceptUnsetRatioModel := operation_setting.SelfUseModeEnabled
 	if !acceptUnsetRatioModel {
@@ -307,6 +336,7 @@ func ListModels(c *gin.Context, modelType int) {
 			"nextPageToken": nil,
 		})
 	default:
+		attachOpenRouterPricing(userOpenAiModels, groups)
 		c.JSON(200, gin.H{
 			"success": true,
 			"data":    userOpenAiModels,

@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/config"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
@@ -239,4 +240,160 @@ func TestListModelsTokenLimitIncludesTieredBillingModel(t *testing.T) {
 	require.NotContains(t, ids, "zz-token-tiered-empty-expr-model")
 	require.NotContains(t, ids, "zz-token-tiered-missing-expr-model")
 	require.NotContains(t, ids, "zz-token-unpriced-model")
+}
+
+func withRatioSettings(t *testing.T, modelRatio, completionRatio, groupRatio string) {
+	t.Helper()
+
+	type setting struct {
+		current func() string
+		update  func(string) error
+		value   string
+	}
+	settings := []setting{
+		{ratio_setting.ModelRatio2JSONString, ratio_setting.UpdateModelRatioByJSONString, modelRatio},
+		{ratio_setting.CompletionRatio2JSONString, ratio_setting.UpdateCompletionRatioByJSONString, completionRatio},
+		{ratio_setting.GroupRatio2JSONString, ratio_setting.UpdateGroupRatioByJSONString, groupRatio},
+	}
+	for _, s := range settings {
+		original := s.current()
+		update := s.update
+		t.Cleanup(func() { require.NoError(t, update(original)) })
+		require.NoError(t, s.update(s.value))
+	}
+}
+
+func pricingSetupForListModels(t *testing.T) {
+	t.Helper()
+
+	withSelfUseModeDisabled(t)
+	originalQuotaPerUnit := common.QuotaPerUnit
+	common.QuotaPerUnit = 500000
+	t.Cleanup(func() { common.QuotaPerUnit = originalQuotaPerUnit })
+
+	withRatioSettings(t,
+		`{"zz-priced-ratio-model":1.25}`,
+		`{"zz-priced-ratio-model":8}`,
+		`{"default":1,"vip":0.5}`,
+	)
+	withTieredBillingConfig(t, map[string]string{
+		"zz-priced-tiered-model": "tiered_expr",
+	}, map[string]string{
+		"zz-priced-tiered-model": `tier("base", p * 3 + c * 15)`,
+	})
+
+	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.Create(&model.User{
+		Id:       1002,
+		Username: "model-pricing-user",
+		Password: "password",
+		Group:    "default",
+		Status:   common.UserStatusEnabled,
+	}).Error)
+	require.NoError(t, db.Create(&[]model.Ability{
+		{Group: "default", Model: "zz-priced-ratio-model", ChannelId: 1, Enabled: true},
+		{Group: "default", Model: "zz-priced-tiered-model", ChannelId: 1, Enabled: true},
+		{Group: "vip", Model: "zz-priced-ratio-model", ChannelId: 1, Enabled: true},
+		{Group: "vip", Model: "zz-priced-tiered-model", ChannelId: 1, Enabled: true},
+	}).Error)
+	model.InvalidatePricingCache()
+}
+
+func listModelsPayload(t *testing.T, modelType int, tokenGroup string) (*httptest.ResponseRecorder, map[string]dto.OpenAIModels) {
+	t.Helper()
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	ctx.Set("id", 1002)
+	common.SetContextKey(ctx, constant.ContextKeyUserGroup, "default")
+	if tokenGroup != "" {
+		common.SetContextKey(ctx, constant.ContextKeyTokenGroup, tokenGroup)
+	}
+
+	ListModels(ctx, modelType)
+
+	byId := map[string]dto.OpenAIModels{}
+	if modelType == constant.ChannelTypeOpenAI {
+		require.Equal(t, http.StatusOK, recorder.Code)
+		var payload listModelsResponse
+		require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &payload))
+		for _, item := range payload.Data {
+			byId[item.Id] = item
+		}
+	}
+	return recorder, byId
+}
+
+func TestListModelsIncludesOpenRouterPricing(t *testing.T) {
+	pricingSetupForListModels(t)
+
+	_, byId := listModelsPayload(t, constant.ChannelTypeOpenAI, "")
+
+	ratioModel, ok := byId["zz-priced-ratio-model"]
+	require.True(t, ok)
+	require.NotNil(t, ratioModel.Pricing)
+	require.Equal(t, "0.0000025", ratioModel.Pricing.Prompt)
+	require.Equal(t, "0.00002", ratioModel.Pricing.Completion)
+	require.Equal(t, "0", ratioModel.Pricing.Request)
+
+	tieredModel, ok := byId["zz-priced-tiered-model"]
+	require.True(t, ok)
+	require.NotNil(t, tieredModel.Pricing)
+	require.Equal(t, "0.000003", tieredModel.Pricing.Prompt)
+	require.Equal(t, "0.000015", tieredModel.Pricing.Completion)
+}
+
+func TestListModelsOpenRouterPricingUsesTokenGroupRatio(t *testing.T) {
+	pricingSetupForListModels(t)
+
+	_, byId := listModelsPayload(t, constant.ChannelTypeOpenAI, "vip")
+
+	ratioModel, ok := byId["zz-priced-ratio-model"]
+	require.True(t, ok)
+	require.NotNil(t, ratioModel.Pricing)
+	require.Equal(t, "0.00000125", ratioModel.Pricing.Prompt)
+
+	tieredModel, ok := byId["zz-priced-tiered-model"]
+	require.True(t, ok)
+	require.NotNil(t, tieredModel.Pricing)
+	require.Equal(t, "0.0000015", tieredModel.Pricing.Prompt)
+}
+
+func TestListModelsOpenRouterPricingAutoGroupUsesFirstEnabledGroup(t *testing.T) {
+	pricingSetupForListModels(t)
+
+	groups := modelListGroups{
+		userGroup:   "default",
+		tokenGroup:  "auto",
+		ownerGroups: []string{"vip", "default"},
+	}
+	require.Equal(t, "vip", pricingGroupForModel(groups, "zz-priced-ratio-model"))
+
+	groups.ownerGroups = []string{"missing", "default"}
+	require.Equal(t, "default", pricingGroupForModel(groups, "zz-priced-ratio-model"))
+
+	groups.ownerGroups = []string{"missing", "other"}
+	require.Equal(t, "missing", pricingGroupForModel(groups, "zz-priced-ratio-model"))
+
+	groups.ownerGroups = nil
+	require.Equal(t, "default", pricingGroupForModel(groups, "zz-priced-ratio-model"))
+}
+
+func TestListModelsAnthropicFormatOmitsPricing(t *testing.T) {
+	pricingSetupForListModels(t)
+
+	recorder, _ := listModelsPayload(t, constant.ChannelTypeAnthropic, "")
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.NotContains(t, recorder.Body.String(), "pricing")
+}
+
+func TestListModelsGeminiFormatOmitsPricing(t *testing.T) {
+	pricingSetupForListModels(t)
+
+	recorder, _ := listModelsPayload(t, constant.ChannelTypeGemini, "")
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.NotContains(t, recorder.Body.String(), "pricing")
 }

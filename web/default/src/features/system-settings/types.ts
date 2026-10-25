@@ -56,6 +56,26 @@ export type DeleteLogsResponse = {
   data?: number
 }
 
+export type TrafficCaptureStats = {
+  count: number
+  stored_bytes: number
+  raw_bytes: number
+  oldest_created_at: number
+  retention_size_bytes: number
+  ttl_seconds: number
+  dropped: number
+  write_failures: number
+  queue_len: number
+  last_cleanup_at: number
+  last_cleanup_deleted: number
+}
+
+export type TrafficCaptureStatsResponse = {
+  success: boolean
+  message: string
+  data?: TrafficCaptureStats
+}
+
 export type SiteSettings = {
   'theme.frontend': string
   Notice: string
@@ -318,6 +338,13 @@ export type OperationsSettings = {
   'perf_metrics_setting.flush_interval': number
   'perf_metrics_setting.bucket_time': 'hour' | 'minute' | '5min'
   'perf_metrics_setting.retention_days': number
+  'traffic_capture_setting.enabled': boolean
+  'traffic_capture_setting.capture_upstream': boolean
+  'traffic_capture_setting.record_mode': 'all' | 'failed'
+  'traffic_capture_setting.user_ids': number[]
+  'traffic_capture_setting.ttl_minutes': number
+  'traffic_capture_setting.retention_size_mb': number
+  'traffic_capture_setting.max_body_mb': number
   'poe_log_setting.enabled': boolean
   'poe_log_setting.sync_interval': number
   'poe_log_setting.key_deduplicate': boolean

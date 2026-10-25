@@ -293,6 +293,8 @@ func migrateDB() error {
 		// WarningLog always lives on LOG_DB alongside Log/TokenStatsCache — same
 		// dual-migration reasoning as TokenStatsCache above.
 		&WarningLog{},
+		// TrafficCapture also lives on LOG_DB; same dual-migration reasoning as above.
+		&TrafficCapture{},
 	)
 	if err != nil {
 		return err
@@ -349,6 +351,7 @@ func migrateDBFast() error {
 		{&PoeLogSyncState{}, "PoeLogSyncState"},
 		{&TokenWindowBucket{}, "TokenWindowBucket"},
 		{&WarningLog{}, "WarningLog"},
+		{&TrafficCapture{}, "TrafficCapture"},
 	}
 	// 动态计算migration数量，确保errChan缓冲区足够大
 	errChan := make(chan error, len(migrations))
@@ -396,7 +399,7 @@ func migrateDBFast() error {
 
 func migrateLOGDB() error {
 	var err error
-	if err = LOG_DB.AutoMigrate(&Log{}, &TokenStatsCache{}, &WarningLog{}); err != nil {
+	if err = LOG_DB.AutoMigrate(&Log{}, &TokenStatsCache{}, &WarningLog{}, &TrafficCapture{}); err != nil {
 		return err
 	}
 	if err = MigrateTokenStatsCacheDayBoundary(); err != nil {

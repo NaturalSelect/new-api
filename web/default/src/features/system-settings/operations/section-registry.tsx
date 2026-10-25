@@ -25,6 +25,7 @@ import { PoeLogSettingsSection } from '../integrations/poe-log-settings-section'
 import { WorkerSettingsSection } from '../integrations/worker-settings-section'
 import { LogSettingsSection } from '../maintenance/log-settings-section'
 import { PerformanceSection } from '../maintenance/performance-section'
+import { TrafficCaptureSection } from '../maintenance/traffic-capture-section'
 import { UpdateCheckerSection } from '../maintenance/update-checker-section'
 import type { OperationsSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
@@ -190,6 +191,30 @@ const OPERATIONS_SECTIONS = [
             settings['perf_metrics_setting.bucket_time'] ?? 'hour',
           'perf_metrics_setting.retention_days':
             settings['perf_metrics_setting.retention_days'] ?? 0,
+        }}
+      />
+    ),
+  },
+  {
+    id: 'traffic-capture',
+    titleKey: 'Traffic Capture',
+    build: (settings: OperationsSettings) => (
+      <TrafficCaptureSection
+        defaultValues={{
+          'traffic_capture_setting.enabled':
+            settings['traffic_capture_setting.enabled'] ?? false,
+          'traffic_capture_setting.capture_upstream':
+            settings['traffic_capture_setting.capture_upstream'] ?? true,
+          'traffic_capture_setting.record_mode':
+            settings['traffic_capture_setting.record_mode'] ?? 'all',
+          'traffic_capture_setting.user_ids':
+            settings['traffic_capture_setting.user_ids'] ?? [],
+          'traffic_capture_setting.ttl_minutes':
+            settings['traffic_capture_setting.ttl_minutes'] ?? 1440,
+          'traffic_capture_setting.retention_size_mb':
+            settings['traffic_capture_setting.retention_size_mb'] ?? 2048,
+          'traffic_capture_setting.max_body_mb':
+            settings['traffic_capture_setting.max_body_mb'] ?? 2,
         }}
       />
     ),

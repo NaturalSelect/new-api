@@ -1,6 +1,7 @@
 package channel
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -8,7 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/pkg/trafficcapture"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
@@ -361,4 +365,109 @@ func TestDoRequest_PingBeforeUpstreamResponseWhenEnabled(t *testing.T) {
 	sizeAfterReturn := len(recorder.bodyString())
 	time.Sleep(1500 * time.Millisecond)
 	require.Equal(t, sizeAfterReturn, len(recorder.bodyString()), "keep-alive must have stopped once doRequest returned")
+}
+
+func TestDoRequest_CapturesUpstreamAttemptWithMaskedCredentials(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service.InitHttpClient()
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	t.Cleanup(upstream.Close)
+
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader("{}"))
+	session := trafficcapture.NewSession(1024, true)
+	common.SetContextKey(c, constant.ContextKeyTrafficCapture, session)
+
+	req, err := http.NewRequest(http.MethodPost, upstream.URL+"?key=AIzaSyABCDEFGHIJKLMNWXYZ", strings.NewReader("{}"))
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer sk-abcdefghijklmnop")
+	info := &relaycommon.RelayInfo{RetryIndex: 1, ChannelMeta: &relaycommon.ChannelMeta{ChannelId: 9, ChannelType: 4}}
+
+	resp, err := doRequest(c, req, info)
+	require.NoError(t, err)
+	got, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	require.Equal(t, "data: [DONE]\n\n", string(got), "capturing must not change what the handler reads")
+
+	rec := session.BuildRecord(trafficcapture.RecordMeta{}, trafficcapture.ClientInput{})
+	require.Len(t, rec.Upstream, 1)
+	attempt := rec.Upstream[0]
+	require.Equal(t, 1, attempt.RetryIndex)
+	require.Equal(t, 9, attempt.ChannelId)
+	require.Equal(t, 4, attempt.ChannelType)
+	require.Equal(t, http.StatusOK, attempt.Status)
+	require.Equal(t, []string{"***mnop"}, attempt.RequestHeaders["Authorization"])
+	require.Contains(t, attempt.Url, "key=***WXYZ")
+	require.Equal(t, "{}", attempt.RequestBody.Data)
+	require.Equal(t, "data: [DONE]\n\n", attempt.ResponseBody.Data)
+}
+
+func TestDoRequest_RecordsOneAttemptPerRetry(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service.InitHttpClient()
+
+	calls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			w.WriteHeader(http.StatusBadGateway)
+			_, _ = w.Write([]byte("upstream down"))
+			return
+		}
+		_, _ = w.Write([]byte("ok"))
+	}))
+	t.Cleanup(upstream.Close)
+
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader("{}"))
+	session := trafficcapture.NewSession(1024, true)
+	common.SetContextKey(c, constant.ContextKeyTrafficCapture, session)
+
+	for retry := 0; retry < 2; retry++ {
+		req, err := http.NewRequest(http.MethodPost, upstream.URL, strings.NewReader("{}"))
+		require.NoError(t, err)
+		info := &relaycommon.RelayInfo{RetryIndex: retry, ChannelMeta: &relaycommon.ChannelMeta{ChannelId: 10 + retry}}
+		resp, err := doRequest(c, req, info)
+		require.NoError(t, err)
+		_, _ = io.Copy(io.Discard, resp.Body)
+		require.NoError(t, resp.Body.Close())
+	}
+
+	rec := session.BuildRecord(trafficcapture.RecordMeta{}, trafficcapture.ClientInput{})
+	require.Len(t, rec.Upstream, 2)
+	require.Equal(t, http.StatusBadGateway, rec.Upstream[0].Status)
+	require.Equal(t, "upstream down", rec.Upstream[0].ResponseBody.Data)
+	require.Equal(t, http.StatusOK, rec.Upstream[1].Status)
+	require.Equal(t, 11, rec.Upstream[1].ChannelId)
+}
+
+func TestDoRequest_WithoutSessionLeavesRequestAndResponseBodiesUntouched(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service.InitHttpClient()
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("plain"))
+	}))
+	t.Cleanup(upstream.Close)
+
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader("{}"))
+	req, err := http.NewRequest(http.MethodPost, upstream.URL, strings.NewReader("{}"))
+	require.NoError(t, err)
+	originalBody := req.Body
+
+	resp, err := doRequest(c, req, &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = resp.Body.Close() })
+
+	require.True(t, originalBody == req.Body, "request body must not be wrapped when no capture session exists")
+	got, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, "plain", string(got))
 }

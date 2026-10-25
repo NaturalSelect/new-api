@@ -140,6 +140,10 @@ func main() {
 	// Redis/memory cache loss resumes from the last snapshot instead of resetting to zero)
 	service.StartTokenWindowQuotaFlushTask()
 
+	// Traffic capture writer (all nodes) and expiry task (master only); both are idle
+	// until traffic_capture_setting.enabled is switched on by a root user.
+	service.StartTrafficCaptureTask()
+
 	// Wire task polling adaptor factory (breaks service -> relay import cycle)
 	service.GetTaskAdaptorFunc = func(platform constant.TaskPlatform) service.TaskPollingAdaptor {
 		a := relay.GetTaskAdaptor(platform)

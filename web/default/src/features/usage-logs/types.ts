@@ -362,3 +362,62 @@ export interface UserInfo {
   aff_quota?: number
   remark?: string
 }
+
+// ============================================================================
+// Traffic Capture Types
+// ============================================================================
+
+export interface CapturedBody {
+  encoding: 'text' | 'base64'
+  data: string
+  /** Original byte count; may exceed what `data` actually holds. */
+  size: number
+  truncated: boolean
+  /** Milliseconds since the request started; 0 when no data was received. */
+  first_byte_ms: number
+  last_byte_ms: number
+}
+
+export interface CapturedExchange {
+  method: string
+  url: string
+  request_headers: Record<string, string[]> | null
+  request_body: CapturedBody
+  status: number
+  response_headers: Record<string, string[]> | null
+  response_body: CapturedBody
+}
+
+export interface CapturedUpstreamAttempt extends CapturedExchange {
+  retry_index: number
+  channel_id: number
+  channel_type: number
+  error: string
+}
+
+export interface TrafficCaptureRecord {
+  version: number
+  request_id: string
+  node_name: string
+  started_at_ms: number
+  duration_ms: number
+  user_id: number
+  token_id: number
+  model_name: string
+  group: string
+  client_ip: string
+  failed: boolean
+  client: CapturedExchange
+  upstream: CapturedUpstreamAttempt[] | null
+}
+
+export interface GetTrafficCaptureRecordResponse {
+  success: boolean
+  message: string
+  data?: {
+    created_at: number
+    stored_size: number
+    raw_size: number
+    record: TrafficCaptureRecord
+  }
+}

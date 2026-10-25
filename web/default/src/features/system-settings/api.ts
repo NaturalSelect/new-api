@@ -22,6 +22,7 @@ import type {
   DeleteLogsResponse,
   FetchUpstreamRatiosRequest,
   SystemOptionsResponse,
+  TrafficCaptureStatsResponse,
   UpdateOptionRequest,
   UpdateOptionResponse,
   UpstreamChannelsResponse,
@@ -50,6 +51,18 @@ export async function deleteLogsBefore(targetTimestamp: number) {
   const res = await api.delete<DeleteLogsResponse>('/api/log/', {
     params: { target_timestamp: targetTimestamp },
   })
+  return res.data
+}
+
+export async function getTrafficCaptureStats() {
+  const res = await api.get<TrafficCaptureStatsResponse>(
+    '/api/traffic_capture/stats'
+  )
+  return res.data
+}
+
+export async function clearTrafficCapture() {
+  const res = await api.delete<DeleteLogsResponse>('/api/traffic_capture/')
   return res.data
 }
 

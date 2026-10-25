@@ -50,6 +50,7 @@ func TestMain(m *testing.M) {
 		&Option{},
 		&TokenStatsCache{},
 		&TokenWindowBucket{},
+		&TrafficCapture{},
 	); err != nil {
 		panic("failed to migrate: " + err.Error())
 	}

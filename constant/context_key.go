@@ -79,4 +79,8 @@ const (
 	// recorded for this HTTP request, preventing duplicate WarningLog rows when the same
 	// client request retries across multiple channels.
 	ContextKeyWarningLogRecorded ContextKey = "warning_log_recorded"
+
+	// ContextKeyTrafficCapture stores the *trafficcapture.Session collecting this request's traffic.
+	// It is absent whenever capture is disabled, so readers must treat a missing key as "off".
+	ContextKeyTrafficCapture ContextKey = "traffic_capture"
 )

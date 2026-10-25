@@ -11,8 +11,10 @@ import (
 	"time"
 
 	common2 "github.com/QuantumNous/new-api/common"
+	constant2 "github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/pkg/trafficcapture"
 	"github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
@@ -448,7 +450,12 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 		defer stopKeepAlive()
 	}
 
+	var upstreamCapture *trafficcapture.UpstreamRecorder
+	if session, ok := common2.GetContextKeyType[*trafficcapture.Session](c, constant2.ContextKeyTrafficCapture); ok {
+		upstreamCapture = session.BeginUpstream(req, info.RetryIndex, info.ChannelId, info.ChannelType)
+	}
 	resp, err := client.Do(req)
+	upstreamCapture.Finish(resp, err)
 	if err != nil {
 		logger.LogError(c, "do request failed: "+err.Error())
 		return nil, types.NewError(err, types.ErrorCodeDoRequestFailed, types.ErrOptionWithHideErrMsg("upstream error: do request failed"))

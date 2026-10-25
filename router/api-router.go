@@ -221,6 +221,13 @@ func SetApiRouter(router *gin.Engine) {
 			performanceRoute.GET("/logs", controller.GetLogFiles)
 			performanceRoute.DELETE("/logs", controller.CleanupLogFiles)
 		}
+		trafficCaptureRoute := apiRouter.Group("/traffic_capture")
+		trafficCaptureRoute.Use(middleware.RootAuth())
+		{
+			trafficCaptureRoute.GET("/record/:request_id", controller.GetTrafficCaptureRecord)
+			trafficCaptureRoute.GET("/stats", controller.GetTrafficCaptureStats)
+			trafficCaptureRoute.DELETE("/", controller.PurgeTrafficCapture)
+		}
 		ratioSyncRoute := apiRouter.Group("/ratio_sync")
 		ratioSyncRoute.Use(middleware.RootAuth())
 		{

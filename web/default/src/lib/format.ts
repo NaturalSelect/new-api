@@ -50,6 +50,19 @@ export function formatPercent(value: number | null | undefined): string {
   }).format((value as number) / 100)
 }
 
+export function formatBytes(bytes: number | null | undefined): string {
+  if (bytes == null || !Number.isFinite(bytes) || bytes < 0) return '-'
+  if (bytes < 1024) return `${bytes} B`
+  const units = ['KB', 'MB', 'GB', 'TB']
+  let value = bytes / 1024
+  let unitIndex = 0
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024
+    unitIndex += 1
+  }
+  return `${value.toFixed(value < 10 ? 2 : 1)} ${units[unitIndex]}`
+}
+
 export function formatCurrencyUSD(value: number | null | undefined): string {
   return formatCurrencyFromUSD(value == null ? null : (value as number))
 }

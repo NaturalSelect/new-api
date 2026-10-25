@@ -25,6 +25,7 @@ import type {
   GetLogStatsResponse,
   GetMidjourneyLogsParams,
   GetTaskLogsParams,
+  GetTrafficCaptureRecordResponse,
   UserInfo,
 } from './types'
 
@@ -87,6 +88,17 @@ export async function getUserInfo(
   userId: number
 ): Promise<{ success: boolean; message?: string; data?: UserInfo }> {
   const res = await api.get(`/api/user/${userId}`)
+  return res.data
+}
+
+// NOTE: skipBusinessError lets the dialog show its own localized "not captured or expired" state instead of a duplicate raw toast.
+export async function getTrafficCaptureRecord(
+  requestId: string
+): Promise<GetTrafficCaptureRecordResponse> {
+  const res = await api.get<GetTrafficCaptureRecordResponse>(
+    `/api/traffic_capture/record/${encodeURIComponent(requestId)}`,
+    { skipBusinessError: true }
+  )
   return res.data
 }
 

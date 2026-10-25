@@ -16,9 +16,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useState } from 'react'
 import {
   Copy,
   Check,
+  FileSearch,
   Route,
   Settings2,
   AlertTriangle,
@@ -31,8 +33,10 @@ import {
   Info,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { useAuthStore } from '@/stores/auth-store'
 import { formatBillingCurrencyFromUSD } from '@/lib/currency'
 import { formatLogQuota, formatTokens, formatUseTime } from '@/lib/format'
+import { ROLE } from '@/lib/roles'
 import { cn } from '@/lib/utils'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { Button } from '@/components/ui/button'
@@ -65,6 +69,7 @@ import {
   isTimingLogType,
 } from '../../lib/utils'
 import type { LogOtherData } from '../../types'
+import { TrafficCaptureDialog } from './traffic-capture-dialog'
 
 function timingTextColorClass(
   variant: 'success' | 'warning' | 'danger'
@@ -401,6 +406,9 @@ interface DetailsDialogProps {
 export function DetailsDialog(props: DetailsDialogProps) {
   const { t } = useTranslation()
   const { copiedText, copyToClipboard } = useCopyToClipboard({ notify: false })
+  const isRoot =
+    useAuthStore((state) => state.auth.user?.role) === ROLE.SUPER_ADMIN
+  const [trafficCaptureOpen, setTrafficCaptureOpen] = useState(false)
   const details = props.log.content ?? ''
   const other = parseLogOther(props.log.other)
   const typeConfig = getLogTypeConfig(props.log.type)
@@ -515,7 +523,23 @@ export function DetailsDialog(props: DetailsDialogProps) {
               {props.log.request_id && (
                 <DetailRow
                   label={t('Request ID')}
-                  value={props.log.request_id}
+                  value={
+                    <span className='inline-flex flex-wrap items-center gap-1.5'>
+                      {props.log.request_id}
+                      {isRoot && (
+                        <Button
+                          type='button'
+                          variant='outline'
+                          size='xs'
+                          className='font-sans'
+                          onClick={() => setTrafficCaptureOpen(true)}
+                        >
+                          <FileSearch data-icon='inline-start' />
+                          {t('View traffic')}
+                        </Button>
+                      )}
+                    </span>
+                  }
                   mono
                 />
               )}
@@ -1057,6 +1081,13 @@ export function DetailsDialog(props: DetailsDialogProps) {
             )}
           </div>
         </ScrollArea>
+        {isRoot && props.log.request_id && (
+          <TrafficCaptureDialog
+            requestId={props.log.request_id}
+            open={trafficCaptureOpen}
+            onOpenChange={setTrafficCaptureOpen}
+          />
+        )}
       </DialogContent>
     </Dialog>
   )

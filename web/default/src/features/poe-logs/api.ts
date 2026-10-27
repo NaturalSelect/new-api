@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
 import type {
+  DeleteOldPoeLogsResponse,
   GetPoeLogStatsParams,
   GetPoeLogStatsResponse,
   GetPoeLogsParams,
@@ -60,6 +61,15 @@ export async function triggerPoeLogSync(
   channelId: number
 ): Promise<{ success: boolean; message: string }> {
   const res = await api.post('/api/poe_log/sync', { channel_id: channelId })
+  return res.data
+}
+
+export async function deleteOldPoeLogs(
+  targetTimestamp: number
+): Promise<DeleteOldPoeLogsResponse> {
+  const res = await api.delete<DeleteOldPoeLogsResponse>('/api/poe_log/', {
+    params: { target_timestamp: targetTimestamp },
+  })
   return res.data
 }
 

@@ -371,6 +371,7 @@ func SetApiRouter(router *gin.Engine) {
 			poeLogRoute.GET("/stat", controller.GetPoeLogStats)
 			poeLogRoute.POST("/sync", controller.TriggerPoeLogSync)
 			poeLogRoute.POST("/clear", controller.ClearPoeLogs)
+			poeLogRoute.DELETE("/", controller.DeleteOldPoeLogs)
 		}
 
 		warningLogRoute := apiRouter.Group("/warning_log")

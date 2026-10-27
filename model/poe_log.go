@@ -103,6 +103,40 @@ func ClearPoeLogs(channelId int) (int64, error) {
 	return result.RowsAffected, nil
 }
 
+// NOTE: DeleteOldPoeLogs removes PoeLog rows older than targetTimestamp (unix seconds) and leaves related Log rows alone.
+// NOTE: Each channel's newest row is kept because it is the sync cursor; without it the next sync re-imports the full Poe history.
+func DeleteOldPoeLogs(targetTimestamp int64) (int64, error) {
+	cutoff := targetTimestamp * 1_000_000
+
+	var newestPerChannel []struct {
+		ChannelId int
+		Newest    int64
+	}
+	if err := DB.Model(&PoeLog{}).
+		Select("channel_id, MAX(creation_time) AS newest").
+		Group("channel_id").
+		Scan(&newestPerChannel).Error; err != nil {
+		return 0, err
+	}
+
+	var deleted int64
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		for _, row := range newestPerChannel {
+			channelCutoff := min(cutoff, row.Newest)
+			result := tx.Where("channel_id = ? AND creation_time < ?", row.ChannelId, channelCutoff).Delete(&PoeLog{})
+			if result.Error != nil {
+				return result.Error
+			}
+			deleted += result.RowsAffected
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return deleted, nil
+}
+
 // QueryPoeLogsParams holds filter parameters for querying PoeLog records.
 type QueryPoeLogsParams struct {
 	ChannelId      int

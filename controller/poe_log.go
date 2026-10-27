@@ -96,6 +96,26 @@ func TriggerPoeLogSync(c *gin.Context) {
 	})
 }
 
+// DeleteOldPoeLogs deletes Poe log entries created before the given unix timestamp (seconds).
+// Admin-only endpoint.
+func DeleteOldPoeLogs(c *gin.Context) {
+	targetTimestamp, err := strconv.ParseInt(c.Query("target_timestamp"), 10, 64)
+	if err != nil || targetTimestamp <= 0 {
+		common.ApiErrorMsg(c, "target_timestamp is required")
+		return
+	}
+	count, err := model.DeleteOldPoeLogs(targetTimestamp)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    count,
+	})
+}
+
 // NOTE: ClearPoeLogs clears Poe log entries to allow re-syncing from scratch.
 // NOTE: When channel_id is 0 or omitted, all Poe logs are cleared.
 func ClearPoeLogs(c *gin.Context) {

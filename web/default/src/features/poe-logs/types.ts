@@ -84,6 +84,12 @@ export interface GetPoeLogStatsResponse {
   data?: PoeLogStats
 }
 
+export interface DeleteOldPoeLogsResponse {
+  success: boolean
+  message: string
+  data?: number
+}
+
 export interface PoeLogsFilters {
   startTime?: Date
   endTime?: Date

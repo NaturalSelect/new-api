@@ -44,6 +44,7 @@ import {
 } from '@/components/ui/form'
 import { Switch } from '@/components/ui/switch'
 import { DateTimePicker } from '@/components/datetime-picker'
+import { deleteOldPoeLogs } from '@/features/poe-logs/api'
 import { deleteOldWarningLogs } from '@/features/warning-logs/api'
 import { deleteLogsBefore } from '../api'
 import {
@@ -116,6 +117,12 @@ export function LogSettingsSection({
   const [showWarningConfirmDialog, setShowWarningConfirmDialog] =
     useState(false)
 
+  const [poePurgeDate, setPoePurgeDate] = useState<Date | undefined>(() =>
+    getDateDaysAgo(30)
+  )
+  const [isCleaningPoeLogs, setIsCleaningPoeLogs] = useState(false)
+  const [showPoeConfirmDialog, setShowPoeConfirmDialog] = useState(false)
+
   useEffect(() => {
     form.reset({ LogConsumeEnabled: defaultEnabled })
   }, [defaultEnabled, form])
@@ -139,6 +146,16 @@ export function LogSettingsSection({
     if (!warningPurgeDate) return ''
     return formatTimestampToDate(warningPurgeDate.getTime(), 'milliseconds')
   }, [warningPurgeDate])
+
+  const poePurgeTimestamp = useMemo(() => {
+    if (!poePurgeDate) return null
+    return Math.floor(poePurgeDate.getTime() / 1000)
+  }, [poePurgeDate])
+
+  const formattedPoePurgeDate = useMemo(() => {
+    if (!poePurgeDate) return ''
+    return formatTimestampToDate(poePurgeDate.getTime(), 'milliseconds')
+  }, [poePurgeDate])
 
   const onSubmit = async (values: LogSettingsFormValues) => {
     if (values.LogConsumeEnabled === defaultEnabled) return
@@ -217,6 +234,42 @@ export function LogSettingsSection({
       toast.error(message)
     } finally {
       setIsCleaningWarningLogs(false)
+    }
+  }
+
+  const handleRequestCleanPoeLogs = () => {
+    if (!poePurgeTimestamp) {
+      toast.error(t('Select a timestamp before clearing logs.'))
+      return
+    }
+
+    setShowPoeConfirmDialog(true)
+  }
+
+  const handleCleanPoeLogs = async () => {
+    if (!poePurgeTimestamp) {
+      toast.error(t('Select a timestamp before clearing logs.'))
+      return
+    }
+
+    setIsCleaningPoeLogs(true)
+    try {
+      const res = await deleteOldPoeLogs(poePurgeTimestamp)
+      if (!res.success) {
+        throw new Error(res.message || t('Failed to clean logs'))
+      }
+      const count = res.data ?? 0
+      toast.success(
+        count > 0
+          ? t('{{count}} log entries removed.', { count })
+          : t('No log entries matched the selected time.')
+      )
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : t('Failed to clean logs')
+      toast.error(message)
+    } finally {
+      setIsCleaningPoeLogs(false)
     }
   }
 
@@ -319,6 +372,38 @@ export function LogSettingsSection({
               </Button>
             </div>
           </SettingsControlGroup>
+
+          <SettingsControlGroup className='space-y-3'>
+            <div>
+              <h4 className='text-sm font-medium'>{t('Clean Poe logs')}</h4>
+              <p className='text-muted-foreground text-sm'>
+                {t(
+                  'Remove synced Poe log entries created before the selected timestamp. The newest entry of each channel is kept so syncing can continue.'
+                )}
+              </p>
+            </div>
+            <DateTimePicker value={poePurgeDate} onChange={setPoePurgeDate} />
+            <div className='flex flex-wrap gap-3'>
+              {quickSelectOptions.map((option) => (
+                <Button
+                  key={option.label}
+                  type='button'
+                  variant='outline'
+                  onClick={() => setPoePurgeDate(option.getValue())}
+                >
+                  {t(option.label)}
+                </Button>
+              ))}
+              <Button
+                type='button'
+                variant='destructive'
+                onClick={handleRequestCleanPoeLogs}
+                disabled={isCleaningPoeLogs}
+              >
+                {isCleaningPoeLogs ? t('Cleaning...') : t('Clean logs')}
+              </Button>
+            </div>
+          </SettingsControlGroup>
         </SettingsForm>
       </Form>
       <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
@@ -375,6 +460,38 @@ export function LogSettingsSection({
               disabled={isCleaningWarningLogs}
             >
               {isCleaningWarningLogs ? t('Cleaning...') : t('Delete logs')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
+        open={showPoeConfirmDialog}
+        onOpenChange={setShowPoeConfirmDialog}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('Confirm log cleanup')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {formattedPoePurgeDate
+                ? t(
+                    'This will permanently remove all Poe log entries created before {{date}}, except the newest entry of each channel.',
+                    { date: formattedPoePurgeDate }
+                  )
+                : t(
+                    'This will permanently remove Poe log entries before the selected timestamp, except the newest entry of each channel.'
+                  )}{' '}
+              {t('This action cannot be undone.')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isCleaningPoeLogs}>
+              {t('Cancel')}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleCleanPoeLogs}
+              disabled={isCleaningPoeLogs}
+            >
+              {isCleaningPoeLogs ? t('Cleaning...') : t('Delete logs')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

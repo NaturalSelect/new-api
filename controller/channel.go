@@ -16,6 +16,7 @@ import (
 	relaychannel "github.com/QuantumNous/new-api/relay/channel"
 	"github.com/QuantumNous/new-api/relay/channel/gemini"
 	"github.com/QuantumNous/new-api/relay/channel/ollama"
+	"github.com/QuantumNous/new-api/relay/channel/opencodefree"
 	"github.com/QuantumNous/new-api/service"
 
 	"github.com/gin-gonic/gin"
@@ -462,6 +463,10 @@ func validateChannel(channel *model.Channel, isAdd bool) error {
 
 	// 如果是添加操作，检查 channel 和 key 是否为空
 	if isAdd {
+		// NOTE: OpenCode Free never sends the channel key upstream, so a blank key is replaced by a placeholder.
+		if channel != nil && channel.Type == constant.ChannelTypeOpenCodeFree && strings.TrimSpace(channel.Key) == "" {
+			channel.Key = opencodefree.PlaceholderKey
+		}
 		if channel == nil || channel.Key == "" {
 			return fmt.Errorf("channel cannot be empty")
 		}
@@ -1043,6 +1048,23 @@ func FetchModels(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
 				"message": fmt.Sprintf("获取Gemini模型失败: %s", err.Error()),
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"data":    models,
+		})
+		return
+	}
+
+	if req.Type == constant.ChannelTypeOpenCodeFree {
+		models, err := opencodefree.FetchModels(baseURL, "")
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": fmt.Sprintf("获取OpenCode Free模型失败: %s", err.Error()),
 			})
 			return
 		}

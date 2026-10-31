@@ -167,6 +167,17 @@ export const CHANNEL_TYPE_CONFIGS: Record<number, ChannelTypeConfig> = {
       models: 'Use NovelAI model IDs, e.g. nai-diffusion-4-5-full',
     },
   },
+  61: {
+    id: 61,
+    name: CHANNEL_TYPES[61],
+    icon: 'openai',
+    defaultBaseUrl: 'https://opencode.ai/inference',
+    hints: {
+      baseUrl: 'Default: https://opencode.ai/inference',
+      key: 'Optional: the OpenCode free tier does not use a key',
+      models: 'big-pickle or any model ending with -free, e.g. glm-5.3-flash-free',
+    },
+  },
 }
 
 /**

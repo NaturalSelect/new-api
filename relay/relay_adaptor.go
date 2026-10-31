@@ -26,6 +26,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel/novelai"
 	"github.com/QuantumNous/new-api/relay/channel/ollama"
 	"github.com/QuantumNous/new-api/relay/channel/openai"
+	"github.com/QuantumNous/new-api/relay/channel/opencodefree"
 	"github.com/QuantumNous/new-api/relay/channel/palm"
 	"github.com/QuantumNous/new-api/relay/channel/perplexity"
 	"github.com/QuantumNous/new-api/relay/channel/replicate"
@@ -123,6 +124,8 @@ func GetAdaptor(apiType int) channel.Adaptor {
 		return &codex.Adaptor{}
 	case constant.APITypeNovelAI:
 		return &novelai.Adaptor{}
+	case constant.APITypeOpenCodeFree:
+		return &opencodefree.Adaptor{}
 	}
 	return nil
 }

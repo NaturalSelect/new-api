@@ -123,6 +123,7 @@ import {
   ERROR_MESSAGES,
   FIELD_DESCRIPTIONS,
   FIELD_PLACEHOLDERS,
+  KEYLESS_CHANNEL_TYPES,
   MODEL_FETCHABLE_TYPES,
 } from '../../constants'
 import { useChannelMutateForm } from '../../hooks/use-channel-mutate-form'
@@ -776,7 +777,7 @@ export function ChannelMutateDrawer({
     }
 
     // For creation mode, validate key before opening dialog
-    if (!isEditing) {
+    if (!isEditing && !KEYLESS_CHANNEL_TYPES.has(type)) {
       const key = form.getValues('key')
       if (!key?.trim()) {
         toast.error(t('Please enter API key first'))
@@ -947,7 +948,11 @@ export function ChannelMutateDrawer({
   const onSubmit = useCallback(
     async (data: ChannelFormValues) => {
       // Validate key is required when creating
-      if (!isEditing && !data.key?.trim()) {
+      if (
+        !isEditing &&
+        !KEYLESS_CHANNEL_TYPES.has(data.type) &&
+        !data.key?.trim()
+      ) {
         form.setError('key', {
           type: 'manual',
           message: ERROR_MESSAGES.REQUIRED_KEY,
@@ -1894,7 +1899,11 @@ export function ChannelMutateDrawer({
                           })()
                           return (
                             <FormItem>
-                              <FormLabel>{t('API Key *')}</FormLabel>
+                              <FormLabel>
+                                {KEYLESS_CHANNEL_TYPES.has(currentType)
+                                  ? t('API Key')
+                                  : t('API Key *')}
+                              </FormLabel>
                               <FormControl>
                                 <Textarea
                                   placeholder={keyPlaceholder}

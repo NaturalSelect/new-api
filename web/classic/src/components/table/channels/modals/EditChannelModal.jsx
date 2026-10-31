@@ -131,8 +131,11 @@ const DEPRECATED_DOUBAO_CODING_PLAN_BASE_URL = 'doubao-coding-plan';
 
 // 支持并且已适配通过接口获取模型列表的渠道类型
 const MODEL_FETCHABLE_TYPES = new Set([
-  1, 4, 14, 34, 17, 26, 27, 24, 47, 25, 20, 23, 31, 40, 42, 48, 43,
+  1, 4, 14, 34, 17, 26, 27, 24, 47, 25, 20, 23, 31, 40, 42, 48, 43, 61,
 ]);
+
+// 上游不使用密钥的渠道类型，创建时允许留空
+const KEYLESS_CHANNEL_TYPES = new Set([61]);
 
 function type2secretPrompt(type) {
   // inputs.type === 15 ? '按照如下格式输入：APIKey|SecretKey' : (inputs.type === 18 ? '按照如下格式输入：APPID|APISecret|APIKey' : '请输入渠道对应的鉴权密钥')
@@ -1069,7 +1072,7 @@ const EditChannelModal = (props) => {
       }
     } else {
       // 如果是新建模式，通过后端代理获取模型列表
-      if (!inputs?.['key']) {
+      if (!inputs?.['key'] && !KEYLESS_CHANNEL_TYPES.has(inputs?.['type'])) {
         showError(t('请填写密钥'));
         err = true;
       } else {
@@ -1651,7 +1654,11 @@ const EditChannelModal = (props) => {
     }
     delete localInputs.vertex_files;
 
-    if (!isEdit && (!localInputs.name || !localInputs.key)) {
+    if (
+      !isEdit &&
+      (!localInputs.name ||
+        (!localInputs.key && !KEYLESS_CHANNEL_TYPES.has(localInputs.type)))
+    ) {
       showInfo(t('请填写渠道名称和渠道密钥！'));
       return;
     }
@@ -2774,7 +2781,7 @@ const EditChannelModal = (props) => {
                               : t('请输入密钥，一行一个')
                           }
                           rules={
-                            isEdit
+                            isEdit || KEYLESS_CHANNEL_TYPES.has(inputs.type)
                               ? []
                               : [{ required: true, message: t('请输入密钥') }]
                           }
@@ -3070,7 +3077,7 @@ const EditChannelModal = (props) => {
                                 : t(type2secretPrompt(inputs.type))
                             }
                             rules={
-                              isEdit
+                              isEdit || KEYLESS_CHANNEL_TYPES.has(inputs.type)
                                 ? []
                                 : [{ required: true, message: t('请输入密钥') }]
                             }

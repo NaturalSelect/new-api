@@ -11,6 +11,7 @@ ENV GOEXPERIMENT=greenteagc
 
 WORKDIR /build
 
+ARG GOPROXY=https://proxy.golang.org,direct
 ADD go.mod go.sum ./
 RUN go mod download
 

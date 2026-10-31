@@ -7,6 +7,7 @@ DEV_BACKEND_SERVICE = new-api
 DEV_POSTGRES_DB = new-api
 DEV_POSTGRES_USER = root
 DEV_SQLITE_PATH ?= one-api.db
+GOPROXY ?= $(shell go env GOPROXY)
 
 .PHONY: all build-frontend build-frontend-classic build-all-frontends start-backend dev dev-api dev-api-rebuild dev-web dev-web-classic reset-setup docker-export docker-prune
 
@@ -32,7 +33,7 @@ dev-api:
 
 dev-api-rebuild:
 	@echo "Rebuilding and starting backend service (docker)..."
-	@docker compose -f $(DEV_COMPOSE_FILE) up -d --build $(DEV_BACKEND_SERVICE)
+	@GOPROXY="$(GOPROXY)" docker compose -f $(DEV_COMPOSE_FILE) up -d --build $(DEV_BACKEND_SERVICE)
 
 dev-web:
 	@echo "Starting frontend dev server..."
@@ -46,7 +47,7 @@ dev: dev-api dev-web
 
 docker-export:
 	@echo "Building and exporting Docker image..."
-	@docker build -t calciumion/new-api:latest .
+	@docker build --build-arg GOPROXY="$(GOPROXY)" -t calciumion/new-api:latest .
 	@docker save -o new-api.tar localhost/calciumion/new-api:latest
 
 docker-prune:

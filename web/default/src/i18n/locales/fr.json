@@ -880,7 +880,6 @@
     "Comma-separated list of allowed ports (empty = all ports)": "Liste des ports autorisés séparés par des virgules (vide = tous les ports)",
     "Comma-separated list of model names treated as free (no points charged). These are merged with models auto-detected from the Poe API.": "Liste de noms de modèles séparés par des virgules et traités comme gratuits (aucun point facturé). Ils sont fusionnés avec les modèles détectés automatiquement depuis l’API Poe.",
     "Comma-separated model names (leave empty to keep current)": "Noms de modèles séparés par des virgules (laissez vide pour conserver l'actuel)",
-    "Comma-separated model names treated as free on this channel": "Noms de modèles considérés comme gratuits sur ce canal, séparés par des virgules",
     "Comma-separated model names, e.g., gpt-4,gpt-3.5-turbo": "Noms de modèles séparés par des virgules, p. ex., gpt-4,gpt-3.5-turbo",
     "Command": "Commande",
     "Common": "Commun",

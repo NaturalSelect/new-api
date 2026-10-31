@@ -4,14 +4,13 @@ package dto
 const MaxRetryOn429 = 50
 
 type ChannelSettings struct {
-	ForceFormat            bool     `json:"force_format,omitempty"`
-	ThinkingToContent      bool     `json:"thinking_to_content,omitempty"`
-	Proxy                  string   `json:"proxy"`
-	PassThroughBodyEnabled bool     `json:"pass_through_body_enabled,omitempty"`
-	SystemPrompt           string   `json:"system_prompt,omitempty"`
-	SystemPromptOverride   bool     `json:"system_prompt_override,omitempty"`
-	FreeModels             []string `json:"free_models,omitempty"`
-	RetryOn429             int      `json:"retry_on_429,omitempty"`
+	ForceFormat            bool   `json:"force_format,omitempty"`
+	ThinkingToContent      bool   `json:"thinking_to_content,omitempty"`
+	Proxy                  string `json:"proxy"`
+	PassThroughBodyEnabled bool   `json:"pass_through_body_enabled,omitempty"`
+	SystemPrompt           string `json:"system_prompt,omitempty"`
+	SystemPromptOverride   bool   `json:"system_prompt_override,omitempty"`
+	RetryOn429             int    `json:"retry_on_429,omitempty"`
 }
 
 type VertexKeyType string
@@ -31,9 +30,9 @@ const (
 // Claude Code 伪装努力程度 bitmask 位定义。
 // 每一位独立控制伪装的一个维度，可任意组合。
 const (
-	ClaudeDisguiseUA           = 1 << 0 // 仅伪装 User-Agent
-	ClaudeDisguiseHeader       = 1 << 1 // 仅伪装其余 Header（X-App、anthropic-beta）
-	ClaudeDisguiseSystemPrompt = 1 << 2 // 仅伪装 System Prompt / body（system 注入、user system 迁移、metadata.user_id 规范化）
+	ClaudeDisguiseUA           = 1 << 0                                                               // 仅伪装 User-Agent
+	ClaudeDisguiseHeader       = 1 << 1                                                               // 仅伪装其余 Header（X-App、anthropic-beta）
+	ClaudeDisguiseSystemPrompt = 1 << 2                                                               // 仅伪装 System Prompt / body（system 注入、user system 迁移、metadata.user_id 规范化）
 	ClaudeDisguiseFull         = ClaudeDisguiseUA | ClaudeDisguiseHeader | ClaudeDisguiseSystemPrompt // 完全伪装
 )
 

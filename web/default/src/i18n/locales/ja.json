@@ -880,7 +880,6 @@
     "Comma-separated list of allowed ports (empty = all ports)": "許可されたポートのカンマ区切りリスト (空欄 = すべてのポート)",
     "Comma-separated list of model names treated as free (no points charged). These are merged with models auto-detected from the Poe API.": "無料（ポイント課金なし）として扱うモデル名をカンマ区切りで入力します。これらは Poe API から自動検出されたモデルとマージされます。",
     "Comma-separated model names (leave empty to keep current)": "カンマ区切りのモデル名 (空欄のままにすると現在の設定を維持)",
-    "Comma-separated model names treated as free on this channel": "このチャネルで無料扱いにするモデル名をカンマ区切りで入力します",
     "Comma-separated model names, e.g., gpt-4,gpt-3.5-turbo": "カンマ区切りのモデル名、例: gpt-4,gpt-3.5-turbo",
     "Command": "コマンド",
     "Common": "共通",

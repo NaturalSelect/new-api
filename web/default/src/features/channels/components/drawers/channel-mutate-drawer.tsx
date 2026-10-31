@@ -226,7 +226,6 @@ function hasAdvancedSettingsValues(values: ChannelFormValues): boolean {
     values.thinking_to_content ||
     values.pass_through_body_enabled ||
     values.system_prompt_override ||
-    values.free_models_list?.trim() ||
     values.retry_on_429 ||
     values.claude_beta_query ||
     Boolean(values.claude_code_disguise_mode) ||
@@ -3453,34 +3452,6 @@ export function ChannelMutateDrawer({
                           </FormItem>
                         )}
                       />
-
-                      <div className='border-border/60 flex flex-col gap-3 border-y py-4'>
-                        <SubHeading
-                          title={t('Free Models')}
-                          icon={<Sparkles className='h-3.5 w-3.5' />}
-                        />
-                        <FormField
-                          control={form.control}
-                          name='free_models_list'
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>{t('Free Models')}</FormLabel>
-                              <FormControl>
-                                <Input
-                                  placeholder={t('e.g., gpt-4, claude-3')}
-                                  {...field}
-                                />
-                              </FormControl>
-                              <FormDescription>
-                                {t(
-                                  'Comma-separated model names treated as free on this channel'
-                                )}
-                              </FormDescription>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
 
                       <div className='border-border/60 flex flex-col gap-3 border-y py-4'>
                         <SubHeading

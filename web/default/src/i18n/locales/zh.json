@@ -880,7 +880,6 @@
     "Comma-separated list of allowed ports (empty = all ports)": "允许的端口的逗号分隔列表（留空 = 所有端口）",
     "Comma-separated list of model names treated as free (no points charged). These are merged with models auto-detected from the Poe API.": "以逗号分隔的模型名称列表，这些模型将被视为免费（不扣点数）。它们会与 Poe API 自动检测到的模型合并。",
     "Comma-separated model names (leave empty to keep current)": "逗号分隔的模型名称（留空以保持当前设置）",
-    "Comma-separated model names treated as free on this channel": "使用英文逗号分隔此渠道免费的模型名称",
     "Comma-separated model names, e.g., gpt-4,gpt-3.5-turbo": "逗号分隔的模型名称，例如 gpt-4,gpt-3.5-turbo",
     "Command": "命令",
     "Common": "通用",

@@ -880,7 +880,6 @@
     "Comma-separated list of allowed ports (empty = all ports)": "Danh sách các cổng được phép, phân cách bằng dấu phẩy (để trống = tất cả các cổng)",
     "Comma-separated list of model names treated as free (no points charged). These are merged with models auto-detected from the Poe API.": "Danh sách tên mô hình được phân tách bằng dấu phẩy và được xem là miễn phí (không trừ điểm). Danh sách này được hợp nhất với các mô hình tự động phát hiện từ Poe API.",
     "Comma-separated model names (leave empty to keep current)": "Tên mô hình phân tách bằng dấu phẩy (để trống để giữ nguyên hiện tại)",
-    "Comma-separated model names treated as free on this channel": "Tên mô hình được xem là miễn phí trên kênh này, phân tách bằng dấu phẩy",
     "Comma-separated model names, e.g., gpt-4,gpt-3.5-turbo": "Tên mô hình được phân tách bằng dấu phẩy, ví dụ: gpt-4,gpt-3.5-turbo",
     "Command": "Lệnh",
     "Common": "Chung",

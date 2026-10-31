@@ -194,9 +194,7 @@ func GetChannel(group string, model string, retry int) (*Channel, error) {
 		if len(bucketChannels) == 0 {
 			return nil, errors.New("channel not found")
 		}
-		if freeChannel := selectFreeModelChannel(model, bucketChannels); freeChannel != nil {
-			channel = *freeChannel
-		} else if positiveBalanceSum == 0 {
+		if positiveBalanceSum == 0 {
 			channel = *bucketChannels[common.GetRandomInt(len(bucketChannels))]
 		} else {
 			winner := bucketChannels[0]

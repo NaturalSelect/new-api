@@ -59,6 +59,7 @@ const (
 	ChannelTypePoeAnthropic   = 59
 	ChannelTypeNovelAI        = 60
 	ChannelTypeOpenCodeFree   = 61
+	ChannelTypeTypeSafe       = 62
 	ChannelTypeDummy          // this one is only for count, do not add any channel after this
 
 )
@@ -126,6 +127,7 @@ var ChannelBaseURLs = []string{
 	"https://api.poe.com",                       //59
 	"https://image.novelai.net",                 //60
 	"https://opencode.ai/inference",             //61
+	"https://api.typesafe.ai",                   //62
 }
 
 var ChannelTypeNames = map[int]string{
@@ -187,6 +189,7 @@ var ChannelTypeNames = map[int]string{
 	ChannelTypePoeAnthropic:   "PoeAnthropic",
 	ChannelTypeNovelAI:        "NovelAI",
 	ChannelTypeOpenCodeFree:   "OpenCodeFree",
+	ChannelTypeTypeSafe:       "TypeSafe",
 }
 
 func GetChannelTypeName(channelType int) string {

@@ -17,6 +17,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
 	"github.com/QuantumNous/new-api/relay"
+	"github.com/QuantumNous/new-api/relay/channel/typesafe"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
@@ -50,6 +51,8 @@ func relayHandler(c *gin.Context, info *relaycommon.RelayInfo) *types.NewAPIErro
 		err = relay.RerankHelper(c, info)
 	case relayconstant.RelayModeEmbeddings:
 		err = relay.EmbeddingHelper(c, info)
+	case relayconstant.RelayModeTypeSafeSystemOne:
+		err = relay.TypeSafeHelper(c, info)
 	case relayconstant.RelayModeResponses, relayconstant.RelayModeResponsesCompact:
 		err = relay.ResponsesHelper(c, info)
 	default:
@@ -75,6 +78,8 @@ func renderRelayError(c *gin.Context, relayFormat types.RelayFormat, ws *websock
 	switch {
 	case relayFormat == types.RelayFormatOpenAIRealtime:
 		helper.WssError(c, ws, apiErr.ToOpenAIError())
+	case relayFormat == types.RelayFormatTypeSafe && !c.Writer.Written():
+		typesafe.WriteError(c, apiErr)
 	case !c.Writer.Written():
 		// NOTE: Stream headers may have been set before the upstream answered; the error body is JSON.
 		c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")

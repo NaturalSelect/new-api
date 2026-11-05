@@ -385,6 +385,13 @@ func GenRelayInfoRerank(c *gin.Context, request *dto.RerankRequest) *RelayInfo {
 	return info
 }
 
+func GenRelayInfoTypeSafe(c *gin.Context, request *dto.TypeSafeRequest) *RelayInfo {
+	info := genBaseRelayInfo(c, request)
+	info.RelayMode = relayconstant.RelayModeTypeSafeSystemOne
+	info.RelayFormat = types.RelayFormatTypeSafe
+	return info
+}
+
 func GenRelayInfoOpenAIAudio(c *gin.Context, request dto.Request) *RelayInfo {
 	info := genBaseRelayInfo(c, request)
 	info.RelayFormat = types.RelayFormatOpenAIAudio
@@ -569,6 +576,12 @@ func GenRelayInfo(c *gin.Context, relayFormat types.RelayFormat, request dto.Req
 			break
 		}
 		err = errors.New("request is not a RerankRequest")
+	case types.RelayFormatTypeSafe:
+		if request, ok := request.(*dto.TypeSafeRequest); ok {
+			info = GenRelayInfoTypeSafe(c, request)
+			break
+		}
+		err = errors.New("request is not a TypeSafeRequest")
 	case types.RelayFormatGemini:
 		info = GenRelayInfoGemini(c, request)
 	case types.RelayFormatEmbedding:

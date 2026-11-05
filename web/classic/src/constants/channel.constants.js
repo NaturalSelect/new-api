@@ -204,6 +204,11 @@ export const CHANNEL_OPTIONS = [
     color: 'cyan',
     label: 'OpenCode Free',
   },
+  {
+    value: 62,
+    color: 'teal',
+    label: 'TypeSafe',
+  },
 ];
 
 // Channel types that support upstream model list fetching in UI.

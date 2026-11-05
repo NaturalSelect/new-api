@@ -261,6 +261,10 @@ func getJSONStringValue(result gjson.Result, field string) (string, error) {
 	return result.String(), nil
 }
 
+func isTypeSafeSystemOnePath(path string) bool {
+	return strings.HasPrefix(path, "/v1/systemone") || strings.HasPrefix(path, "/typesafe/v1/systemone")
+}
+
 func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 	var modelRequest ModelRequest
 	shouldSelectChannel := true
@@ -355,6 +359,18 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 			modelRequest.Model = modelName
 		}
 		c.Set("relay_mode", relayMode)
+	} else if isTypeSafeSystemOnePath(c.Request.URL.Path) {
+		// NOTE: The model sits in the JSON body, or in the "request" part of a multipart body that the generic branch below skips.
+		raw, _, err := dto.ReadTypeSafeRequestJSON(c)
+		if err != nil {
+			return nil, false, err
+		}
+		model, err := getJSONStringValue(gjson.GetBytes(raw, "model"), "model")
+		if err != nil {
+			return nil, false, err
+		}
+		modelRequest.Model = model
+		c.Set("relay_mode", relayconstant.RelayModeTypeSafeSystemOne)
 	} else if !strings.HasPrefix(c.Request.URL.Path, "/v1/audio/transcriptions") && !strings.Contains(c.Request.Header.Get("Content-Type"), "multipart/form-data") {
 		req, err := getModelFromRequest(c)
 		if err != nil {

@@ -178,6 +178,17 @@ export const CHANNEL_TYPE_CONFIGS: Record<number, ChannelTypeConfig> = {
       models: 'big-pickle or any model ending with -free, e.g. glm-5.3-flash-free',
     },
   },
+  62: {
+    id: 62,
+    name: CHANNEL_TYPES[62],
+    icon: 'openai',
+    defaultBaseUrl: 'https://api.typesafe.ai',
+    hints: {
+      baseUrl: 'Default: https://api.typesafe.ai',
+      key: 'TypeSafe API key',
+      models: 'jev-latest, jev-1.14.0, jev-1.13.0, jev-preview',
+    },
+  },
 }
 
 /**

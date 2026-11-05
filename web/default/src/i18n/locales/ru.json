@@ -4358,6 +4358,7 @@
     "Type the confirmation text here": "Введите текст подтверждения здесь",
     "Type-Specific Settings": "Настройки для конкретного типа",
     "Type:": "Тип:",
+    "TypeSafe": "TypeSafe",
     "UI granularity only &mdash; data is still aggregated hourly": "Только детализация пользовательского интерфейса &mdash; данные по-прежнему агрегируются ежечасно",
     "Unable to estimate price for this deployment.": "Не удается оценить цену для этого развертывания.",
     "Unable to generate chat link. Please contact your administrator.": "Не удалось сгенерировать ссылку для чата. Пожалуйста, свяжитесь с вашим администратором.",

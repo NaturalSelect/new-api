@@ -4358,6 +4358,7 @@
     "Type the confirmation text here": "確認テキストをここに入力",
     "Type-Specific Settings": "タイプ固有の設定",
     "Type:": "タイプ:",
+    "TypeSafe": "TypeSafe",
     "UI granularity only &mdash; data is still aggregated hourly": "UIの粒度のみ &mdash; データは引き続き時間単位で集計されます",
     "Unable to estimate price for this deployment.": "このデプロイメントの価格を推定できません。",
     "Unable to generate chat link. Please contact your administrator.": "チャットリンクを生成できません。管理者にご連絡ください。",

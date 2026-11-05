@@ -4358,6 +4358,7 @@
     "Type the confirmation text here": "在此输入确认文本",
     "Type-Specific Settings": "特定类型设置",
     "Type:": "类型：",
+    "TypeSafe": "TypeSafe",
     "UI granularity only &mdash; data is still aggregated hourly": "仅 UI 粒度 &mdash; 数据仍按小时汇总",
     "Unable to estimate price for this deployment.": "无法为该部署估算价格。",
     "Unable to generate chat link. Please contact your administrator.": "无法生成聊天链接。请联系您的管理员。",

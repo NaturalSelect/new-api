@@ -83,4 +83,8 @@ const (
 	// ContextKeyTrafficCapture stores the *trafficcapture.Session collecting this request's traffic.
 	// It is absent whenever capture is disabled, so readers must treat a missing key as "off".
 	ContextKeyTrafficCapture ContextKey = "traffic_capture"
+
+	// ContextKeyTypeSafeUpstreamError holds the raw TypeSafe error body ({"detail": ...}) of the
+	// latest failed attempt so the relay error renderer can return it to the client verbatim.
+	ContextKeyTypeSafeUpstreamError ContextKey = "typesafe_upstream_error"
 )

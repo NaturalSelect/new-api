@@ -141,6 +141,11 @@ func SetRelayRouter(router *gin.Engine) {
 			controller.Relay(c, types.RelayFormatRerank)
 		})
 
+		// typesafe relay routes
+		httpRouter.POST("/systemone", func(c *gin.Context) {
+			controller.Relay(c, types.RelayFormatTypeSafe)
+		})
+
 		// gemini relay routes
 		httpRouter.POST("/engines/:model/embeddings", func(c *gin.Context) {
 			controller.Relay(c, types.RelayFormatGemini)
@@ -170,6 +175,21 @@ func SetRelayRouter(router *gin.Engine) {
 	}
 
 	// NOTE: async task relays (Midjourney, Suno, video) are intentionally not exposed.
+
+	// The vendor-prefixed route lets another gateway use this one as a TypeSafe upstream.
+	typeSafeRouter := router.Group("/typesafe/v1")
+	typeSafeRouter.Use(middleware.RouteTag("relay"))
+	typeSafeRouter.Use(middleware.TrafficCapture())
+	typeSafeRouter.Use(middleware.SystemPerformanceCheck())
+	typeSafeRouter.Use(middleware.TokenAuth())
+	typeSafeRouter.Use(middleware.TokenWindowQuotaLimit())
+	typeSafeRouter.Use(middleware.ModelRequestRateLimit())
+	typeSafeRouter.Use(middleware.Distribute())
+	{
+		typeSafeRouter.POST("/systemone", func(c *gin.Context) {
+			controller.Relay(c, types.RelayFormatTypeSafe)
+		})
+	}
 
 	relayGeminiRouter := router.Group("/v1beta")
 	// :countTokens is not implemented. Answer it like an unregistered route

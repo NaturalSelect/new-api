@@ -57,6 +57,9 @@ func normalizeChannelTestEndpoint(channel *model.Channel, modelName, endpointTyp
 	if channel != nil && channel.Type == constant.ChannelTypeNovelAI {
 		return string(constant.EndpointTypeImageGeneration)
 	}
+	if channel != nil && channel.Type == constant.ChannelTypeTypeSafe {
+		return string(constant.EndpointTypeTypeSafe)
+	}
 	return normalized
 }
 
@@ -215,6 +218,8 @@ func testChannel(channel *model.Channel, testUserID int, testModel string, endpo
 			relayFormat = types.RelayFormatOpenAIImage
 		case constant.EndpointTypeEmbeddings:
 			relayFormat = types.RelayFormatEmbedding
+		case constant.EndpointTypeTypeSafe:
+			relayFormat = types.RelayFormatTypeSafe
 		default:
 			relayFormat = types.RelayFormatOpenAI
 		}
@@ -350,6 +355,17 @@ func testChannel(channel *model.Channel, testUserID int, testModel string, endpo
 				context:     c,
 				localErr:    errors.New("invalid rerank request type"),
 				newAPIError: types.NewError(errors.New("invalid rerank request type"), types.ErrorCodeConvertRequestFailed),
+			}
+		}
+	case relayconstant.RelayModeTypeSafeSystemOne:
+		// TypeSafe 请求 - 请求体就是原始 JSON，不做转换
+		if typeSafeReq, ok := request.(*dto.TypeSafeRequest); ok {
+			convertedRequest = json.RawMessage(typeSafeReq.RequestJSON)
+		} else {
+			return testResult{
+				context:     c,
+				localErr:    errors.New("invalid typesafe request type"),
+				newAPIError: types.NewError(errors.New("invalid typesafe request type"), types.ErrorCodeConvertRequestFailed),
 			}
 		}
 	case relayconstant.RelayModeResponses:
@@ -728,6 +744,13 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel,
 				N:      lo.ToPtr(uint(1)),
 				Size:   "1024x1024",
 			}
+		case constant.EndpointTypeTypeSafe:
+			// NOTE: The channel test calls the real upstream, so the question is as small as System One allows.
+			testRequest, err := dto.NewTypeSafeRequest([]byte(fmt.Sprintf(`{"model":%q,"state":"The sky is blue.","questions":{"check":{"type":"noul","instructions":"Is the sky described as blue?"}}}`, model)), false, false)
+			if err != nil {
+				return &dto.BaseRequest{}
+			}
+			return testRequest
 		case constant.EndpointTypeJinaRerank:
 			// 返回 RerankRequest
 			return &dto.RerankRequest{

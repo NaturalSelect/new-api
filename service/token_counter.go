@@ -177,6 +177,15 @@ func getImageToken(c *gin.Context, fileMeta *types.FileMeta, model string, strea
 }
 
 func EstimateRequestToken(c *gin.Context, meta *types.TokenCountMeta, info *relaycommon.RelayInfo) (int, error) {
+	// TypeSafe's tokenizer is proprietary, so the full input budget is reserved
+	// and settlement replaces it with the usage the upstream reports.
+	if request, ok := info.Request.(*dto.TypeSafeRequest); ok {
+		if request.LongContext {
+			return dto.TypeSafeLongContextInputTokens, nil
+		}
+		return dto.TypeSafeMaxInputTokens, nil
+	}
+
 	// 是否统计token
 	if !constant.CountToken {
 		return 0, nil

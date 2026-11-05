@@ -4358,6 +4358,7 @@
     "Type the confirmation text here": "Saisissez ici le texte de confirmation",
     "Type-Specific Settings": "Paramètres spécifiques au type",
     "Type:": "Type :",
+    "TypeSafe": "TypeSafe",
     "UI granularity only &mdash; data is still aggregated hourly": "Granularité de l'interface uniquement &mdash; les données sont toujours agrégées par heure",
     "Unable to estimate price for this deployment.": "Impossible d'estimer le prix pour ce déploiement.",
     "Unable to generate chat link. Please contact your administrator.": "Impossible de générer le lien de discussion. Veuillez contacter votre administrateur.",

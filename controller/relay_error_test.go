@@ -97,3 +97,38 @@ func TestRenderRelayError_CommittedNonSSEAppendsNothing(t *testing.T) {
 	assert.Equal(t, `{"partial":true}`, recorder.Body.String())
 	assert.True(t, common.GetContextKeyBool(c, constant.ContextKeyRelayFailed))
 }
+
+func TestRenderRelayError_TypeSafeUsesDetailShape(t *testing.T) {
+	t.Run("relay error", func(t *testing.T) {
+		c, recorder := newRelayErrorTestContext()
+		apiErr := types.NewErrorWithStatusCode(errors.New("model is required"), types.ErrorCodeInvalidRequest, http.StatusBadRequest)
+
+		renderRelayError(c, types.RelayFormatTypeSafe, nil, apiErr)
+
+		assert.Equal(t, http.StatusBadRequest, recorder.Code)
+		assert.JSONEq(t, `{"detail":"model is required"}`, recorder.Body.String())
+		assert.True(t, common.GetContextKeyBool(c, constant.ContextKeyRelayFailed))
+	})
+
+	t.Run("upstream detail is returned as sent", func(t *testing.T) {
+		c, recorder := newRelayErrorTestContext()
+		raw := `{"detail":[{"loc":["body","state"],"msg":"field required","type":"missing"}]}`
+		common.SetContextKey(c, constant.ContextKeyTypeSafeUpstreamError, []byte(raw))
+		apiErr := types.NewErrorWithStatusCode(errors.New("field required"), types.ErrorCodeBadResponseStatusCode, http.StatusUnprocessableEntity)
+
+		renderRelayError(c, types.RelayFormatTypeSafe, nil, apiErr)
+
+		assert.Equal(t, http.StatusUnprocessableEntity, recorder.Code)
+		assert.Equal(t, raw, recorder.Body.String())
+	})
+
+	t.Run("committed response is left alone", func(t *testing.T) {
+		c, recorder := newRelayErrorTestContext()
+		c.Writer.WriteHeader(http.StatusOK)
+		_, _ = c.Writer.WriteString(`{"model":"m"}`)
+
+		renderRelayError(c, types.RelayFormatTypeSafe, nil, newUpstreamServerError())
+
+		assert.Equal(t, `{"model":"m"}`, recorder.Body.String())
+	})
+}

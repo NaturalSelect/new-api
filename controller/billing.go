@@ -8,26 +8,93 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+type billingQuota struct {
+	total       int
+	used        int
+	expiredTime int64
+}
+
+type quotaConstraint struct {
+	used      int
+	remaining int
+}
+
+// resolveBillingQuota reports the key's remaining allowance when the key has a quota cap or a
+// rolling window cap, and the account balance otherwise.
+func resolveBillingQuota(c *gin.Context) (billingQuota, error) {
+	userId := c.GetInt("id")
+	if !common.DisplayTokenStatEnabled {
+		return resolveAccountBillingQuota(userId)
+	}
+	token, err := model.GetTokenById(c.GetInt("token_id"))
+	if err != nil {
+		return billingQuota{}, err
+	}
+	quota, limited, err := resolveTokenBillingQuota(token)
+	if err != nil {
+		return billingQuota{}, err
+	}
+	if !limited {
+		if quota, err = resolveAccountBillingQuota(userId); err != nil {
+			return billingQuota{}, err
+		}
+	}
+	quota.expiredTime = max(token.ExpiredTime, 0)
+	return quota, nil
+}
+
+func resolveAccountBillingQuota(userId int) (billingQuota, error) {
+	remain, err := model.GetUserQuota(userId, false)
+	if err != nil {
+		return billingQuota{}, err
+	}
+	used, err := model.GetUserUsedQuota(userId)
+	if err != nil {
+		return billingQuota{}, err
+	}
+	return billingQuota{total: remain + used, used: used}, nil
+}
+
+// resolveTokenBillingQuota picks the tightest of the key's own caps. limited is false when the
+// key has neither a quota cap nor a rolling window cap.
+func resolveTokenBillingQuota(token *model.Token) (quota billingQuota, limited bool, err error) {
+	constraints := make([]quotaConstraint, 0, 3)
+	if !token.UnlimitedQuota {
+		constraints = append(constraints, quotaConstraint{used: token.UsedQuota, remaining: token.RemainQuota})
+	}
+	windowLimits := []struct {
+		window model.TokenQuotaWindow
+		limit  int
+	}{
+		{model.TokenQuotaWindow5h, token.QuotaLimit5h},
+		{model.TokenQuotaWindow7d, token.QuotaLimit7d},
+	}
+	for _, item := range windowLimits {
+		if item.limit <= 0 {
+			continue
+		}
+		usage, err := model.GetTokenWindowUsage(token.Id, item.window)
+		if err != nil {
+			return billingQuota{}, false, err
+		}
+		used := int(usage.Used)
+		constraints = append(constraints, quotaConstraint{used: used, remaining: item.limit - used})
+	}
+	if len(constraints) == 0 {
+		return billingQuota{}, false, nil
+	}
+	tightest := constraints[0]
+	for _, constraint := range constraints[1:] {
+		if constraint.remaining < tightest.remaining {
+			tightest = constraint
+		}
+	}
+	// NOTE: Clients compute balance as hard limit minus usage, so total is rebuilt as used plus remaining.
+	return billingQuota{total: tightest.used + max(tightest.remaining, 0), used: tightest.used}, true, nil
+}
+
 func GetSubscription(c *gin.Context) {
-	var remainQuota int
-	var usedQuota int
-	var err error
-	var token *model.Token
-	var expiredTime int64
-	if common.DisplayTokenStatEnabled {
-		tokenId := c.GetInt("token_id")
-		token, err = model.GetTokenById(tokenId)
-		expiredTime = token.ExpiredTime
-		remainQuota = token.RemainQuota
-		usedQuota = token.UsedQuota
-	} else {
-		userId := c.GetInt("id")
-		remainQuota, err = model.GetUserQuota(userId, false)
-		usedQuota, err = model.GetUserUsedQuota(userId)
-	}
-	if expiredTime <= 0 {
-		expiredTime = 0
-	}
+	quota, err := resolveBillingQuota(c)
 	if err != nil {
 		openAIError := types.OpenAIError{
 			Message: err.Error(),
@@ -38,8 +105,7 @@ func GetSubscription(c *gin.Context) {
 		})
 		return
 	}
-	quota := remainQuota + usedQuota
-	amount := float64(quota)
+	amount := float64(quota.total)
 	// OpenAI 兼容接口中的 *_USD 字段含义保持“额度单位”对应值：
 	// 我们将其解释为以“站点展示类型”为准：
 	// - USD: 直接除以 QuotaPerUnit
@@ -53,33 +119,20 @@ func GetSubscription(c *gin.Context) {
 	default:
 		amount = amount / common.QuotaPerUnit
 	}
-	if token != nil && token.UnlimitedQuota {
-		amount = 100000000
-	}
 	subscription := OpenAISubscriptionResponse{
 		Object:             "billing_subscription",
 		HasPaymentMethod:   true,
 		SoftLimitUSD:       amount,
 		HardLimitUSD:       amount,
 		SystemHardLimitUSD: amount,
-		AccessUntil:        expiredTime,
+		AccessUntil:        quota.expiredTime,
 	}
 	c.JSON(200, subscription)
 	return
 }
 
 func GetUsage(c *gin.Context) {
-	var quota int
-	var err error
-	var token *model.Token
-	if common.DisplayTokenStatEnabled {
-		tokenId := c.GetInt("token_id")
-		token, err = model.GetTokenById(tokenId)
-		quota = token.UsedQuota
-	} else {
-		userId := c.GetInt("id")
-		quota, err = model.GetUserUsedQuota(userId)
-	}
+	quota, err := resolveBillingQuota(c)
 	if err != nil {
 		openAIError := types.OpenAIError{
 			Message: err.Error(),
@@ -90,7 +143,7 @@ func GetUsage(c *gin.Context) {
 		})
 		return
 	}
-	amount := float64(quota)
+	amount := float64(quota.used)
 	switch operation_setting.GetQuotaDisplayType() {
 	case operation_setting.QuotaDisplayTypeCNY:
 		amount = amount / common.QuotaPerUnit * operation_setting.USDExchangeRate

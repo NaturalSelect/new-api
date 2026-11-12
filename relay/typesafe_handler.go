@@ -7,7 +7,9 @@ import (
 	"net/http"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/relay/channel/gemini"
 	"github.com/QuantumNous/new-api/relay/channel/typesafe"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/helper"
@@ -37,9 +39,9 @@ func TypeSafeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *t
 	}
 	adaptor.Init(info)
 
-	requestBody, closer, err := typeSafeRequestBody(c, info, request)
-	if err != nil {
-		return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+	requestBody, closer, newAPIError := systemOneRequestBody(c, info, request)
+	if newAPIError != nil {
+		return newAPIError
 	}
 	if closer != nil {
 		defer closer.Close()
@@ -55,7 +57,11 @@ func TypeSafeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *t
 	if resp != nil {
 		httpResp = resp.(*http.Response)
 		if httpResp.StatusCode != http.StatusOK {
-			newAPIError = typesafe.ErrorFromResponse(c, httpResp)
+			if info.ApiType == constant.APITypeGemini {
+				newAPIError = service.RelayErrorHandler(c.Request.Context(), httpResp, false)
+			} else {
+				newAPIError = typesafe.ErrorFromResponse(c, httpResp)
+			}
 			service.ResetStatusCode(newAPIError, statusCodeMappingStr)
 			return newAPIError
 		}
@@ -68,6 +74,38 @@ func TypeSafeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *t
 	}
 	service.PostTextConsumeQuota(c, info, usage.(*dto.Usage), nil)
 	return nil
+}
+
+// systemOneRequestBody builds the upstream body for the selected channel: a TypeSafe
+// channel gets the client's request, a Gemini channel gets it converted to a Decisions request.
+func systemOneRequestBody(c *gin.Context, info *relaycommon.RelayInfo, request *dto.TypeSafeRequest) (io.Reader, io.Closer, *types.NewAPIError) {
+	switch info.ApiType {
+	case constant.APITypeTypeSafe:
+		body, closer, err := typeSafeRequestBody(c, info, request)
+		if err != nil {
+			return nil, nil, types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+		}
+		return body, closer, nil
+	case constant.APITypeGemini:
+		// NOTE: A conversion error comes from the client's request, so no other channel can serve it either.
+		data, err := gemini.ConvertSystemOneToDecision(c, request, info.UpstreamModelName)
+		if err != nil {
+			return nil, nil, types.NewErrorWithStatusCode(err, types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+		}
+		if len(info.ParamOverride) > 0 {
+			data, err = relaycommon.ApplyParamOverrideWithRelayInfo(data, info)
+			if err != nil {
+				return nil, nil, newAPIErrorFromParamOverride(err)
+			}
+		}
+		body, closer, err := outboundBody(info, data)
+		if err != nil {
+			return nil, nil, types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+		}
+		return body, closer, nil
+	default:
+		return nil, nil, types.NewError(fmt.Errorf("system one needs a TypeSafe or Gemini channel, got api type %d", info.ApiType), types.ErrorCodeInvalidApiType, types.ErrOptionWithSkipRetry())
+	}
 }
 
 // typeSafeRequestBody builds the upstream body from the client's bytes. The

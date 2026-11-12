@@ -22,6 +22,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	"github.com/QuantumNous/new-api/relay"
+	"github.com/QuantumNous/new-api/relay/channel/gemini"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
@@ -62,6 +63,9 @@ func normalizeChannelTestEndpoint(channel *model.Channel, modelName, endpointTyp
 	}
 	if channel != nil && channel.Type == constant.ChannelTypeGemini && strings.HasPrefix(modelName, "gemini-decision") {
 		return string(constant.EndpointTypeGeminiDecision)
+	}
+	if channel != nil && channel.Type == constant.ChannelTypeGemini && strings.HasPrefix(modelName, "jev") {
+		return string(constant.EndpointTypeTypeSafe)
 	}
 	return normalized
 }
@@ -363,15 +367,22 @@ func testChannel(channel *model.Channel, testUserID int, testModel string, endpo
 			}
 		}
 	case relayconstant.RelayModeTypeSafeSystemOne:
-		// TypeSafe 请求 - 请求体就是原始 JSON，不做转换
-		if typeSafeReq, ok := request.(*dto.TypeSafeRequest); ok {
-			convertedRequest = json.RawMessage(typeSafeReq.RequestJSON)
-		} else {
+		typeSafeReq, ok := request.(*dto.TypeSafeRequest)
+		if !ok {
 			return testResult{
 				context:     c,
 				localErr:    errors.New("invalid typesafe request type"),
 				newAPIError: types.NewError(errors.New("invalid typesafe request type"), types.ErrorCodeConvertRequestFailed),
 			}
+		}
+		if info.ApiType == constant.APITypeGemini {
+			// Gemini 渠道 - 转换为 Decisions 请求
+			var decisionJSON []byte
+			decisionJSON, err = gemini.ConvertSystemOneToDecision(c, typeSafeReq, info.UpstreamModelName)
+			convertedRequest = json.RawMessage(decisionJSON)
+		} else {
+			// TypeSafe 请求 - 请求体就是原始 JSON，不做转换
+			convertedRequest = json.RawMessage(typeSafeReq.RequestJSON)
 		}
 	case relayconstant.RelayModeGeminiDecision:
 		// Gemini Decisions 请求 - 请求体就是原始 JSON，不做转换

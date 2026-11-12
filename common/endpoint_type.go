@@ -29,9 +29,16 @@ func GetEndpointTypesByChannelType(channelType int, modelName string) []constant
 	case constant.ChannelTypeVertexAi:
 		fallthrough
 	case constant.ChannelTypeGemini:
-		if strings.HasPrefix(modelName, "gemini-decision") {
-			endpointTypes = []constant.EndpointType{constant.EndpointTypeGeminiDecision}
-			break
+		if channelType == constant.ChannelTypeGemini {
+			// NOTE: Only Google's own endpoint serves Decisions, so Vertex AI channels keep the chat endpoints.
+			if strings.HasPrefix(modelName, "gemini-decision") {
+				endpointTypes = []constant.EndpointType{constant.EndpointTypeGeminiDecision}
+				break
+			}
+			if strings.HasPrefix(modelName, "jev") {
+				endpointTypes = []constant.EndpointType{constant.EndpointTypeTypeSafe}
+				break
+			}
 		}
 		endpointTypes = []constant.EndpointType{constant.EndpointTypeGemini, constant.EndpointTypeOpenAI}
 	case constant.ChannelTypeOpenRouter: // OpenRouter 只支持 OpenAI 端点

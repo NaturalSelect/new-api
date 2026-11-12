@@ -2,6 +2,7 @@ package controller
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -130,5 +132,17 @@ func TestRenderRelayError_TypeSafeUsesDetailShape(t *testing.T) {
 		renderRelayError(c, types.RelayFormatTypeSafe, nil, newUpstreamServerError())
 
 		assert.Equal(t, `{"model":"m"}`, recorder.Body.String())
+	})
+
+	t.Run("google error body becomes a detail message", func(t *testing.T) {
+		c, recorder := newRelayErrorTestContext()
+		body := `{"error":{"code":"safety","message":"input blocked by safety filters"}}`
+		resp := &http.Response{StatusCode: http.StatusBadRequest, Body: io.NopCloser(strings.NewReader(body))}
+		apiErr := service.RelayErrorHandler(c.Request.Context(), resp, false)
+
+		renderRelayError(c, types.RelayFormatTypeSafe, nil, apiErr)
+
+		assert.Equal(t, http.StatusBadRequest, recorder.Code)
+		assert.JSONEq(t, `{"detail":"input blocked by safety filters"}`, recorder.Body.String())
 	})
 }

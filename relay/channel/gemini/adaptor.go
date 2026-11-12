@@ -128,7 +128,7 @@ func (a *Adaptor) Init(info *relaycommon.RelayInfo) {
 }
 
 func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
-	if info.RelayMode == constant.RelayModeGeminiDecision {
+	if info.RelayMode == constant.RelayModeGeminiDecision || info.RelayMode == constant.RelayModeTypeSafeSystemOne {
 		// NOTE: Decisions is only available on v1beta, so the configurable version setting does not apply.
 		return fmt.Sprintf("%s/v1beta/decisions", info.ChannelBaseUrl), nil
 	}
@@ -176,6 +176,11 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 
 func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *relaycommon.RelayInfo) error {
 	channel.SetupApiRequestHeader(info, c, req)
+	if info.RelayMode == constant.RelayModeTypeSafeSystemOne {
+		// NOTE: The converted body is always JSON, even when the client sent a multipart request.
+		req.Set("Content-Type", "application/json")
+		req.Set("Accept", "application/json")
+	}
 	req.Set("x-goog-api-key", info.ApiKey)
 	return nil
 }
@@ -253,6 +258,9 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, request
 func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (usage any, err *types.NewAPIError) {
 	if info.RelayMode == constant.RelayModeGeminiDecision {
 		return GeminiDecisionHandler(c, info, resp)
+	}
+	if info.RelayMode == constant.RelayModeTypeSafeSystemOne {
+		return SystemOneHandler(c, info, resp)
 	}
 	if info.RelayMode == constant.RelayModeGemini {
 		if strings.Contains(info.RequestURLPath, ":embedContent") ||

@@ -123,6 +123,7 @@ const endpointTypeOptions: Array<{ value: string; label: string }> = [
   },
   { value: 'embeddings', label: 'Embeddings (/v1/embeddings)' },
   { value: 'gemini-decision', label: 'Gemini Decision (/v1beta/decisions)' },
+  { value: 'typesafe-systemone', label: 'TypeSafe System One (/v1/systemone)' },
 ]
 
 const STREAM_INCOMPATIBLE_ENDPOINTS = new Set([
@@ -131,6 +132,7 @@ const STREAM_INCOMPATIBLE_ENDPOINTS = new Set([
   'image-generation',
   'jina-rerank',
   'openai-response-compact',
+  'typesafe-systemone',
 ])
 
 const MODEL_PRICE_ERROR_CODE = 'model_price_error'

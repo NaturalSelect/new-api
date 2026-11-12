@@ -64,6 +64,7 @@ const ModelTestModal = ({
     'image-generation',
     'jina-rerank',
     'openai-response-compact',
+    'typesafe-systemone',
   ].includes(selectedEndpointType);
 
   React.useEffect(() => {
@@ -100,6 +101,7 @@ const ModelTestModal = ({
     },
     { value: 'embeddings', label: 'Embeddings (/v1/embeddings)' },
     { value: 'gemini-decision', label: 'Gemini Decision (/v1beta/decisions)' },
+    { value: 'typesafe-systemone', label: 'TypeSafe System One (/v1/systemone)' },
   ];
 
   const handleCopySelected = () => {

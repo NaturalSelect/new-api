@@ -166,6 +166,7 @@ export const ENDPOINT_TEMPLATES: Record<
   'jina-rerank': { path: '/rerank', method: 'POST' },
   'image-generation': { path: '/v1/images/generations', method: 'POST' },
   embeddings: { path: '/v1/embeddings', method: 'POST' },
+  'gemini-decision': { path: '/v1beta/decisions', method: 'POST' },
 }
 
 // ============================================================================

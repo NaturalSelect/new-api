@@ -392,6 +392,13 @@ func GenRelayInfoTypeSafe(c *gin.Context, request *dto.TypeSafeRequest) *RelayIn
 	return info
 }
 
+func GenRelayInfoGeminiDecision(c *gin.Context, request *dto.GeminiDecisionRequest) *RelayInfo {
+	info := genBaseRelayInfo(c, request)
+	info.RelayMode = relayconstant.RelayModeGeminiDecision
+	info.RelayFormat = types.RelayFormatGeminiDecision
+	return info
+}
+
 func GenRelayInfoOpenAIAudio(c *gin.Context, request dto.Request) *RelayInfo {
 	info := genBaseRelayInfo(c, request)
 	info.RelayFormat = types.RelayFormatOpenAIAudio
@@ -582,6 +589,12 @@ func GenRelayInfo(c *gin.Context, relayFormat types.RelayFormat, request dto.Req
 			break
 		}
 		err = errors.New("request is not a TypeSafeRequest")
+	case types.RelayFormatGeminiDecision:
+		if request, ok := request.(*dto.GeminiDecisionRequest); ok {
+			info = GenRelayInfoGeminiDecision(c, request)
+			break
+		}
+		err = errors.New("request is not a GeminiDecisionRequest")
 	case types.RelayFormatGemini:
 		info = GenRelayInfoGemini(c, request)
 	case types.RelayFormatEmbedding:

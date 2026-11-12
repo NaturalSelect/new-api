@@ -60,6 +60,7 @@ const ModelTestModal = ({
   const hasChannel = Boolean(currentTestChannel);
   const streamToggleDisabled = [
     'embeddings',
+    'gemini-decision',
     'image-generation',
     'jina-rerank',
     'openai-response-compact',
@@ -98,6 +99,7 @@ const ModelTestModal = ({
       label: t('图像生成') + ' (/v1/images/generations)',
     },
     { value: 'embeddings', label: 'Embeddings (/v1/embeddings)' },
+    { value: 'gemini-decision', label: 'Gemini Decision (/v1beta/decisions)' },
   ];
 
   const handleCopySelected = () => {

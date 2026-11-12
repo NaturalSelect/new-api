@@ -60,6 +60,9 @@ func normalizeChannelTestEndpoint(channel *model.Channel, modelName, endpointTyp
 	if channel != nil && channel.Type == constant.ChannelTypeTypeSafe {
 		return string(constant.EndpointTypeTypeSafe)
 	}
+	if channel != nil && channel.Type == constant.ChannelTypeGemini && strings.HasPrefix(modelName, "gemini-decision") {
+		return string(constant.EndpointTypeGeminiDecision)
+	}
 	return normalized
 }
 
@@ -220,6 +223,8 @@ func testChannel(channel *model.Channel, testUserID int, testModel string, endpo
 			relayFormat = types.RelayFormatEmbedding
 		case constant.EndpointTypeTypeSafe:
 			relayFormat = types.RelayFormatTypeSafe
+		case constant.EndpointTypeGeminiDecision:
+			relayFormat = types.RelayFormatGeminiDecision
 		default:
 			relayFormat = types.RelayFormatOpenAI
 		}
@@ -366,6 +371,17 @@ func testChannel(channel *model.Channel, testUserID int, testModel string, endpo
 				context:     c,
 				localErr:    errors.New("invalid typesafe request type"),
 				newAPIError: types.NewError(errors.New("invalid typesafe request type"), types.ErrorCodeConvertRequestFailed),
+			}
+		}
+	case relayconstant.RelayModeGeminiDecision:
+		// Gemini Decisions 请求 - 请求体就是原始 JSON，不做转换
+		if decisionReq, ok := request.(*dto.GeminiDecisionRequest); ok {
+			convertedRequest = json.RawMessage(decisionReq.RequestJSON)
+		} else {
+			return testResult{
+				context:     c,
+				localErr:    errors.New("invalid gemini decision request type"),
+				newAPIError: types.NewError(errors.New("invalid gemini decision request type"), types.ErrorCodeConvertRequestFailed),
 			}
 		}
 	case relayconstant.RelayModeResponses:
@@ -747,6 +763,13 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel,
 		case constant.EndpointTypeTypeSafe:
 			// NOTE: The channel test calls the real upstream, so the question is as small as System One allows.
 			testRequest, err := dto.NewTypeSafeRequest([]byte(fmt.Sprintf(`{"model":%q,"state":"The sky is blue.","questions":{"check":{"type":"noul","instructions":"Is the sky described as blue?"}}}`, model)), false, false)
+			if err != nil {
+				return &dto.BaseRequest{}
+			}
+			return testRequest
+		case constant.EndpointTypeGeminiDecision:
+			// NOTE: The channel test calls the real upstream, so the question is as small as Decisions allows.
+			testRequest, err := dto.NewGeminiDecisionRequest([]byte(fmt.Sprintf(`{"model":%q,"input":"The sky is blue.","questions":{"check":{"type":"noul","instructions":"Is the sky described as blue?"}}}`, model)))
 			if err != nil {
 				return &dto.BaseRequest{}
 			}

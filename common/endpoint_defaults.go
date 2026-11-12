@@ -26,6 +26,7 @@ var defaultEndpointInfoMap = map[constant.EndpointType]EndpointInfo{
 	constant.EndpointTypeImageGeneration:       {Path: "/v1/images/generations", Method: "POST"},
 	constant.EndpointTypeEmbeddings:            {Path: "/v1/embeddings", Method: "POST"},
 	constant.EndpointTypeTypeSafe:              {Path: "/v1/systemone", Method: "POST"},
+	constant.EndpointTypeGeminiDecision:        {Path: "/v1beta/decisions", Method: "POST"},
 }
 
 // GetDefaultEndpointInfo 返回指定端点类型的默认信息以及是否存在

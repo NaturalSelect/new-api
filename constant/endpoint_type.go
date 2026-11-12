@@ -13,6 +13,7 @@ const (
 	EndpointTypeEmbeddings            EndpointType = "embeddings"
 	EndpointTypeOpenAIVideo           EndpointType = "openai-video"
 	EndpointTypeTypeSafe              EndpointType = "typesafe-systemone"
+	EndpointTypeGeminiDecision        EndpointType = "gemini-decision"
 	//EndpointTypeMidjourney     EndpointType = "midjourney-proxy"
 	//EndpointTypeSuno           EndpointType = "suno-proxy"
 	//EndpointTypeKling          EndpointType = "kling"

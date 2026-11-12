@@ -22,6 +22,8 @@ var ModelList = []string{
 	"gemma-3-27b-it", "gemma-3n-e4b-it", "gemma-3n-e2b-it",
 	// embedding models
 	"gemini-embedding-001", "gemini-embedding-2-preview",
+	// decision models
+	"gemini-decision-1",
 	// imagen models
 	"imagen-4.0-generate-001", "imagen-4.0-ultra-generate-001",
 	"imagen-4.0-fast-generate-001",

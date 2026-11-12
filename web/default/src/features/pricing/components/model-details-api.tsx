@@ -429,6 +429,104 @@ function buildImageSample(lang: Lang, ctx: SampleContext): string {
   ].join('\n')
 }
 
+function buildDecisionSample(lang: Lang, ctx: SampleContext): string {
+  const url = `${ctx.baseUrl}${ctx.endpointPath}`
+  const input = 'The blue mug I ordered on Monday arrived cracked on Wednesday.'
+  const question = {
+    type: 'noul',
+    instructions: 'Did the item arrive damaged?',
+  }
+
+  if (lang === 'curl') {
+    const body = JSON.stringify(
+      {
+        model: ctx.modelName,
+        input,
+        questions: { is_damaged: question },
+      },
+      null,
+      2
+    )
+    return [
+      `curl -X POST ${url} \\`,
+      `  -H "x-goog-api-key: $${ctx.apiKeyEnv}" \\`,
+      `  -H "Content-Type: application/json" \\`,
+      `  -d '${body.replace(/\n/g, '\n     ')}'`,
+    ].join('\n')
+  }
+  if (lang === 'python') {
+    return [
+      'from google import genai',
+      '',
+      'client = genai.Client(',
+      `    api_key="<YOUR_API_KEY>",`,
+      `    http_options={"api_version": "v1beta", "base_url": "${ctx.baseUrl}"},`,
+      ')',
+      '',
+      'result = client.decisions.create(',
+      `    model="${ctx.modelName}",`,
+      `    input="${input}",`,
+      '    questions={',
+      '        "is_damaged": {',
+      `            "type": "${question.type}",`,
+      `            "instructions": "${question.instructions}",`,
+      '        },',
+      '    },',
+      ')',
+      '',
+      'answer = result.answers["is_damaged"]',
+      'print(answer.noul, answer.confidence)',
+    ].join('\n')
+  }
+  if (lang === 'typescript') {
+    return [
+      `import { GoogleGenAI } from '@google/genai'`,
+      '',
+      `const ai = new GoogleGenAI({`,
+      `  apiKey: process.env.${ctx.apiKeyEnv},`,
+      `  apiVersion: 'v1beta',`,
+      `  httpOptions: { baseUrl: '${ctx.baseUrl}' },`,
+      `})`,
+      '',
+      `const result = await ai.decisions.create({`,
+      `  model: '${ctx.modelName}',`,
+      `  input: '${input}',`,
+      `  questions: {`,
+      `    is_damaged: {`,
+      `      type: '${question.type}',`,
+      `      instructions: '${question.instructions}',`,
+      `    },`,
+      `  },`,
+      `})`,
+      '',
+      `const answer = result.answers?.is_damaged`,
+      `if (answer?.type === 'noul') console.log(answer.noul, answer.confidence)`,
+    ].join('\n')
+  }
+  return [
+    `const response = await fetch('${url}', {`,
+    `  method: 'POST',`,
+    `  headers: {`,
+    `    'x-goog-api-key': process.env.${ctx.apiKeyEnv},`,
+    `    'Content-Type': 'application/json',`,
+    `  },`,
+    `  body: JSON.stringify({`,
+    `    model: '${ctx.modelName}',`,
+    `    input: '${input}',`,
+    `    questions: {`,
+    `      is_damaged: {`,
+    `        type: '${question.type}',`,
+    `        instructions: '${question.instructions}',`,
+    `      },`,
+    `    },`,
+    `  }),`,
+    `})`,
+    '',
+    `const data = await response.json()`,
+    `console.log(data.answers.is_damaged.noul)`,
+  ].join('\n')
+}
+
 function buildSample(
   lang: Lang,
   endpointType: string,
@@ -436,6 +534,7 @@ function buildSample(
 ): string {
   if (endpointType === 'anthropic') return buildAnthropicSample(lang, ctx)
   if (endpointType === 'gemini') return buildGeminiSample(lang, ctx)
+  if (endpointType === 'gemini-decision') return buildDecisionSample(lang, ctx)
   if (endpointType === 'embeddings' || endpointType === 'jina-rerank')
     return buildEmbeddingSample(lang, ctx)
   if (endpointType === 'image-generation') return buildImageSample(lang, ctx)

@@ -125,3 +125,14 @@ func TestGetModelRequestTypeSafe(t *testing.T) {
 		require.ErrorContains(t, err, "model")
 	})
 }
+
+func TestGetModelRequestGeminiDecision(t *testing.T) {
+	const body = `{"model":"gemini-decision-1","input":"hi","questions":{"q":{"type":"noul","instructions":"ok?"}}}`
+
+	c := newTypeSafeModelContext(t, "/v1beta/decisions", "application/json", []byte(body))
+
+	modelRequest, shouldSelect, err := getModelRequest(c)
+	require.NoError(t, err)
+	require.True(t, shouldSelect)
+	require.Equal(t, "gemini-decision-1", modelRequest.Model)
+}

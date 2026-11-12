@@ -40,6 +40,7 @@ const TEXT_INPUT_ENDPOINTS = new Set([
   'gemini',
   'embeddings',
   'jina-rerank',
+  'gemini-decision',
 ])
 
 const IMAGE_OUTPUT_ENDPOINTS = new Set(['image-generation'])
@@ -215,14 +216,19 @@ function inferCapabilities(
 ): ModelCapability[] {
   const set = new Set<ModelCapability>()
 
-  if (outputs.includes('text') && !endpoints.includes('image-generation')) {
+  if (
+    outputs.includes('text') &&
+    !endpoints.includes('image-generation') &&
+    !endpoints.includes('gemini-decision')
+  ) {
     set.add('streaming')
     set.add('system_prompt')
   }
   if (
     !endpoints.includes('image-generation') &&
     !endpoints.includes('embeddings') &&
-    !endpoints.includes('jina-rerank')
+    !endpoints.includes('jina-rerank') &&
+    !endpoints.includes('gemini-decision')
   ) {
     set.add('function_calling')
     set.add('tools')
@@ -256,6 +262,9 @@ function inferContextAndOutputs(
 ): { context: number; maxOutput: number } {
   if (endpoints.includes('embeddings') || endpoints.includes('jina-rerank')) {
     return { context: 8_192, maxOutput: 0 }
+  }
+  if (endpoints.includes('gemini-decision')) {
+    return { context: 262_144, maxOutput: 0 }
   }
   if (
     endpoints.includes('image-generation') ||

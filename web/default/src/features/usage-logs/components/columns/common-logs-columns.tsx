@@ -634,9 +634,9 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
                       }
                     >
                       {Math.round(tokensPerSecond)}
-                      {decodeTps != null && `/${Math.round(decodeTps)}`}
+                      {decodeTps != null && ` | ${Math.round(decodeTps)}`}
                     </span>
-                    {' t/s'}
+                    {' TPS'}
                   </>
                 )}
               </span>

@@ -629,14 +629,13 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
                       className='tabular-nums'
                       title={
                         decodeTps != null
-                          ? `${t('Overall')} / ${t('Decode')}`
+                          ? `${t('Overall')} (${t('Decode')})`
                           : undefined
                       }
                     >
-                      {Math.round(tokensPerSecond)}
-                      {decodeTps != null && ` | ${Math.round(decodeTps)}`}
+                      {Math.round(tokensPerSecond)} TPS
+                      {decodeTps != null && ` (${Math.round(decodeTps)})`}
                     </span>
-                    {' TPS'}
                   </>
                 )}
               </span>

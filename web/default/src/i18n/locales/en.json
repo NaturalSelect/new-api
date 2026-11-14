@@ -4756,6 +4756,25 @@
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
     "Zoom": "Zoom",
-    "Decision": "Decision"
+    "Decision": "Decision",
+    "Batch Edit Channels": "Batch Edit Channels",
+    "Only checked fields will be changed for the {{count}} selected channel(s).": "Only checked fields will be changed for the {{count}} selected channel(s).",
+    "Append models": "Append models",
+    "Remove models": "Remove models",
+    "Replace all models": "Replace all models",
+    "Comma or newline separated model names": "Comma or newline separated model names",
+    "Missing models are added to each channel; existing models are kept.": "Missing models are added to each channel; existing models are kept.",
+    "These models are removed from each channel. Channels left with no models cause the whole batch to fail.": "These models are removed from each channel. Channels left with no models cause the whole batch to fail.",
+    "Every selected channel will end up with exactly this model list.": "Every selected channel will end up with exactly this model list.",
+    "Select groups": "Select groups",
+    "Overwrites the mapping of every selected channel. Leave empty to clear it.": "Overwrites the mapping of every selected channel. Leave empty to clear it.",
+    "Overwrites the override of every selected channel. Leave empty to clear it.": "Overwrites the override of every selected channel. Leave empty to clear it.",
+    "Leave empty to clear the test model": "Leave empty to clear the test model",
+    "Please enter at least one model": "Please enter at least one model",
+    "Please select at least one group": "Please select at least one group",
+    "{{field}} must be valid JSON": "{{field}} must be valid JSON",
+    "Batch edit selected channels": "Batch edit selected channels",
+    "Updated {{count}} channel(s) successfully": "Updated {{count}} channel(s) successfully",
+    "Failed to update channels": "Failed to update channels"
   }
 }

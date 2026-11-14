@@ -1147,6 +1147,173 @@ func BatchSetChannelTag(ids []int, tag *string) error {
 	return tx.Commit().Error
 }
 
+const (
+	BatchModelsModeAppend  = "append"
+	BatchModelsModeRemove  = "remove"
+	BatchModelsModeReplace = "replace"
+)
+
+// ChannelBatchEditParams describes a batch edit applied to many channels at once.
+// A nil pointer field means "leave unchanged"; a non-nil pointer to a zero value is written as-is.
+type ChannelBatchEditParams struct {
+	ModelsMode     string
+	Models         []string
+	Group          *string
+	Priority       *int64
+	Weight         *uint
+	ModelMapping   *string
+	ParamOverride  *string
+	HeaderOverride *string
+	TestModel      *string
+	AutoBan        *int
+}
+
+func (p *ChannelBatchEditParams) hasChanges() bool {
+	return p.ModelsMode != "" || p.Group != nil || p.Priority != nil || p.Weight != nil ||
+		p.ModelMapping != nil || p.ParamOverride != nil || p.HeaderOverride != nil ||
+		p.TestModel != nil || p.AutoBan != nil
+}
+
+func splitChannelModels(models string) []string {
+	parts := strings.Split(models, ",")
+	result := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if _, exists := seen[part]; exists {
+			continue
+		}
+		seen[part] = struct{}{}
+		result = append(result, part)
+	}
+	return result
+}
+
+func mergeChannelModels(current string, mode string, models []string) string {
+	incoming := splitChannelModels(strings.Join(models, ","))
+	switch mode {
+	case BatchModelsModeReplace:
+		return strings.Join(incoming, ",")
+	case BatchModelsModeAppend:
+		existing := splitChannelModels(current)
+		return strings.Join(splitChannelModels(strings.Join(append(existing, incoming...), ",")), ",")
+	case BatchModelsModeRemove:
+		removed := make(map[string]struct{}, len(incoming))
+		for _, name := range incoming {
+			removed[name] = struct{}{}
+		}
+		kept := make([]string, 0)
+		for _, name := range splitChannelModels(current) {
+			if _, ok := removed[name]; !ok {
+				kept = append(kept, name)
+			}
+		}
+		return strings.Join(kept, ",")
+	}
+	return current
+}
+
+// BatchEditChannels applies params to every channel in ids inside a single transaction
+// and returns how many channels were updated. Any failure rolls back all channels.
+func BatchEditChannels(ids []int, params ChannelBatchEditParams) (int, error) {
+	ids = lo.Uniq(ids)
+	if len(ids) == 0 {
+		return 0, errors.New("no channels selected")
+	}
+	if !params.hasChanges() {
+		return 0, errors.New("no fields to update")
+	}
+	switch params.ModelsMode {
+	case "", BatchModelsModeAppend, BatchModelsModeRemove, BatchModelsModeReplace:
+	default:
+		return 0, fmt.Errorf("invalid models mode: %s", params.ModelsMode)
+	}
+
+	baseUpdates := make(map[string]any)
+	if params.Group != nil {
+		baseUpdates["group"] = *params.Group
+	}
+	if params.Priority != nil {
+		baseUpdates["priority"] = *params.Priority
+	}
+	if params.Weight != nil {
+		baseUpdates["weight"] = *params.Weight
+	}
+	if params.ModelMapping != nil {
+		baseUpdates["model_mapping"] = *params.ModelMapping
+	}
+	if params.ParamOverride != nil {
+		baseUpdates["param_override"] = *params.ParamOverride
+	}
+	if params.HeaderOverride != nil {
+		baseUpdates["header_override"] = *params.HeaderOverride
+	}
+	if params.TestModel != nil {
+		baseUpdates["test_model"] = *params.TestModel
+	}
+	if params.AutoBan != nil {
+		baseUpdates["auto_ban"] = *params.AutoBan
+	}
+	needAbilities := params.ModelsMode != "" || params.Group != nil || params.Priority != nil || params.Weight != nil
+
+	tx := DB.Begin()
+	if tx.Error != nil {
+		return 0, tx.Error
+	}
+
+	updated := 0
+	for _, chunk := range lo.Chunk(ids, 200) {
+		var channels []*Channel
+		if err := tx.Where("id in (?)", chunk).Find(&channels).Error; err != nil {
+			tx.Rollback()
+			return 0, err
+		}
+		for _, channel := range channels {
+			updates := make(map[string]any, len(baseUpdates)+1)
+			for k, v := range baseUpdates {
+				updates[k] = v
+			}
+			if params.ModelsMode != "" {
+				merged := mergeChannelModels(channel.Models, params.ModelsMode, params.Models)
+				if merged == "" {
+					tx.Rollback()
+					return 0, fmt.Errorf("channel %d would have no models after the change", channel.Id)
+				}
+				updates["models"] = merged
+				channel.Models = merged
+			}
+			if params.Group != nil {
+				channel.Group = *params.Group
+			}
+			if params.Priority != nil {
+				channel.Priority = params.Priority
+			}
+			if params.Weight != nil {
+				channel.Weight = params.Weight
+			}
+			if err := tx.Model(&Channel{}).Where("id = ?", channel.Id).Updates(updates).Error; err != nil {
+				tx.Rollback()
+				return 0, err
+			}
+			if needAbilities {
+				if err := channel.UpdateAbilities(tx); err != nil {
+					tx.Rollback()
+					return 0, err
+				}
+			}
+			updated++
+		}
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		return 0, err
+	}
+	return updated, nil
+}
+
 // CountAllChannels returns total channels in DB
 func CountAllChannels() (int64, error) {
 	var total int64

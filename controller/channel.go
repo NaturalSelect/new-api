@@ -1157,6 +1157,128 @@ func BatchSetChannelTag(c *gin.Context) {
 	return
 }
 
+type ChannelBatchEdit struct {
+	Ids            []int    `json:"ids"`
+	ModelsMode     string   `json:"models_mode"`
+	Models         []string `json:"models"`
+	Group          *string  `json:"group"`
+	Priority       *int64   `json:"priority"`
+	Weight         *uint    `json:"weight"`
+	ModelMapping   *string  `json:"model_mapping"`
+	ParamOverride  *string  `json:"param_override"`
+	HeaderOverride *string  `json:"header_override"`
+	TestModel      *string  `json:"test_model"`
+	AutoBan        *int     `json:"auto_ban"`
+}
+
+func normalizeOptionalJSON(value *string, message string) (*string, error) {
+	if value == nil {
+		return nil, nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed != "" && !json.Valid([]byte(trimmed)) {
+		return nil, fmt.Errorf("%s", message)
+	}
+	return common.GetPointer[string](trimmed), nil
+}
+
+func BatchEditChannels(c *gin.Context) {
+	req := ChannelBatchEdit{}
+	if err := c.ShouldBindJSON(&req); err != nil || len(req.Ids) == 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "参数错误",
+		})
+		return
+	}
+
+	params := model.ChannelBatchEditParams{
+		ModelsMode: req.ModelsMode,
+		Priority:   req.Priority,
+		Weight:     req.Weight,
+		AutoBan:    req.AutoBan,
+	}
+
+	switch req.ModelsMode {
+	case "":
+	case model.BatchModelsModeAppend, model.BatchModelsModeRemove, model.BatchModelsModeReplace:
+		seen := make(map[string]struct{}, len(req.Models))
+		for _, name := range req.Models {
+			name = strings.TrimSpace(name)
+			if name == "" {
+				continue
+			}
+			if len(name) > 255 {
+				c.JSON(http.StatusOK, gin.H{
+					"success": false,
+					"message": "模型名称过长",
+				})
+				return
+			}
+			if _, exists := seen[name]; exists {
+				continue
+			}
+			seen[name] = struct{}{}
+			params.Models = append(params.Models, name)
+		}
+		if len(params.Models) == 0 {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "模型列表不能为空",
+			})
+			return
+		}
+	default:
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "不支持的模型修改方式",
+		})
+		return
+	}
+
+	if req.Group != nil {
+		group := strings.TrimSpace(*req.Group)
+		if group == "" {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "分组不能为空",
+			})
+			return
+		}
+		params.Group = &group
+	}
+	if req.TestModel != nil {
+		testModel := strings.TrimSpace(*req.TestModel)
+		params.TestModel = &testModel
+	}
+
+	var err error
+	if params.ModelMapping, err = normalizeOptionalJSON(req.ModelMapping, "模型映射必须是合法的 JSON 格式"); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	if params.ParamOverride, err = normalizeOptionalJSON(req.ParamOverride, "参数覆盖必须是合法的 JSON 格式"); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	if params.HeaderOverride, err = normalizeOptionalJSON(req.HeaderOverride, "请求头覆盖必须是合法的 JSON 格式"); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+
+	updated, err := model.BatchEditChannels(req.Ids, params)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	model.InitChannelCache()
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    updated,
+	})
+}
+
 func GetTagModels(c *gin.Context) {
 	tag := c.Query("tag")
 	if tag == "" {

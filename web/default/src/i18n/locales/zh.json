@@ -4756,6 +4756,25 @@
     "Zhipu": "智谱",
     "Zhipu V4": "智谱 V4",
     "Zoom": "缩放",
-    "Decision": "决策"
+    "Decision": "决策",
+    "Batch Edit Channels": "批量编辑渠道",
+    "Only checked fields will be changed for the {{count}} selected channel(s).": "仅会修改已勾选的字段，作用于选中的 {{count}} 个渠道。",
+    "Append models": "追加模型",
+    "Remove models": "删除模型",
+    "Replace all models": "覆盖全部模型",
+    "Comma or newline separated model names": "模型名称，使用逗号或换行分隔",
+    "Missing models are added to each channel; existing models are kept.": "为每个渠道补充缺少的模型，已有模型保持不变。",
+    "These models are removed from each channel. Channels left with no models cause the whole batch to fail.": "从每个渠道中移除这些模型。若有渠道因此没有任何模型，整批修改都会失败。",
+    "Every selected channel will end up with exactly this model list.": "所有选中渠道的模型列表都会变成这份列表。",
+    "Select groups": "选择分组",
+    "Overwrites the mapping of every selected channel. Leave empty to clear it.": "会覆盖每个选中渠道的映射，留空表示清空。",
+    "Overwrites the override of every selected channel. Leave empty to clear it.": "会覆盖每个选中渠道的配置，留空表示清空。",
+    "Leave empty to clear the test model": "留空表示清空测试模型",
+    "Please enter at least one model": "请至少输入一个模型",
+    "Please select at least one group": "请至少选择一个分组",
+    "{{field}} must be valid JSON": "{{field}} 必须是合法的 JSON",
+    "Batch edit selected channels": "批量编辑选中的渠道",
+    "Updated {{count}} channel(s) successfully": "已成功更新 {{count}} 个渠道",
+    "Failed to update channels": "更新渠道失败"
   }
 }

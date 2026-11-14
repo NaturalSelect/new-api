@@ -4756,6 +4756,25 @@
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
     "Zoom": "Zoom",
-    "Decision": "Решение"
+    "Decision": "Решение",
+    "Batch Edit Channels": "Массовое редактирование каналов",
+    "Only checked fields will be changed for the {{count}} selected channel(s).": "Будут изменены только отмеченные поля у выбранных каналов ({{count}}).",
+    "Append models": "Добавить модели",
+    "Remove models": "Удалить модели",
+    "Replace all models": "Заменить все модели",
+    "Comma or newline separated model names": "Названия моделей через запятую или с новой строки",
+    "Missing models are added to each channel; existing models are kept.": "Недостающие модели добавляются в каждый канал, существующие сохраняются.",
+    "These models are removed from each channel. Channels left with no models cause the whole batch to fail.": "Эти модели удаляются из каждого канала. Если у какого-либо канала не останется моделей, вся операция завершится ошибкой.",
+    "Every selected channel will end up with exactly this model list.": "У каждого выбранного канала будет ровно этот список моделей.",
+    "Select groups": "Выберите группы",
+    "Overwrites the mapping of every selected channel. Leave empty to clear it.": "Перезаписывает сопоставление у каждого выбранного канала. Оставьте пустым, чтобы очистить.",
+    "Overwrites the override of every selected channel. Leave empty to clear it.": "Перезаписывает переопределение у каждого выбранного канала. Оставьте пустым, чтобы очистить.",
+    "Leave empty to clear the test model": "Оставьте пустым, чтобы очистить тестовую модель",
+    "Please enter at least one model": "Введите хотя бы одну модель",
+    "Please select at least one group": "Выберите хотя бы одну группу",
+    "{{field}} must be valid JSON": "{{field}} должно быть корректным JSON",
+    "Batch edit selected channels": "Массово редактировать выбранные каналы",
+    "Updated {{count}} channel(s) successfully": "Успешно обновлено каналов: {{count}}",
+    "Failed to update channels": "Не удалось обновить каналы"
   }
 }

@@ -4756,6 +4756,25 @@
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V 4",
     "Zoom": "ズーム",
-    "Decision": "意思決定"
+    "Decision": "意思決定",
+    "Batch Edit Channels": "チャネルを一括編集",
+    "Only checked fields will be changed for the {{count}} selected channel(s).": "チェックした項目のみ、選択した {{count}} 件のチャネルに適用されます。",
+    "Append models": "モデルを追加",
+    "Remove models": "モデルを削除",
+    "Replace all models": "すべてのモデルを置き換え",
+    "Comma or newline separated model names": "モデル名をカンマまたは改行で区切って入力",
+    "Missing models are added to each channel; existing models are kept.": "各チャネルに不足しているモデルを追加します。既存のモデルは保持されます。",
+    "These models are removed from each channel. Channels left with no models cause the whole batch to fail.": "各チャネルからこれらのモデルを削除します。モデルが 0 件になるチャネルがあると、一括変更全体が失敗します。",
+    "Every selected channel will end up with exactly this model list.": "選択したすべてのチャネルのモデル一覧がこの内容になります。",
+    "Select groups": "グループを選択",
+    "Overwrites the mapping of every selected channel. Leave empty to clear it.": "選択した各チャネルのマッピングを上書きします。空欄にするとクリアされます。",
+    "Overwrites the override of every selected channel. Leave empty to clear it.": "選択した各チャネルの上書き設定を置き換えます。空欄にするとクリアされます。",
+    "Leave empty to clear the test model": "空欄にするとテストモデルをクリアします",
+    "Please enter at least one model": "モデルを 1 つ以上入力してください",
+    "Please select at least one group": "グループを 1 つ以上選択してください",
+    "{{field}} must be valid JSON": "{{field}} は有効な JSON である必要があります",
+    "Batch edit selected channels": "選択したチャネルを一括編集",
+    "Updated {{count}} channel(s) successfully": "{{count}} 件のチャネルを更新しました",
+    "Failed to update channels": "チャネルの更新に失敗しました"
   }
 }

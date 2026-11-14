@@ -21,6 +21,7 @@ import { getGroups as getUserGroups } from '@/features/users/api'
 import type {
   AddChannelRequest,
   BatchDeleteParams,
+  BatchEditChannelsParams,
   BatchSetTagParams,
   Channel,
   ChannelBalanceResponse,
@@ -173,6 +174,20 @@ export async function batchSetChannelTag(
 ): Promise<{ success: boolean; message?: string; data?: number }> {
   const res = await api.post(
     '/api/channel/batch/tag',
+    data,
+    channelActionConfig()
+  )
+  return res.data
+}
+
+/**
+ * Batch edit settings (models, group, priority, ...) for the given channels
+ */
+export async function batchEditChannels(
+  data: BatchEditChannelsParams
+): Promise<{ success: boolean; message?: string; data?: number }> {
+  const res = await api.post(
+    '/api/channel/batch/edit',
     data,
     channelActionConfig()
   )

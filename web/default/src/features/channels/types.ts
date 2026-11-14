@@ -297,6 +297,22 @@ export interface BatchSetTagParams {
   tag: string | null
 }
 
+export type BatchModelsMode = 'append' | 'remove' | 'replace'
+
+export interface BatchEditChannelsParams {
+  ids: number[]
+  models_mode?: BatchModelsMode
+  models?: string[]
+  group?: string
+  priority?: number
+  weight?: number
+  model_mapping?: string
+  param_override?: string
+  header_override?: string
+  test_model?: string
+  auto_ban?: number
+}
+
 export interface TagOperationParams {
   tag: string
   new_tag?: string

@@ -26,6 +26,7 @@ import {
   testChannel,
   updateChannel,
   batchDeleteChannels,
+  batchEditChannels,
   batchSetChannelTag,
   enableTagChannels,
   disableTagChannels,
@@ -37,7 +38,7 @@ import {
   updateChannelBalance,
 } from '../api'
 import { CHANNEL_STATUS, ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants'
-import type { CopyChannelParams } from '../types'
+import type { BatchEditChannelsParams, CopyChannelParams } from '../types'
 
 // ============================================================================
 // Query Keys
@@ -465,6 +466,37 @@ export async function handleBatchSetTag(
     }
   } catch (_error) {
     toast.error(i18next.t('Failed to set tag'))
+  }
+}
+
+/**
+ * Batch edit settings (models, group, priority, ...) for selected channels
+ */
+export async function handleBatchEditChannels(
+  params: BatchEditChannelsParams,
+  queryClient?: QueryClient,
+  onSuccess?: () => void
+): Promise<void> {
+  if (params.ids.length === 0) {
+    toast.error(i18next.t('No channels selected'))
+    return
+  }
+
+  try {
+    const response = await batchEditChannels(params)
+    if (response.success) {
+      toast.success(
+        i18next.t('Updated {{count}} channel(s) successfully', {
+          count: response.data ?? params.ids.length,
+        })
+      )
+      queryClient?.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
+      onSuccess?.()
+    } else {
+      toast.error(response.message || i18next.t('Failed to update channels'))
+    }
+  } catch (_error) {
+    toast.error(i18next.t('Failed to update channels'))
   }
 }
 

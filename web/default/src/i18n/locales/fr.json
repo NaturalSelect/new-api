@@ -4756,6 +4756,25 @@
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
     "Zoom": "Zoom",
-    "Decision": "Décision"
+    "Decision": "Décision",
+    "Batch Edit Channels": "Modifier les canaux en lot",
+    "Only checked fields will be changed for the {{count}} selected channel(s).": "Seuls les champs cochés seront modifiés pour les {{count}} canaux sélectionnés.",
+    "Append models": "Ajouter des modèles",
+    "Remove models": "Supprimer des modèles",
+    "Replace all models": "Remplacer tous les modèles",
+    "Comma or newline separated model names": "Noms de modèles séparés par des virgules ou des retours à la ligne",
+    "Missing models are added to each channel; existing models are kept.": "Les modèles manquants sont ajoutés à chaque canal ; les modèles existants sont conservés.",
+    "These models are removed from each channel. Channels left with no models cause the whole batch to fail.": "Ces modèles sont retirés de chaque canal. Si un canal n'a plus aucun modèle, tout le lot échoue.",
+    "Every selected channel will end up with exactly this model list.": "Chaque canal sélectionné aura exactement cette liste de modèles.",
+    "Select groups": "Sélectionner des groupes",
+    "Overwrites the mapping of every selected channel. Leave empty to clear it.": "Écrase le mappage de chaque canal sélectionné. Laisser vide pour le supprimer.",
+    "Overwrites the override of every selected channel. Leave empty to clear it.": "Écrase la surcharge de chaque canal sélectionné. Laisser vide pour la supprimer.",
+    "Leave empty to clear the test model": "Laisser vide pour effacer le modèle de test",
+    "Please enter at least one model": "Veuillez saisir au moins un modèle",
+    "Please select at least one group": "Veuillez sélectionner au moins un groupe",
+    "{{field}} must be valid JSON": "{{field}} doit être un JSON valide",
+    "Batch edit selected channels": "Modifier en lot les canaux sélectionnés",
+    "Updated {{count}} channel(s) successfully": "{{count}} canal/canaux mis à jour avec succès",
+    "Failed to update channels": "Échec de la mise à jour des canaux"
   }
 }

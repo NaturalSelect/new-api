@@ -4756,6 +4756,25 @@
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
     "Zoom": "Zoom",
-    "Decision": "Quyết định"
+    "Decision": "Quyết định",
+    "Batch Edit Channels": "Chỉnh sửa hàng loạt kênh",
+    "Only checked fields will be changed for the {{count}} selected channel(s).": "Chỉ các trường được đánh dấu mới được thay đổi cho {{count}} kênh đã chọn.",
+    "Append models": "Thêm mô hình",
+    "Remove models": "Xóa mô hình",
+    "Replace all models": "Thay thế toàn bộ mô hình",
+    "Comma or newline separated model names": "Tên mô hình, phân tách bằng dấu phẩy hoặc xuống dòng",
+    "Missing models are added to each channel; existing models are kept.": "Các mô hình còn thiếu sẽ được thêm vào từng kênh; mô hình hiện có được giữ nguyên.",
+    "These models are removed from each channel. Channels left with no models cause the whole batch to fail.": "Các mô hình này sẽ bị xóa khỏi từng kênh. Nếu có kênh không còn mô hình nào, toàn bộ thao tác sẽ thất bại.",
+    "Every selected channel will end up with exactly this model list.": "Mọi kênh đã chọn sẽ có đúng danh sách mô hình này.",
+    "Select groups": "Chọn nhóm",
+    "Overwrites the mapping of every selected channel. Leave empty to clear it.": "Ghi đè ánh xạ của mọi kênh đã chọn. Để trống để xóa.",
+    "Overwrites the override of every selected channel. Leave empty to clear it.": "Ghi đè cấu hình ghi đè của mọi kênh đã chọn. Để trống để xóa.",
+    "Leave empty to clear the test model": "Để trống để xóa mô hình kiểm tra",
+    "Please enter at least one model": "Vui lòng nhập ít nhất một mô hình",
+    "Please select at least one group": "Vui lòng chọn ít nhất một nhóm",
+    "{{field}} must be valid JSON": "{{field}} phải là JSON hợp lệ",
+    "Batch edit selected channels": "Chỉnh sửa hàng loạt các kênh đã chọn",
+    "Updated {{count}} channel(s) successfully": "Đã cập nhật thành công {{count}} kênh",
+    "Failed to update channels": "Cập nhật kênh thất bại"
   }
 }

@@ -59,7 +59,7 @@ export function DataTableBulkActions<TData>({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [tagValue, setTagValue] = useState('')
 
-  const selectedRows = table.getFilteredSelectedRowModel().rows
+  const selectedRows = table.getFilteredSelectedRowModel().flatRows
   const selectedIds = selectedRows.reduce<number[]>((ids, row) => {
     const id = (row.original as Channel).id
 

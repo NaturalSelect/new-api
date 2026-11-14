@@ -20,6 +20,8 @@ func TestGetEndpointTypesByChannelTypeGeminiSpecialModels(t *testing.T) {
 		{name: "chat model on a gemini channel", channelType: constant.ChannelTypeGemini, modelName: "gemini-2.0-flash", want: []constant.EndpointType{constant.EndpointTypeGemini, constant.EndpointTypeOpenAI}},
 		{name: "vertex keeps the chat endpoints", channelType: constant.ChannelTypeVertexAi, modelName: "gemini-decision-1", want: []constant.EndpointType{constant.EndpointTypeGemini, constant.EndpointTypeOpenAI}},
 		{name: "typesafe channel", channelType: constant.ChannelTypeTypeSafe, modelName: "jev-latest", want: []constant.EndpointType{constant.EndpointTypeTypeSafe}},
+		{name: "opencode go serves all three families", channelType: constant.ChannelTypeOpenCodeGo, modelName: "glm-5.3", want: []constant.EndpointType{constant.EndpointTypeOpenAI, constant.EndpointTypeOpenAIResponse, constant.EndpointTypeAnthropic}},
+		{name: "opencode zen serves all three families", channelType: constant.ChannelTypeOpenCodeZen, modelName: "claude-sonnet-5-5", want: []constant.EndpointType{constant.EndpointTypeOpenAI, constant.EndpointTypeOpenAIResponse, constant.EndpointTypeAnthropic}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

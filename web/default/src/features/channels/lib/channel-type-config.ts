@@ -189,6 +189,34 @@ export const CHANNEL_TYPE_CONFIGS: Record<number, ChannelTypeConfig> = {
       models: 'jev-latest, jev-1.14.0, jev-1.13.0, jev-preview',
     },
   },
+  63: {
+    id: 63,
+    name: CHANNEL_TYPES[63],
+    icon: 'openai',
+    defaultBaseUrl: 'https://opencode.ai/inference/go',
+    hints: {
+      baseUrl: 'Default: https://opencode.ai/inference/go',
+      key: 'Format: Bearer API key',
+      models:
+        'Fetch the model list from upstream or enter OpenCode Go model IDs',
+      other:
+        'OpenCode Go subscription gateway. Supports Chat Completions, Responses and Anthropic Messages through one base URL.',
+    },
+  },
+  64: {
+    id: 64,
+    name: CHANNEL_TYPES[64],
+    icon: 'openai',
+    defaultBaseUrl: 'https://opencode.ai/inference',
+    hints: {
+      baseUrl: 'Default: https://opencode.ai/inference',
+      key: 'Format: Bearer API key',
+      models:
+        'Fetch the model list from upstream or enter OpenCode Zen model IDs',
+      other:
+        'OpenCode Zen pay-as-you-go gateway. Supports Chat Completions, Responses and Anthropic Messages through one base URL.',
+    },
+  },
 }
 
 /**

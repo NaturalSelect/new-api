@@ -60,6 +60,8 @@ const (
 	ChannelTypeNovelAI        = 60
 	ChannelTypeOpenCodeFree   = 61
 	ChannelTypeTypeSafe       = 62
+	ChannelTypeOpenCodeGo     = 63
+	ChannelTypeOpenCodeZen    = 64
 	ChannelTypeDummy          // this one is only for count, do not add any channel after this
 
 )
@@ -128,6 +130,8 @@ var ChannelBaseURLs = []string{
 	"https://image.novelai.net",                 //60
 	"https://opencode.ai/inference",             //61
 	"https://api.typesafe.ai",                   //62
+	"https://opencode.ai/inference/go",          //63
+	"https://opencode.ai/inference",             //64
 }
 
 var ChannelTypeNames = map[int]string{
@@ -190,6 +194,8 @@ var ChannelTypeNames = map[int]string{
 	ChannelTypeNovelAI:        "NovelAI",
 	ChannelTypeOpenCodeFree:   "OpenCodeFree",
 	ChannelTypeTypeSafe:       "TypeSafe",
+	ChannelTypeOpenCodeGo:     "OpenCodeGo",
+	ChannelTypeOpenCodeZen:    "OpenCodeZen",
 }
 
 func GetChannelTypeName(channelType int) string {

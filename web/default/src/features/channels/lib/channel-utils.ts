@@ -104,6 +104,8 @@ export function getChannelTypeIcon(type: number): string {
     54: 'Doubao', // DoubaoVideo
     56: 'Replicate', // Replicate
     61: 'OpenCode', // OpenCode Free
+    63: 'OpenCode', // OpenCode Go
+    64: 'OpenCode', // OpenCode Zen
 
     // Tools & Platforms
     37: 'Dify', // Dify

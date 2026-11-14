@@ -26,6 +26,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel/novelai"
 	"github.com/QuantumNous/new-api/relay/channel/ollama"
 	"github.com/QuantumNous/new-api/relay/channel/openai"
+	"github.com/QuantumNous/new-api/relay/channel/opencode"
 	"github.com/QuantumNous/new-api/relay/channel/opencodefree"
 	"github.com/QuantumNous/new-api/relay/channel/palm"
 	"github.com/QuantumNous/new-api/relay/channel/perplexity"
@@ -129,6 +130,8 @@ func GetAdaptor(apiType int) channel.Adaptor {
 		return &opencodefree.Adaptor{}
 	case constant.APITypeTypeSafe:
 		return &typesafe.Adaptor{}
+	case constant.APITypeOpenCode:
+		return &opencode.Adaptor{}
 	}
 	return nil
 }

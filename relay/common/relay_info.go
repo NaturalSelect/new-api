@@ -351,6 +351,8 @@ var streamSupportedChannels = map[int]bool{
 	constant.ChannelTypePoeOpenAI:    true,
 	constant.ChannelTypePoeAnthropic: true,
 	constant.ChannelTypeOpenCodeFree: true,
+	constant.ChannelTypeOpenCodeGo:   true,
+	constant.ChannelTypeOpenCodeZen:  true,
 }
 
 func GenRelayInfoWs(c *gin.Context, ws *websocket.Conn) *RelayInfo {

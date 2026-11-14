@@ -4210,6 +4210,8 @@
     "Timeline": "Хронология",
     "times": "раз",
     "Timing": "Время",
+    "Overall": "Общая",
+    "Decode": "Декодирование",
     "Tip: The generated key is a JSON credential including access_token / refresh_token / account_id.": "Подсказка: сгенерированный ключ — это учётные данные JSON с access_token / refresh_token / account_id.",
     "to access this resource.": "для доступа к этому ресурсу.",
     "to confirm": "для подтверждения",

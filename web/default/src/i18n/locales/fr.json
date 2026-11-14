@@ -4210,6 +4210,8 @@
     "Timeline": "Chronologie",
     "times": "Fois",
     "Timing": "Durée",
+    "Overall": "Global",
+    "Decode": "Décodage",
     "Tip: The generated key is a JSON credential including access_token / refresh_token / account_id.": "Conseil : La clé générée est un identifiant JSON incluant access_token / refresh_token / account_id.",
     "to access this resource.": "pour accéder à cette ressource.",
     "to confirm": "pour confirmer",

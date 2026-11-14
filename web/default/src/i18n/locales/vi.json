@@ -4210,6 +4210,8 @@
     "Timeline": "Dòng thời gian",
     "times": "lần",
     "Timing": "Thời gian",
+    "Overall": "Tổng thể",
+    "Decode": "Giải mã",
     "Tip: The generated key is a JSON credential including access_token / refresh_token / account_id.": "Mẹo: Khóa tạo ra là thông tin xác thực JSON gồm access_token / refresh_token / account_id.",
     "to access this resource.": "để truy cập tài nguyên này.",
     "to confirm": "Chờ xác nhận",

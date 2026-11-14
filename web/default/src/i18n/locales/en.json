@@ -4210,6 +4210,8 @@
     "Timeline": "Timeline",
     "times": "times",
     "Timing": "Timing",
+    "Overall": "Overall",
+    "Decode": "Decode",
     "Tip: The generated key is a JSON credential including access_token / refresh_token / account_id.": "Tip: The generated key is a JSON credential including access_token / refresh_token / account_id.",
     "to access this resource.": "to access this resource.",
     "to confirm": "to confirm",

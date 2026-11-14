@@ -4210,6 +4210,8 @@
     "Timeline": "タイムライン",
     "times": "回",
     "Timing": "所要時間",
+    "Overall": "全体",
+    "Decode": "デコード",
     "Tip: The generated key is a JSON credential including access_token / refresh_token / account_id.": "ヒント：生成されたキーは access_token / refresh_token / account_id を含むJSON認証情報です。",
     "to access this resource.": "このリソースにアクセスするには。",
     "to confirm": "確認する",

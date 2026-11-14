@@ -4210,6 +4210,8 @@
     "Timeline": "时间线",
     "times": "次",
     "Timing": "耗时",
+    "Overall": "整体",
+    "Decode": "解码",
     "Tip: The generated key is a JSON credential including access_token / refresh_token / account_id.": "提示：生成的密钥为包含 access_token / refresh_token / account_id 的 JSON 凭据。",
     "to access this resource.": "访问此资源。",
     "to confirm": "以确认",

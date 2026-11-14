@@ -563,6 +563,12 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
           useTime > 0 && log.completion_tokens > 0
             ? log.completion_tokens / useTime
             : null
+        // NOTE: use_time is whole seconds, so decode speed is skipped when under 1s to avoid inflated values.
+        const decodeSeconds = frt != null && frt > 0 ? useTime - frt / 1000 : 0
+        const decodeTps =
+          log.is_stream && decodeSeconds >= 1 && log.completion_tokens > 0
+            ? log.completion_tokens / decodeSeconds
+            : null
         const timeVariant = getResponseTimeColor(useTime, log.completion_tokens)
         const frtVariant = frt
           ? getFirstResponseTimeColor(frt / 1000)
@@ -619,8 +625,16 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
                 {tokensPerSecond != null && (
                   <>
                     {' · '}
-                    <span className='tabular-nums'>
+                    <span
+                      className='tabular-nums'
+                      title={
+                        decodeTps != null
+                          ? `${t('Overall')} / ${t('Decode')}`
+                          : undefined
+                      }
+                    >
                       {Math.round(tokensPerSecond)}
+                      {decodeTps != null && `/${Math.round(decodeTps)}`}
                     </span>
                     {' t/s'}
                   </>

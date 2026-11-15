@@ -633,9 +633,10 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
                           : undefined
                       }
                     >
-                      {Math.round(tokensPerSecond)} TPS
-                      {decodeTps != null && ` (${Math.round(decodeTps)})`}
+                      {Math.round(tokensPerSecond)}
+                      {decodeTps != null && `(${Math.round(decodeTps)})`}
                     </span>
+                    {' t/s'}
                   </>
                 )}
               </span>

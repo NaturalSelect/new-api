@@ -4779,6 +4779,13 @@
     "{{field}} must be valid JSON": "{{field}} должно быть корректным JSON",
     "Batch edit selected channels": "Массово редактировать выбранные каналы",
     "Updated {{count}} channel(s) successfully": "Успешно обновлено каналов: {{count}}",
-    "Failed to update channels": "Не удалось обновить каналы"
+    "Failed to update channels": "Не удалось обновить каналы",
+    "Basic": "Основные",
+    "Routing & Models": "Маршрутизация и модели",
+    "Request Handling": "Обработка запросов",
+    "Type Specific": "Для типа канала",
+    "Turning the check off also turns off auto sync and clears detected models.": "Отключение проверки также отключает автосинхронизацию и очищает обнаруженные модели.",
+    "Auto sync only takes effect when the upstream model update check is on.": "Автосинхронизация работает только при включённой проверке обновлений моделей вышестоящего провайдера.",
+    "Leave empty to clear the ignored list.": "Оставьте пустым, чтобы очистить список игнорируемых моделей."
   }
 }

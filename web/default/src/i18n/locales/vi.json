@@ -4779,6 +4779,13 @@
     "{{field}} must be valid JSON": "{{field}} phải là JSON hợp lệ",
     "Batch edit selected channels": "Chỉnh sửa hàng loạt các kênh đã chọn",
     "Updated {{count}} channel(s) successfully": "Đã cập nhật thành công {{count}} kênh",
-    "Failed to update channels": "Cập nhật kênh thất bại"
+    "Failed to update channels": "Cập nhật kênh thất bại",
+    "Basic": "Cơ bản",
+    "Routing & Models": "Định tuyến và mô hình",
+    "Request Handling": "Xử lý yêu cầu",
+    "Type Specific": "Theo loại kênh",
+    "Turning the check off also turns off auto sync and clears detected models.": "Tắt kiểm tra cũng sẽ tắt tự động đồng bộ và xóa các mô hình đã phát hiện.",
+    "Auto sync only takes effect when the upstream model update check is on.": "Tự động đồng bộ chỉ có hiệu lực khi bật kiểm tra cập nhật mô hình thượng nguồn.",
+    "Leave empty to clear the ignored list.": "Để trống để xóa danh sách bỏ qua."
   }
 }

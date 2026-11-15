@@ -4779,6 +4779,13 @@
     "{{field}} must be valid JSON": "{{field}} must be valid JSON",
     "Batch edit selected channels": "Batch edit selected channels",
     "Updated {{count}} channel(s) successfully": "Updated {{count}} channel(s) successfully",
-    "Failed to update channels": "Failed to update channels"
+    "Failed to update channels": "Failed to update channels",
+    "Basic": "Basic",
+    "Routing & Models": "Routing & Models",
+    "Request Handling": "Request Handling",
+    "Type Specific": "Type Specific",
+    "Turning the check off also turns off auto sync and clears detected models.": "Turning the check off also turns off auto sync and clears detected models.",
+    "Auto sync only takes effect when the upstream model update check is on.": "Auto sync only takes effect when the upstream model update check is on.",
+    "Leave empty to clear the ignored list.": "Leave empty to clear the ignored list."
   }
 }

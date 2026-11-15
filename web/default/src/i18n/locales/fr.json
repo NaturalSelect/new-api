@@ -4779,6 +4779,13 @@
     "{{field}} must be valid JSON": "{{field}} doit être un JSON valide",
     "Batch edit selected channels": "Modifier en lot les canaux sélectionnés",
     "Updated {{count}} channel(s) successfully": "{{count}} canal/canaux mis à jour avec succès",
-    "Failed to update channels": "Échec de la mise à jour des canaux"
+    "Failed to update channels": "Échec de la mise à jour des canaux",
+    "Basic": "Général",
+    "Routing & Models": "Routage et modèles",
+    "Request Handling": "Traitement des requêtes",
+    "Type Specific": "Spécifique au type",
+    "Turning the check off also turns off auto sync and clears detected models.": "Désactiver la vérification désactive aussi la synchronisation automatique et efface les modèles détectés.",
+    "Auto sync only takes effect when the upstream model update check is on.": "La synchronisation automatique ne s'applique que si la vérification des mises à jour des modèles en amont est activée.",
+    "Leave empty to clear the ignored list.": "Laissez vide pour vider la liste des modèles ignorés."
   }
 }

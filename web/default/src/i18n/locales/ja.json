@@ -4779,6 +4779,13 @@
     "{{field}} must be valid JSON": "{{field}} は有効な JSON である必要があります",
     "Batch edit selected channels": "選択したチャネルを一括編集",
     "Updated {{count}} channel(s) successfully": "{{count}} 件のチャネルを更新しました",
-    "Failed to update channels": "チャネルの更新に失敗しました"
+    "Failed to update channels": "チャネルの更新に失敗しました",
+    "Basic": "基本",
+    "Routing & Models": "ルーティングとモデル",
+    "Request Handling": "リクエスト処理",
+    "Type Specific": "タイプ固有",
+    "Turning the check off also turns off auto sync and clears detected models.": "チェックをオフにすると、自動同期もオフになり、検出済みモデルが消去されます。",
+    "Auto sync only takes effect when the upstream model update check is on.": "自動同期は、上流モデルの更新チェックがオンの場合にのみ有効です。",
+    "Leave empty to clear the ignored list.": "空欄にすると無視リストが消去されます。"
   }
 }

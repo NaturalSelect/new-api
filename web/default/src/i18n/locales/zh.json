@@ -4779,6 +4779,13 @@
     "{{field}} must be valid JSON": "{{field}} 必须是合法的 JSON",
     "Batch edit selected channels": "批量编辑选中的渠道",
     "Updated {{count}} channel(s) successfully": "已成功更新 {{count}} 个渠道",
-    "Failed to update channels": "更新渠道失败"
+    "Failed to update channels": "更新渠道失败",
+    "Basic": "基础",
+    "Routing & Models": "路由与模型",
+    "Request Handling": "请求处理",
+    "Type Specific": "类型专属",
+    "Turning the check off also turns off auto sync and clears detected models.": "关闭检测会同时关闭自动同步，并清空已检测到的模型。",
+    "Auto sync only takes effect when the upstream model update check is on.": "仅当开启上游模型更新检测时，自动同步才会生效。",
+    "Leave empty to clear the ignored list.": "留空将清空忽略列表。"
   }
 }

@@ -71,6 +71,14 @@ export function DataTableBulkActions<TData>({
 
     return ids
   }, [])
+  const selectedChannelTypes = [
+    ...new Set(
+      selectedRows.flatMap((row) => {
+        const type = (row.original as Channel).type
+        return typeof type === 'number' ? [type] : []
+      })
+    ),
+  ]
 
   const handleClearSelection = () => {
     table.resetRowSelection()
@@ -214,6 +222,7 @@ export function DataTableBulkActions<TData>({
         open={showBatchEditDialog}
         onOpenChange={setShowBatchEditDialog}
         ids={selectedIds}
+        channelTypes={selectedChannelTypes}
         onSuccess={() => {
           setShowBatchEditDialog(false)
           handleClearSelection()

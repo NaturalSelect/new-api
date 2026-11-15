@@ -311,7 +311,53 @@ export interface BatchEditChannelsParams {
   header_override?: string
   test_model?: string
   auto_ban?: number
+  auto_ban_optimistic?: number
+  auto_unban_by_balance?: number
+  status_code_mapping?: string
+  proxy?: string
+  system_prompt?: string
+  system_prompt_override?: boolean
+  retry_on_429?: number
+  thinking_to_content?: boolean
+  pass_through_body_enabled?: boolean
+  force_format?: boolean
+  codex_disguise?: boolean
+  claude_code_disguise_mode?: number
+  claude_beta_query?: boolean
+  auto_cache_control?: boolean
+  upstream_model_update_check_enabled?: boolean
+  upstream_model_update_auto_sync_enabled?: boolean
+  upstream_model_update_ignored_models_mode?: BatchModelsMode
+  upstream_model_update_ignored_models?: string[]
 }
+
+export type BatchEditFieldKey =
+  | 'models'
+  | 'group'
+  | 'priority'
+  | 'weight'
+  | 'modelMapping'
+  | 'paramOverride'
+  | 'headerOverride'
+  | 'testModel'
+  | 'autoBan'
+  | 'autoBanOptimistic'
+  | 'autoUnbanByBalance'
+  | 'statusCodeMapping'
+  | 'retryOn429'
+  | 'proxy'
+  | 'systemPrompt'
+  | 'systemPromptOverride'
+  | 'thinkingToContent'
+  | 'passThroughBody'
+  | 'forceFormat'
+  | 'codexDisguise'
+  | 'claudeDisguiseMode'
+  | 'claudeBetaQuery'
+  | 'autoCacheControl'
+  | 'upstreamCheck'
+  | 'upstreamAutoSync'
+  | 'upstreamIgnored'
 
 export interface TagOperationParams {
   tag: string

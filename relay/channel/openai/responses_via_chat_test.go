@@ -135,6 +135,27 @@ func TestConvertOpenAIResponsesRequestPoeChatFallbackAsksForStreamUsage(t *testi
 	require.True(t, chatRequest.StreamOptions.IncludeUsage)
 }
 
+func TestConvertOpenAIResponsesRequestPoeChatFallbackRecordsRequestedEffort(t *testing.T) {
+	setPoeCatalogForTest(t, chatOnlyGeminiCatalog())
+
+	info := newPoeResponsesInfo("gemini-4-hydrogen", false, `{"model":"gemini-4-hydrogen","input":"hi"}`, t)
+	_, err := (&Adaptor{}).ConvertOpenAIResponsesRequest(nil, info, dto.OpenAIResponsesRequest{
+		Model:     "gemini-4-hydrogen",
+		Input:     []byte(`"hi"`),
+		Reasoning: &dto.Reasoning{Effort: "minimal"},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "minimal", info.ReasoningEffort, "the log keeps what the client asked for, not the clamped upstream value")
+
+	info = newPoeResponsesInfo("gemini-4-hydrogen", false, `{"model":"gemini-4-hydrogen","input":"hi"}`, t)
+	_, err = (&Adaptor{}).ConvertOpenAIResponsesRequest(nil, info, dto.OpenAIResponsesRequest{
+		Model: "gemini-4-hydrogen",
+		Input: []byte(`"hi"`),
+	})
+	require.NoError(t, err)
+	require.Empty(t, info.ReasoningEffort)
+}
+
 func TestConvertOpenAIResponsesRequestPoeRejectsStoredStateOnChatFallback(t *testing.T) {
 	setPoeCatalogForTest(t, chatOnlyGeminiCatalog())
 	info := newPoeResponsesInfo("gemini-4-hydrogen", false, `{"model":"gemini-4-hydrogen","input":"hi"}`, t)

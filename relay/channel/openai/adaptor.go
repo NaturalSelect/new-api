@@ -664,6 +664,9 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommo
 		if info.IsStream {
 			chatRequest.StreamOptions = &dto.StreamOptions{IncludeUsage: true}
 		}
+		if request.Reasoning != nil && request.Reasoning.Effort != "" {
+			info.ReasoningEffort = request.Reasoning.Effort
+		}
 		restoreThoughtSignatures(chatRequest, info)
 		a.responsesViaChat = true
 		return a.ConvertOpenAIRequest(c, info, chatRequest)

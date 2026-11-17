@@ -212,9 +212,9 @@ export const CHANNEL_TYPE_CONFIGS: Record<number, ChannelTypeConfig> = {
       baseUrl: 'Default: https://opencode.ai/inference',
       key: 'Format: Bearer API key',
       models:
-        'Fetch the model list from upstream or enter OpenCode Zen model IDs',
+        'Fetch the model list from upstream or enter OpenCode Zen model IDs. System One models (jev-1.13, jev-1.13-free, gpt-6-luna-decision, gemini-decision-1) are not in the upstream list, enter them manually',
       other:
-        'OpenCode Zen pay-as-you-go gateway. Supports Chat Completions, Responses and Anthropic Messages through one base URL.',
+        'OpenCode Zen pay-as-you-go gateway. Supports Chat Completions, Responses and Anthropic Messages through one base URL, and System One (Jev) through /v1/systemone.',
     },
   },
 }

@@ -1,8 +1,10 @@
 package opencode
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/constant"
@@ -54,6 +56,7 @@ func TestGetRequestURL(t *testing.T) {
 		{name: "claude messages", format: types.RelayFormatClaude, mode: relayconstant.RelayModeUnknown, baseURL: "https://opencode.ai/inference", want: "https://opencode.ai/inference/anthropic/v1/messages"},
 		{name: "claude converted to responses", format: types.RelayFormatClaude, mode: relayconstant.RelayModeResponses, baseURL: "https://opencode.ai/inference/go", want: "https://opencode.ai/inference/go/openai/v1/responses"},
 		{name: "trailing slash", format: types.RelayFormatOpenAI, mode: relayconstant.RelayModeChatCompletions, baseURL: "https://opencode.ai/inference/go/", want: "https://opencode.ai/inference/go/openai/v1/chat/completions"},
+		{name: "system one", format: types.RelayFormatTypeSafe, mode: relayconstant.RelayModeTypeSafeSystemOne, baseURL: "https://opencode.ai/inference", want: "https://opencode.ai/inference/systemone/v1/systemone"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -161,4 +164,56 @@ func TestConvertersRejectNilAndUnsupportedFormats(t *testing.T) {
 	require.Error(t, err)
 	_, err = adaptor.ConvertGeminiRequest(c, info, nil)
 	require.Error(t, err)
+}
+
+const systemOneBody = `{"state":"My payments failed.","model":"jev-1.13","questions":{"is_urgent":{"type":"noul","instructions":"Is it urgent?"}}}`
+
+func newSystemOneInfo(t *testing.T, body string) *relaycommon.RelayInfo {
+	t.Helper()
+	request, err := dto.NewTypeSafeRequest([]byte(body), false, false)
+	require.NoError(t, err)
+	info := newInfo(types.RelayFormatTypeSafe, relayconstant.RelayModeTypeSafeSystemOne)
+	info.ChannelType = constant.ChannelTypeOpenCodeZen
+	info.ChannelBaseUrl = "https://opencode.ai/inference"
+	info.UpstreamModelName = "jev-1.13"
+	info.Request = request
+	return info
+}
+
+func TestSetupRequestHeaderSystemOne(t *testing.T) {
+	header := http.Header{}
+	require.NoError(t, (&Adaptor{}).SetupRequestHeader(newContext(nil), &header, newSystemOneInfo(t, systemOneBody)))
+
+	require.Equal(t, "Bearer oc_sk_test", header.Get("Authorization"))
+	require.Equal(t, "application/json", header.Get("Content-Type"))
+	require.Equal(t, "application/json", header.Get("Accept"))
+	require.Regexp(t, `^ses_[0-9a-f]{26}$`, header.Get("x-opencode-session"))
+	require.Empty(t, header.Get("anthropic-version"))
+	require.Empty(t, header.Get(dto.TypeSafeImagesHeader))
+}
+
+func TestSetupRequestHeaderSystemOneForwardsImagesHeader(t *testing.T) {
+	info := newSystemOneInfo(t, `{"model":"jev-1.13","state":"s","questions":{"q":{"type":"box","instructions":"find it"}}}`)
+	header := http.Header{}
+	require.NoError(t, (&Adaptor{}).SetupRequestHeader(newContext(nil), &header, info))
+	require.Equal(t, "true", header.Get(dto.TypeSafeImagesHeader))
+}
+
+func TestDoResponseSystemOneRelaysAnswersAndBillsInputTokens(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/systemone", nil)
+	upstream := `{"model":"jev-1.13","answers":{"is_urgent":{"type":"noul","noul":0.97,"confidence":0.97}},"usage":{"input_tokens":321}}`
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(upstream)),
+	}
+
+	usage, apiErr := (&Adaptor{}).DoResponse(c, resp, newSystemOneInfo(t, systemOneBody))
+
+	require.Nil(t, apiErr)
+	require.Equal(t, upstream, recorder.Body.String())
+	require.Equal(t, &dto.Usage{PromptTokens: 321, TotalTokens: 321}, usage)
 }

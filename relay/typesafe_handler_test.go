@@ -152,6 +152,16 @@ func TestSystemOneRequestBodyByChannel(t *testing.T) {
 		require.Equal(t, body, readAll(t, reader))
 	})
 
+	t.Run("opencode channel gets the client's request", func(t *testing.T) {
+		c, request := newRequest(t)
+
+		reader, closer, apiErr := systemOneRequestBody(c, newInfo(constant.APITypeOpenCode), request)
+
+		require.Nil(t, apiErr)
+		require.Nil(t, closer)
+		require.Equal(t, body, readAll(t, reader))
+	})
+
 	t.Run("gemini channel gets a decisions request", func(t *testing.T) {
 		c, request := newRequest(t)
 		info := newInfo(constant.APITypeGemini)

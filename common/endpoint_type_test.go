@@ -22,6 +22,10 @@ func TestGetEndpointTypesByChannelTypeGeminiSpecialModels(t *testing.T) {
 		{name: "typesafe channel", channelType: constant.ChannelTypeTypeSafe, modelName: "jev-latest", want: []constant.EndpointType{constant.EndpointTypeTypeSafe}},
 		{name: "opencode go serves all three families", channelType: constant.ChannelTypeOpenCodeGo, modelName: "glm-5.3", want: []constant.EndpointType{constant.EndpointTypeOpenAI, constant.EndpointTypeOpenAIResponse, constant.EndpointTypeAnthropic}},
 		{name: "opencode zen serves all three families", channelType: constant.ChannelTypeOpenCodeZen, modelName: "claude-sonnet-5-5", want: []constant.EndpointType{constant.EndpointTypeOpenAI, constant.EndpointTypeOpenAIResponse, constant.EndpointTypeAnthropic}},
+		{name: "opencode zen jev model", channelType: constant.ChannelTypeOpenCodeZen, modelName: "jev-1.13", want: []constant.EndpointType{constant.EndpointTypeTypeSafe}},
+		{name: "opencode zen free jev model", channelType: constant.ChannelTypeOpenCodeZen, modelName: "jev-1.13-free", want: []constant.EndpointType{constant.EndpointTypeTypeSafe}},
+		{name: "opencode zen decision models", channelType: constant.ChannelTypeOpenCodeZen, modelName: "gpt-6-luna-decision", want: []constant.EndpointType{constant.EndpointTypeTypeSafe}},
+		{name: "opencode go keeps the chat endpoints for jev", channelType: constant.ChannelTypeOpenCodeGo, modelName: "jev-1.13", want: []constant.EndpointType{constant.EndpointTypeOpenAI, constant.EndpointTypeOpenAIResponse, constant.EndpointTypeAnthropic}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

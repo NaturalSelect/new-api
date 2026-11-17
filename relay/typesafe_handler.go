@@ -76,11 +76,11 @@ func TypeSafeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *t
 	return nil
 }
 
-// systemOneRequestBody builds the upstream body for the selected channel: a TypeSafe
-// channel gets the client's request, a Gemini channel gets it converted to a Decisions request.
+// systemOneRequestBody builds the upstream body for the selected channel: a TypeSafe or
+// OpenCode channel gets the client's request, a Gemini channel gets it converted to a Decisions request.
 func systemOneRequestBody(c *gin.Context, info *relaycommon.RelayInfo, request *dto.TypeSafeRequest) (io.Reader, io.Closer, *types.NewAPIError) {
 	switch info.ApiType {
-	case constant.APITypeTypeSafe:
+	case constant.APITypeTypeSafe, constant.APITypeOpenCode:
 		body, closer, err := typeSafeRequestBody(c, info, request)
 		if err != nil {
 			return nil, nil, types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
@@ -104,7 +104,7 @@ func systemOneRequestBody(c *gin.Context, info *relaycommon.RelayInfo, request *
 		}
 		return body, closer, nil
 	default:
-		return nil, nil, types.NewError(fmt.Errorf("system one needs a TypeSafe or Gemini channel, got api type %d", info.ApiType), types.ErrorCodeInvalidApiType, types.ErrOptionWithSkipRetry())
+		return nil, nil, types.NewError(fmt.Errorf("system one needs a TypeSafe, OpenCode or Gemini channel, got api type %d", info.ApiType), types.ErrorCodeInvalidApiType, types.ErrOptionWithSkipRetry())
 	}
 }
 

@@ -19,7 +19,14 @@ For commercial licensing, please contact support@quantumnous.com
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { type Table } from '@tanstack/react-table'
-import { Power, PowerOff, SlidersHorizontal, Tag, Trash2 } from 'lucide-react'
+import {
+  KeyRound,
+  Power,
+  PowerOff,
+  SlidersHorizontal,
+  Tag,
+  Trash2,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import {
@@ -46,6 +53,7 @@ import {
 } from '../lib'
 import type { Channel } from '../types'
 import { BatchEditChannelsDialog } from './dialogs/batch-edit-channels-dialog'
+import { CheckChannelKeyDialog } from './dialogs/check-channel-key-dialog'
 
 interface DataTableBulkActionsProps<TData> {
   table: Table<TData>
@@ -58,6 +66,7 @@ export function DataTableBulkActions<TData>({
   const queryClient = useQueryClient()
   const [showTagDialog, setShowTagDialog] = useState(false)
   const [showBatchEditDialog, setShowBatchEditDialog] = useState(false)
+  const [showCheckKeyDialog, setShowCheckKeyDialog] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [tagValue, setTagValue] = useState('')
 
@@ -200,6 +209,29 @@ export function DataTableBulkActions<TData>({
           <TooltipTrigger
             render={
               <Button
+                variant='outline'
+                size='icon'
+                onClick={() => setShowCheckKeyDialog(true)}
+                className='size-8'
+                aria-label={t('Check key in selected channels')}
+                title={t('Check key in selected channels')}
+              />
+            }
+          >
+            <KeyRound />
+            <span className='sr-only'>
+              {t('Check key in selected channels')}
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>{t('Check key in selected channels')}</p>
+          </TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
                 variant='destructive'
                 size='icon'
                 onClick={() => setShowDeleteConfirm(true)}
@@ -227,6 +259,12 @@ export function DataTableBulkActions<TData>({
           setShowBatchEditDialog(false)
           handleClearSelection()
         }}
+      />
+
+      <CheckChannelKeyDialog
+        open={showCheckKeyDialog}
+        onOpenChange={setShowCheckKeyDialog}
+        ids={selectedIds}
       />
 
       {/* Set Tag Dialog */}

@@ -25,7 +25,9 @@ import type {
   BatchSetTagParams,
   Channel,
   ChannelBalanceResponse,
+  ChannelKeyCheckResult,
   ChannelTestResponse,
+  CheckChannelKeyParams,
   CopyChannelParams,
   CopyChannelResponse,
   FetchModelsResponse,
@@ -188,6 +190,24 @@ export async function batchEditChannels(
 ): Promise<{ success: boolean; message?: string; data?: number }> {
   const res = await api.post(
     '/api/channel/batch/edit',
+    data,
+    channelActionConfig()
+  )
+  return res.data
+}
+
+/**
+ * Check whether a key exists in each of the given channels
+ */
+export async function checkChannelKeyExists(
+  data: CheckChannelKeyParams
+): Promise<{
+  success: boolean
+  message?: string
+  data?: ChannelKeyCheckResult[]
+}> {
+  const res = await api.post(
+    '/api/channel/batch/check_key',
     data,
     channelActionConfig()
   )

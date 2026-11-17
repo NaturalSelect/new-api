@@ -61,6 +61,9 @@ func normalizeChannelTestEndpoint(channel *model.Channel, modelName, endpointTyp
 	if channel != nil && channel.Type == constant.ChannelTypeTypeSafe {
 		return string(constant.EndpointTypeTypeSafe)
 	}
+	if channel != nil && channel.Type == constant.ChannelTypeOpenCodeZen && common.IsOpenCodeSystemOneModel(modelName) {
+		return string(constant.EndpointTypeTypeSafe)
+	}
 	if channel != nil && channel.Type == constant.ChannelTypeGemini && strings.HasPrefix(modelName, "gemini-decision") {
 		return string(constant.EndpointTypeGeminiDecision)
 	}

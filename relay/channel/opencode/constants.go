@@ -8,6 +8,7 @@ const (
 	chatCompletionsPath = "/openai/v1/chat/completions"
 	responsesPath       = "/openai/v1/responses"
 	messagesPath        = "/anthropic/v1/messages"
+	systemOnePath       = "/systemone/v1/systemone"
 
 	defaultAnthropicVersion = "2023-06-01"
 )

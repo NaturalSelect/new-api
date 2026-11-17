@@ -299,6 +299,17 @@ export interface BatchSetTagParams {
 
 export type BatchModelsMode = 'append' | 'remove' | 'replace'
 
+export interface CheckChannelKeyParams {
+  ids: number[]
+  key: string
+}
+
+export interface ChannelKeyCheckResult {
+  id: number
+  name: string
+  exists: boolean
+}
+
 export interface BatchEditChannelsParams {
   ids: number[]
   models_mode?: BatchModelsMode

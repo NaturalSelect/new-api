@@ -6,6 +6,11 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 )
 
+// IsOpenCodeSystemOneModel reports whether Zen serves the model on its System One endpoint instead of a chat API.
+func IsOpenCodeSystemOneModel(modelName string) bool {
+	return strings.HasPrefix(modelName, "jev") || strings.Contains(modelName, "-decision")
+}
+
 // GetEndpointTypesByChannelType 获取渠道最优先端点类型（所有的渠道都支持 OpenAI 端点）
 func GetEndpointTypesByChannelType(channelType int, modelName string) []constant.EndpointType {
 	var endpointTypes []constant.EndpointType
@@ -50,6 +55,11 @@ func GetEndpointTypesByChannelType(channelType int, modelName string) []constant
 	case constant.ChannelTypeTypeSafe:
 		endpointTypes = []constant.EndpointType{constant.EndpointTypeTypeSafe}
 	case constant.ChannelTypeOpenCodeGo, constant.ChannelTypeOpenCodeZen:
+		// NOTE: Only Zen serves System One models, and they have no chat endpoint.
+		if channelType == constant.ChannelTypeOpenCodeZen && IsOpenCodeSystemOneModel(modelName) {
+			endpointTypes = []constant.EndpointType{constant.EndpointTypeTypeSafe}
+			break
+		}
 		endpointTypes = []constant.EndpointType{constant.EndpointTypeOpenAI, constant.EndpointTypeOpenAIResponse, constant.EndpointTypeAnthropic}
 	default:
 		if IsOpenAIResponseOnlyModel(modelName) {

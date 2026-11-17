@@ -200,6 +200,24 @@ func (channel *Channel) GetKeys() []string {
 	return keys
 }
 
+// HasKey reports whether key exactly equals the channel's whole key or one of its individual keys.
+func (channel *Channel) HasKey(key string) bool {
+	key = strings.TrimSpace(key)
+	if key == "" || channel.Key == "" {
+		return false
+	}
+	// NOTE: Compare the whole value too, because a single-key Vertex JSON credential may span multiple lines.
+	if strings.TrimSpace(channel.Key) == key {
+		return true
+	}
+	for _, k := range channel.GetKeys() {
+		if strings.TrimSpace(k) == key {
+			return true
+		}
+	}
+	return false
+}
+
 func (channel *Channel) GetNextEnabledKey() (string, int, *types.NewAPIError) {
 	// If not in multi-key mode, return the original key string directly.
 	if !channel.ChannelInfo.IsMultiKey {

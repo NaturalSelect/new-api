@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel"
 	"github.com/QuantumNous/new-api/relay/channel/claude"
 	"github.com/QuantumNous/new-api/relay/channel/openai"
+	"github.com/QuantumNous/new-api/relay/channel/typesafe"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/types"
@@ -32,6 +33,8 @@ func (a *Adaptor) Init(info *relaycommon.RelayInfo) {}
 func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 	baseURL := strings.TrimRight(info.ChannelBaseUrl, "/")
 	switch {
+	case info.RelayMode == relayconstant.RelayModeTypeSafeSystemOne:
+		return baseURL + systemOnePath, nil
 	case info.RelayMode == relayconstant.RelayModeResponses:
 		return baseURL + responsesPath, nil
 	case usesMessagesAPI(info):
@@ -43,6 +46,13 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 }
 
 func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *relaycommon.RelayInfo) error {
+	if info.RelayMode == relayconstant.RelayModeTypeSafeSystemOne {
+		if err := (&typesafe.Adaptor{}).SetupRequestHeader(c, req, info); err != nil {
+			return err
+		}
+		req.Set(sessionHeader, resolveSessionID(c, info))
+		return nil
+	}
 	channel.SetupApiRequestHeader(info, c, req)
 	req.Set("Authorization", "Bearer "+info.ApiKey)
 	req.Set(sessionHeader, resolveSessionID(c, info))
@@ -100,6 +110,9 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, request
 }
 
 func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (usage any, err *types.NewAPIError) {
+	if info.RelayMode == relayconstant.RelayModeTypeSafeSystemOne {
+		return (&typesafe.Adaptor{}).DoResponse(c, resp, info)
+	}
 	if usesMessagesAPI(info) {
 		return (&claude.Adaptor{}).DoResponse(c, resp, info)
 	}

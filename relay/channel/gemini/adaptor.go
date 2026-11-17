@@ -203,37 +203,49 @@ func (a *Adaptor) ConvertRerankRequest(c *gin.Context, relayMode int, request dt
 	return nil, nil
 }
 
+// NOTE: Only models introduced after 2024 accept outputDimensionality; the gemini-embedding family covers 001, exp-03-07 and 2.
+func supportsEmbeddingOutputDimensionality(model string) bool {
+	return model == "text-embedding-004" || strings.HasPrefix(model, "gemini-embedding")
+}
+
 func (a *Adaptor) ConvertEmbeddingRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.EmbeddingRequest) (any, error) {
 	if request.Input == nil {
 		return nil, errors.New("input is required")
 	}
 
-	inputs := request.ParseInput()
-	if len(inputs) == 0 {
+	items, err := request.ParseMediaInputs()
+	if err != nil {
+		return nil, fmt.Errorf("invalid input: %w", err)
+	}
+	if len(items) == 0 {
 		return nil, errors.New("input is empty")
 	}
 	// We always build a batch-style payload with `requests`, so ensure we call the
 	// batch endpoint upstream to avoid payload/endpoint mismatches.
 	info.IsGeminiBatchEmbedding = true
-	// process all inputs
-	geminiRequests := make([]map[string]interface{}, 0, len(inputs))
-	for _, input := range inputs {
+	// each input item becomes one request; the parts of an item are aggregated into one embedding
+	geminiRequests := make([]map[string]interface{}, 0, len(items))
+	for _, item := range items {
+		parts := make([]dto.GeminiPart, 0, len(item))
+		for _, part := range item {
+			if part.Type == dto.ContentTypeText {
+				parts = append(parts, dto.GeminiPart{Text: part.Text})
+				continue
+			}
+			inlinePart, err := geminiInlinePartFromSource(c, part.ToFileSource())
+			if err != nil {
+				return nil, err
+			}
+			parts = append(parts, inlinePart)
+		}
 		geminiRequest := map[string]interface{}{
-			"model": fmt.Sprintf("models/%s", info.UpstreamModelName),
-			"content": dto.GeminiChatContent{
-				Parts: []dto.GeminiPart{
-					{
-						Text: input,
-					},
-				},
-			},
+			"model":   fmt.Sprintf("models/%s", info.UpstreamModelName),
+			"content": dto.GeminiChatContent{Parts: parts},
 		}
 
 		// set specific parameters for different models
 		// https://ai.google.dev/api/embeddings?hl=zh-cn#method:-models.embedcontent
-		switch info.UpstreamModelName {
-		case "text-embedding-004", "gemini-embedding-exp-03-07", "gemini-embedding-001":
-			// Only newer models introduced after 2024 support OutputDimensionality
+		if supportsEmbeddingOutputDimensionality(info.UpstreamModelName) {
 			dimensions := lo.FromPtrOr(request.Dimensions, 0)
 			if dimensions > 0 {
 				geminiRequest["outputDimensionality"] = dimensions

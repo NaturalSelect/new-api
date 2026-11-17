@@ -590,22 +590,11 @@ func CovertOpenAI2Gemini(c *gin.Context, textRequest dto.GeneralOpenAIRequest, i
 				if source == nil {
 					continue
 				}
-				base64Data, mimeType, err := service.GetBase64Data(c, source, "formatting image for Gemini")
+				inlinePart, err := geminiInlinePartFromSource(c, source)
 				if err != nil {
-					return nil, fmt.Errorf("get file data from '%s' failed: %w", source.GetIdentifier(), err)
+					return nil, err
 				}
-
-				// 校验 MimeType 是否在 Gemini 支持的白名单中
-				if _, ok := geminiSupportedMimeTypes[strings.ToLower(mimeType)]; !ok {
-					return nil, fmt.Errorf("mime type is not supported by Gemini: '%s', url: '%s', supported types are: %v", mimeType, source.GetIdentifier(), getSupportedMimeTypesList())
-				}
-
-				parts = append(parts, dto.GeminiPart{
-					InlineData: &dto.GeminiInlineData{
-						MimeType: mimeType,
-						Data:     base64Data,
-					},
-				})
+				parts = append(parts, inlinePart)
 			}
 		}
 
@@ -689,6 +678,25 @@ func hasFunctionCallContent(call *dto.FunctionCall) bool {
 	default:
 		return true
 	}
+}
+
+func geminiInlinePartFromSource(c *gin.Context, source types.FileSource) (dto.GeminiPart, error) {
+	base64Data, mimeType, err := service.GetBase64Data(c, source, "formatting image for Gemini")
+	if err != nil {
+		return dto.GeminiPart{}, fmt.Errorf("get file data from '%s' failed: %w", source.GetIdentifier(), err)
+	}
+
+	// 校验 MimeType 是否在 Gemini 支持的白名单中
+	if _, ok := geminiSupportedMimeTypes[strings.ToLower(mimeType)]; !ok {
+		return dto.GeminiPart{}, fmt.Errorf("mime type is not supported by Gemini: '%s', url: '%s', supported types are: %v", mimeType, source.GetIdentifier(), getSupportedMimeTypesList())
+	}
+
+	return dto.GeminiPart{
+		InlineData: &dto.GeminiInlineData{
+			MimeType: mimeType,
+			Data:     base64Data,
+		},
+	}, nil
 }
 
 // Helper function to get a list of supported MIME types for error messages
@@ -1607,12 +1615,7 @@ func GeminiEmbeddingHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *h
 		})
 	}
 
-	// calculate usage
-	// https://ai.google.dev/gemini-api/docs/pricing?hl=zh-cn#text-embedding-004
-	// Google has not yet clarified how embedding models will be billed
-	// refer to openai billing method to use input tokens billing
-	// https://platform.openai.com/docs/guides/embeddings#what-are-embeddings
-	usage := service.ResponseText2Usage(c, "", info.UpstreamModelName, info.GetEstimatePromptTokens())
+	usage := buildEmbeddingUsage(c, info, geminiResponse.UsageMetadata)
 	openAIResponse.Usage = *usage
 
 	jsonResponse, jsonErr := common.Marshal(openAIResponse)
@@ -1622,6 +1625,17 @@ func GeminiEmbeddingHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *h
 
 	service.IOCopyBytesGracefully(c, resp, jsonResponse)
 	return usage, nil
+}
+
+// buildEmbeddingUsage bills the token count Gemini reports, which also covers image and audio inputs.
+// Without it, the request-side estimate is used, referring to OpenAI's input-token billing for embeddings.
+// https://platform.openai.com/docs/guides/embeddings#what-are-embeddings
+func buildEmbeddingUsage(c *gin.Context, info *relaycommon.RelayInfo, metadata *dto.GeminiEmbeddingUsageMetadata) *dto.Usage {
+	if metadata == nil || metadata.PromptTokenCount <= 0 {
+		return service.ResponseText2Usage(c, "", info.UpstreamModelName, info.GetEstimatePromptTokens())
+	}
+	usage := buildUsageFromGeminiMetadata(metadata.ToUsageMetadata(), 0)
+	return &usage
 }
 
 func GeminiImageHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {

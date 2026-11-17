@@ -151,22 +151,7 @@ func (r *GeneralOpenAIRequest) GetTokenCountMeta() *types.TokenCountMeta {
 			}
 			arrayContent := message.ParseContent()
 			for _, m := range arrayContent {
-				source := m.ToFileSource()
-				if source != nil {
-					meta := &types.FileMeta{Source: source}
-					switch m.Type {
-					case ContentTypeImageURL:
-						meta.FileType = types.FileTypeImage
-						if img := m.GetImageMedia(); img != nil {
-							meta.Detail = img.Detail
-						}
-					case ContentTypeInputAudio:
-						meta.FileType = types.FileTypeAudio
-					case ContentTypeFile:
-						meta.FileType = types.FileTypeFile
-					case ContentTypeVideoUrl:
-						meta.FileType = types.FileTypeVideo
-					}
+				if meta := m.ToFileMeta(); meta != nil {
 					fileMeta = append(fileMeta, meta)
 				} else if m.Type == ContentTypeText {
 					texts = append(texts, m.Text)
@@ -407,6 +392,28 @@ func (m *MediaContent) ToFileSource() types.FileSource {
 		return types.NewFileSourceFromData(video.Url, "")
 	}
 	return nil
+}
+
+func (m *MediaContent) ToFileMeta() *types.FileMeta {
+	source := m.ToFileSource()
+	if source == nil {
+		return nil
+	}
+	meta := &types.FileMeta{Source: source}
+	switch m.Type {
+	case ContentTypeImageURL:
+		meta.FileType = types.FileTypeImage
+		if img := m.GetImageMedia(); img != nil {
+			meta.Detail = img.Detail
+		}
+	case ContentTypeInputAudio:
+		meta.FileType = types.FileTypeAudio
+	case ContentTypeFile:
+		meta.FileType = types.FileTypeFile
+	case ContentTypeVideoUrl:
+		meta.FileType = types.FileTypeVideo
+	}
+	return meta
 }
 
 type MessageImageUrl struct {

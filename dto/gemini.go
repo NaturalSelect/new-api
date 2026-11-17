@@ -44,9 +44,9 @@ func (r *GeminiChatRequest) UnmarshalJSON(data []byte) error {
 }
 
 type ToolConfig struct {
-	FunctionCallingConfig *FunctionCallingConfig `json:"functionCallingConfig,omitempty"`
-	RetrievalConfig       *RetrievalConfig       `json:"retrievalConfig,omitempty"`
-	IncludeServerSideToolInvocations *bool       `json:"includeServerSideToolInvocations,omitempty"`
+	FunctionCallingConfig            *FunctionCallingConfig `json:"functionCallingConfig,omitempty"`
+	RetrievalConfig                  *RetrievalConfig       `json:"retrievalConfig,omitempty"`
+	IncludeServerSideToolInvocations *bool                  `json:"includeServerSideToolInvocations,omitempty"`
 }
 
 type FunctionCallingConfig struct {
@@ -76,28 +76,9 @@ func (r *GeminiChatRequest) GetTokenCountMeta() *types.TokenCountMeta {
 
 	var inputTexts []string
 	for _, content := range r.Contents {
-		for _, part := range content.Parts {
-			if part.Text != "" {
-				inputTexts = append(inputTexts, part.Text)
-			}
-			if source := part.InlineData.ToFileSource(); source != nil {
-				mimeType := part.InlineData.MimeType
-				var fileType types.FileType
-				if strings.HasPrefix(mimeType, "image/") {
-					fileType = types.FileTypeImage
-				} else if strings.HasPrefix(mimeType, "audio/") {
-					fileType = types.FileTypeAudio
-				} else if strings.HasPrefix(mimeType, "video/") {
-					fileType = types.FileTypeVideo
-				} else {
-					fileType = types.FileTypeFile
-				}
-				files = append(files, &types.FileMeta{
-					FileType: fileType,
-					Source:   source,
-				})
-			}
-		}
+		texts, partFiles := geminiPartsTokenInputs(content.Parts)
+		inputTexts = append(inputTexts, texts...)
+		files = append(files, partFiles...)
 	}
 
 	inputText := strings.Join(inputTexts, "\n")
@@ -106,6 +87,34 @@ func (r *GeminiChatRequest) GetTokenCountMeta() *types.TokenCountMeta {
 		Files:       files,
 		MaxTokens:   maxTokens,
 	}
+}
+
+func geminiPartsTokenInputs(parts []GeminiPart) (texts []string, files []*types.FileMeta) {
+	for _, part := range parts {
+		if part.Text != "" {
+			texts = append(texts, part.Text)
+		}
+		source := part.InlineData.ToFileSource()
+		if source == nil {
+			continue
+		}
+		mimeType := part.InlineData.MimeType
+		var fileType types.FileType
+		if strings.HasPrefix(mimeType, "image/") {
+			fileType = types.FileTypeImage
+		} else if strings.HasPrefix(mimeType, "audio/") {
+			fileType = types.FileTypeAudio
+		} else if strings.HasPrefix(mimeType, "video/") {
+			fileType = types.FileTypeVideo
+		} else {
+			fileType = types.FileTypeFile
+		}
+		files = append(files, &types.FileMeta{
+			FileType: fileType,
+			Source:   source,
+		})
+	}
+	return texts, files
 }
 
 func (r *GeminiChatRequest) IsStream(c *gin.Context) bool {
@@ -266,6 +275,29 @@ type GeminiFileData struct {
 	FileUri  string `json:"fileUri,omitempty"`
 }
 
+// UnmarshalJSON custom unmarshaler for GeminiFileData to support snake_case and camelCase keys
+func (f *GeminiFileData) UnmarshalJSON(data []byte) error {
+	type Alias GeminiFileData
+	var aux struct {
+		Alias
+		MimeTypeSnake string `json:"mime_type"`
+		FileUriSnake  string `json:"file_uri"`
+	}
+
+	if err := common.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	*f = GeminiFileData(aux.Alias)
+	if aux.MimeTypeSnake != "" {
+		f.MimeType = aux.MimeTypeSnake
+	}
+	if aux.FileUriSnake != "" {
+		f.FileUri = aux.FileUriSnake
+	}
+	return nil
+}
+
 type GeminiPart struct {
 	Text             string                  `json:"text,omitempty"`
 	Thought          bool                    `json:"thought,omitempty"`
@@ -281,13 +313,14 @@ type GeminiPart struct {
 	CodeExecutionResult *GeminiPartCodeExecutionResult `json:"codeExecutionResult,omitempty"`
 }
 
-// UnmarshalJSON custom unmarshaler for GeminiPart to support snake_case and camelCase for InlineData
+// UnmarshalJSON custom unmarshaler for GeminiPart to support snake_case and camelCase for InlineData and FileData
 func (p *GeminiPart) UnmarshalJSON(data []byte) error {
 	// Alias to avoid recursion during unmarshalling
 	type Alias GeminiPart
 	var aux struct {
 		Alias
 		InlineDataSnake *GeminiInlineData `json:"inline_data,omitempty"` // snake_case variant
+		FileDataSnake   *GeminiFileData   `json:"file_data,omitempty"`   // snake_case variant
 	}
 
 	if err := common.Unmarshal(data, &aux); err != nil {
@@ -302,6 +335,9 @@ func (p *GeminiPart) UnmarshalJSON(data []byte) error {
 		p.InlineData = aux.InlineDataSnake
 	} else if aux.InlineData != nil { // Fallback to camelCase from Alias
 		p.InlineData = aux.InlineData
+	}
+	if aux.FileDataSnake != nil {
+		p.FileData = aux.FileDataSnake
 	}
 	// Other fields like Text, FunctionCall etc. are already populated via aux.Alias
 
@@ -511,7 +547,30 @@ type GeminiEmbeddingRequest struct {
 	Content              GeminiChatContent `json:"content"`
 	TaskType             string            `json:"taskType,omitempty"`
 	Title                string            `json:"title,omitempty"`
-	OutputDimensionality int               `json:"outputDimensionality,omitempty"`
+	OutputDimensionality *int              `json:"outputDimensionality,omitempty"`
+}
+
+// UnmarshalJSON custom unmarshaler for GeminiEmbeddingRequest to support snake_case and camelCase keys
+func (r *GeminiEmbeddingRequest) UnmarshalJSON(data []byte) error {
+	type Alias GeminiEmbeddingRequest
+	var aux struct {
+		Alias
+		TaskTypeSnake             string `json:"task_type"`
+		OutputDimensionalitySnake *int   `json:"output_dimensionality"`
+	}
+
+	if err := common.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	*r = GeminiEmbeddingRequest(aux.Alias)
+	if aux.TaskTypeSnake != "" {
+		r.TaskType = aux.TaskTypeSnake
+	}
+	if aux.OutputDimensionalitySnake != nil {
+		r.OutputDimensionality = aux.OutputDimensionalitySnake
+	}
+	return nil
 }
 
 func (r *GeminiEmbeddingRequest) IsStream(c *gin.Context) bool {
@@ -520,15 +579,10 @@ func (r *GeminiEmbeddingRequest) IsStream(c *gin.Context) bool {
 }
 
 func (r *GeminiEmbeddingRequest) GetTokenCountMeta() *types.TokenCountMeta {
-	var inputTexts []string
-	for _, part := range r.Content.Parts {
-		if part.Text != "" {
-			inputTexts = append(inputTexts, part.Text)
-		}
-	}
-	inputText := strings.Join(inputTexts, "\n")
+	texts, files := geminiPartsTokenInputs(r.Content.Parts)
 	return &types.TokenCountMeta{
-		CombineText: inputText,
+		CombineText: strings.Join(texts, "\n"),
+		Files:       files,
 	}
 }
 
@@ -549,15 +603,21 @@ func (r *GeminiBatchEmbeddingRequest) IsStream(c *gin.Context) bool {
 
 func (r *GeminiBatchEmbeddingRequest) GetTokenCountMeta() *types.TokenCountMeta {
 	var inputTexts []string
+	var files []*types.FileMeta
 	for _, request := range r.Requests {
 		meta := request.GetTokenCountMeta()
-		if meta != nil && meta.CombineText != "" {
+		if meta == nil {
+			continue
+		}
+		if meta.CombineText != "" {
 			inputTexts = append(inputTexts, meta.CombineText)
 		}
+		files = append(files, meta.Files...)
 	}
 	inputText := strings.Join(inputTexts, "\n")
 	return &types.TokenCountMeta{
 		CombineText: inputText,
+		Files:       files,
 	}
 }
 
@@ -570,11 +630,28 @@ func (r *GeminiBatchEmbeddingRequest) SetModelName(modelName string) {
 }
 
 type GeminiEmbeddingResponse struct {
-	Embedding ContentEmbedding `json:"embedding"`
+	Embedding     ContentEmbedding              `json:"embedding"`
+	UsageMetadata *GeminiEmbeddingUsageMetadata `json:"usageMetadata,omitempty"`
 }
 
 type GeminiBatchEmbeddingResponse struct {
-	Embeddings []*ContentEmbedding `json:"embeddings"`
+	Embeddings    []*ContentEmbedding           `json:"embeddings"`
+	UsageMetadata *GeminiEmbeddingUsageMetadata `json:"usageMetadata,omitempty"`
+}
+
+type GeminiEmbeddingUsageMetadata struct {
+	PromptTokenCount   int                         `json:"promptTokenCount"`
+	PromptTokenDetails []GeminiPromptTokensDetails `json:"promptTokenDetails"`
+	// NOTE: generateContent spells this key promptTokensDetails; accept both since the embedding docs use the singular form.
+	PromptTokensDetails []GeminiPromptTokensDetails `json:"promptTokensDetails"`
+}
+
+func (m *GeminiEmbeddingUsageMetadata) ToUsageMetadata() GeminiUsageMetadata {
+	return GeminiUsageMetadata{
+		PromptTokenCount:    m.PromptTokenCount,
+		TotalTokenCount:     m.PromptTokenCount,
+		PromptTokensDetails: append(append([]GeminiPromptTokensDetails{}, m.PromptTokenDetails...), m.PromptTokensDetails...),
+	}
 }
 
 type ContentEmbedding struct {

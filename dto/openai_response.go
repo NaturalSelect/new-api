@@ -125,6 +125,8 @@ type ToolCallResponse struct {
 	ID       string           `json:"id,omitempty"`
 	Type     any              `json:"type"`
 	Function FunctionResponse `json:"function"`
+	// ExtraContent carries provider extensions such as Gemini's google.thought_signature.
+	ExtraContent json.RawMessage `json:"extra_content,omitempty"`
 }
 
 func (c *ToolCallResponse) SetIndex(i int) {

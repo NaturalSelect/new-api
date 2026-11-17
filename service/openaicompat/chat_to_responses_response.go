@@ -29,7 +29,9 @@ type chatResponsesItem struct {
 	callID      string
 	// upstreamCallID is the id the upstream gave the tool call, empty until it is seen.
 	upstreamCallID string
-	name           string
+	// thoughtSignature is the Gemini signature the upstream attached to the tool call.
+	thoughtSignature string
+	name             string
 	// NOTE: text holds the reasoning summary, message text, function arguments or custom tool input JSON, depending on kind.
 	text   strings.Builder
 	closed bool
@@ -131,6 +133,18 @@ func NewChatToResponsesTranscoder(respID, model string, createdAt int64, request
 	return t
 }
 
+// ThoughtSignatures returns the Gemini thought signature of each tool call that carried
+// one, keyed by the call_id the client sees.
+func (t *ChatToResponsesTranscoder) ThoughtSignatures() map[string]string {
+	signatures := make(map[string]string)
+	for _, it := range t.items {
+		if it.thoughtSignature != "" && it.callID != "" {
+			signatures[it.callID] = it.thoughtSignature
+		}
+	}
+	return signatures
+}
+
 // Started reports whether any chunk or message has been consumed.
 func (t *ChatToResponsesTranscoder) Started() bool {
 	return t.started
@@ -206,9 +220,10 @@ func (t *ChatToResponsesTranscoder) ConsumeMessage(msg *dto.Message, finishReaso
 	for i, call := range msg.ParseToolCalls() {
 		index := i
 		t.addToolCallDelta(dto.ToolCallResponse{
-			Index:    &index,
-			ID:       call.ID,
-			Function: dto.FunctionResponse{Name: call.Function.Name, Arguments: call.Function.Arguments},
+			Index:        &index,
+			ID:           call.ID,
+			Function:     dto.FunctionResponse{Name: call.Function.Name, Arguments: call.Function.Arguments},
+			ExtraContent: call.ExtraContent,
 		})
 	}
 	t.finishReason = finishReason
@@ -269,6 +284,9 @@ func (t *ChatToResponsesTranscoder) addToolCallDelta(call dto.ToolCallResponse) 
 		}
 	}
 	t.lastTool = it
+	if it.thoughtSignature == "" {
+		it.thoughtSignature = ThoughtSignatureFromExtraContent(call.ExtraContent)
+	}
 
 	if call.Function.Arguments == "" {
 		return

@@ -241,6 +241,8 @@ type ToolCallRequest struct {
 	Type     string          `json:"type"`
 	Function FunctionRequest `json:"function,omitempty"`
 	Custom   json.RawMessage `json:"custom,omitempty"`
+	// ExtraContent carries provider extensions such as Gemini's google.thought_signature.
+	ExtraContent json.RawMessage `json:"extra_content,omitempty"`
 }
 
 type FunctionRequest struct {

@@ -37,6 +37,45 @@ func newChatToResponsesTranscoder(c *gin.Context, info *relaycommon.RelayInfo, s
 	return openaicompat.NewChatToResponsesTranscoder(respID, info.OriginModelName, common.GetTimestamp(), request, stream)
 }
 
+// restoreThoughtSignatures puts back the Gemini thought signatures that a Responses client
+// cannot echo, so replayed tool calls reach the upstream with the signature they were given.
+func restoreThoughtSignatures(request *dto.GeneralOpenAIRequest, info *relaycommon.RelayInfo) {
+	for i := range request.Messages {
+		msg := &request.Messages[i]
+		if msg.Role != "assistant" {
+			continue
+		}
+		calls := msg.ParseToolCalls()
+		restored := false
+		for j := range calls {
+			if len(calls[j].ExtraContent) > 0 {
+				continue
+			}
+			signature := service.LoadPoeThoughtSignature(info.UserId, info.UpstreamModelName, calls[j].ID)
+			if signature == "" {
+				continue
+			}
+			calls[j].ExtraContent = openaicompat.ExtraContentFromThoughtSignature(signature)
+			restored = true
+		}
+		if restored {
+			msg.SetToolCalls(calls)
+		}
+	}
+}
+
+// rememberThoughtSignatures stores signatures not yet in stored. It runs before the events
+// that announce a tool call are sent, so a client that replies at once still finds them.
+func rememberThoughtSignatures(info *relaycommon.RelayInfo, t *openaicompat.ChatToResponsesTranscoder, stored map[string]struct{}) {
+	for callID, signature := range t.ThoughtSignatures() {
+		if _, done := stored[callID]; done {
+			continue
+		}
+		stored[callID] = struct{}{}
+		service.StorePoeThoughtSignature(info.UserId, info.UpstreamModelName, callID, signature)
+	}
+}
+
 // OaiChatToResponsesHandler answers a Responses request from a Chat Completions upstream response.
 func OaiChatToResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
 	if resp == nil || resp.Body == nil {
@@ -64,6 +103,7 @@ func OaiChatToResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	t := newChatToResponsesTranscoder(c, info, false)
 	choice := &chatResp.Choices[0]
 	t.ConsumeMessage(&choice.Message, choice.FinishReason)
+	rememberThoughtSignatures(info, t, map[string]struct{}{})
 
 	usage := chatResp.Usage
 	if !service.ValidUsage(&usage) {
@@ -88,6 +128,7 @@ func OaiChatToResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 	defer service.CloseResponseBodyGracefully(resp)
 
 	t := newChatToResponsesTranscoder(c, info, true)
+	storedSignatures := make(map[string]struct{})
 	var (
 		upstreamUsage *dto.Usage
 		streamErr     *types.OpenAIError
@@ -127,7 +168,9 @@ func OaiChatToResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 		if chunk.Usage != nil && service.ValidUsage(chunk.Usage) {
 			upstreamUsage = chunk.Usage
 		}
-		send(t.ConsumeChunk(&chunk))
+		events := t.ConsumeChunk(&chunk)
+		rememberThoughtSignatures(info, t, storedSignatures)
+		send(events)
 	})
 
 	if info.StreamStatus.IsScannerError() {

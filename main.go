@@ -123,9 +123,9 @@ func main() {
 	// Poe usage log sync task (every 1 minutes, for Poe channel types)
 	service.StartPoeLogSyncTask()
 
-	// Poe per-model parameter definitions (runs on every node since it maintains
-	// a per-process in-memory cache used when converting reasoning_effort)
-	service.StartPoeModelParamsSyncTask()
+	// Poe per-model parameters and endpoints (runs on every node since it maintains
+	// a per-process in-memory cache used when converting Poe requests)
+	service.StartPoeModelCatalogSyncTask()
 
 	// Model intelligence score sync task (fetches external benchmark scores;
 	// runs on every node since it maintains a per-process in-memory cache)

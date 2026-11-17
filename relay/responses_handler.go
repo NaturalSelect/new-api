@@ -10,6 +10,7 @@ import (
 	appconstant "github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
+	openaichannel "github.com/QuantumNous/new-api/relay/channel/openai"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
@@ -95,7 +96,7 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 			return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
 		}
 		if info.ChannelType == appconstant.ChannelTypeOpenAI || info.ChannelType == appconstant.ChannelTypePoeOpenAI {
-			jsonData, err = relaycommon.ApplyOpenAIAutoPromptCacheRetention(jsonData, info.ChannelOtherSettings, false)
+			jsonData, err = relaycommon.ApplyOpenAIAutoPromptCacheRetention(jsonData, info.ChannelOtherSettings, openaichannel.ShouldServeResponsesViaChat(info))
 			if err != nil {
 				return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
 			}

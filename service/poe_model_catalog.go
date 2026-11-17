@@ -20,18 +20,19 @@ import (
 )
 
 const (
-	poeModelParamsRefreshInterval = 30 * time.Minute
-	poeModelParamsRetryInterval   = time.Minute
-	poeModelParamsHTTPTimeout     = 30 * time.Second
-	poeModelParamsMaxBodyBytes    = 16 << 20
-	poeModelParamsMaxEndpoints    = 5
+	poeModelCatalogRefreshInterval = 30 * time.Minute
+	poeModelCatalogRetryInterval   = time.Minute
+	poeModelCatalogHTTPTimeout     = 30 * time.Second
+	poeModelCatalogMaxBodyBytes    = 16 << 20
+	poeModelCatalogMaxEndpoints    = 5
+
+	poeResponsesEndpoint = "/v1/responses"
 )
 
 var (
-	poeModelParamsSyncOnce sync.Once
-	// poeModelParamsCache maps lowercase Poe model id -> parameter name -> enum values.
-	// A parameter without an enum (boolean, number) is present with an empty slice.
-	poeModelParamsCache atomic.Pointer[map[string]map[string][]string]
+	poeModelCatalogSyncOnce sync.Once
+	// poeModelCatalogCache maps lowercase Poe model id -> what Poe publishes about it.
+	poeModelCatalogCache atomic.Pointer[map[string]PoeModelInfo]
 
 	errNoPoeEndpoint = errors.New("no enabled Poe OpenAI channel")
 
@@ -49,6 +50,15 @@ var (
 	}
 )
 
+// PoeModelInfo is the part of Poe's /v1/models entry that the adaptor acts on.
+type PoeModelInfo struct {
+	// Params maps a parameter name to its enum values. A parameter without a string
+	// enum (boolean, number) is present with an empty slice.
+	Params map[string][]string
+	// Endpoints are the API paths Poe lists for the model, lowercased.
+	Endpoints []string
+}
+
 type poeBotParam struct {
 	Name   string `json:"name"`
 	Schema struct {
@@ -57,8 +67,9 @@ type poeBotParam struct {
 }
 
 type poeBotModel struct {
-	Id         string        `json:"id"`
-	Parameters []poeBotParam `json:"parameters"`
+	Id                 string        `json:"id"`
+	SupportedEndpoints []string      `json:"supported_endpoints"`
+	Parameters         []poeBotParam `json:"parameters"`
 }
 
 type poeBotModelsResponse struct {
@@ -70,32 +81,34 @@ type poeModelsEndpoint struct {
 	proxy   string
 }
 
-// StartPoeModelParamsSyncTask keeps a process-local cache of the per-model
-// parameter definitions that Poe publishes on /v1/models, so the Poe adaptor can
-// translate a generic reasoning_effort into the name each model really accepts.
+// StartPoeModelCatalogSyncTask keeps a process-local cache of the per-model
+// parameters and endpoints that Poe publishes on /v1/models. The Poe adaptor uses
+// it to translate a generic reasoning_effort into the name each model really accepts
+// and to serve Responses requests through Chat Completions for models without a
+// Responses endpoint.
 //
 // NOTE: Runs on every node because the cache is per-process memory.
-func StartPoeModelParamsSyncTask() {
-	poeModelParamsSyncOnce.Do(func() {
+func StartPoeModelCatalogSyncTask() {
+	poeModelCatalogSyncOnce.Do(func() {
 		gopool.Go(func() {
-			logger.LogInfo(context.Background(), "Poe model params sync task started")
+			logger.LogInfo(context.Background(), "Poe model catalog sync task started")
 			for {
-				err := refreshPoeModelParams()
+				err := refreshPoeModelCatalog()
 				switch {
 				case err == nil:
-					time.Sleep(poeModelParamsRefreshInterval)
+					time.Sleep(poeModelCatalogRefreshInterval)
 				case errors.Is(err, errNoPoeEndpoint):
-					time.Sleep(poeModelParamsRetryInterval)
+					time.Sleep(poeModelCatalogRetryInterval)
 				default:
-					logger.LogWarn(context.Background(), "poe model params sync failed: "+err.Error())
-					time.Sleep(poeModelParamsRetryInterval)
+					logger.LogWarn(context.Background(), "poe model catalog sync failed: "+err.Error())
+					time.Sleep(poeModelCatalogRetryInterval)
 				}
 			}
 		})
 	})
 }
 
-func refreshPoeModelParams() error {
+func refreshPoeModelCatalog() error {
 	var channels []*model.Channel
 	err := model.DB.
 		Select("id", "type", "base_url", "setting").
@@ -107,7 +120,7 @@ func refreshPoeModelParams() error {
 	}
 
 	seen := make(map[poeModelsEndpoint]struct{})
-	endpoints := make([]poeModelsEndpoint, 0, poeModelParamsMaxEndpoints)
+	endpoints := make([]poeModelsEndpoint, 0, poeModelCatalogMaxEndpoints)
 	for _, ch := range channels {
 		baseURL := strings.TrimSuffix(ch.GetBaseURL(), "/")
 		if baseURL == "" {
@@ -119,7 +132,7 @@ func refreshPoeModelParams() error {
 		}
 		seen[endpoint] = struct{}{}
 		endpoints = append(endpoints, endpoint)
-		if len(endpoints) >= poeModelParamsMaxEndpoints {
+		if len(endpoints) >= poeModelCatalogMaxEndpoints {
 			break
 		}
 	}
@@ -129,19 +142,19 @@ func refreshPoeModelParams() error {
 
 	var lastErr error
 	for _, endpoint := range endpoints {
-		params, err := fetchPoeModelParams(endpoint)
+		catalog, err := fetchPoeModelCatalog(endpoint)
 		if err != nil {
 			lastErr = fmt.Errorf("%s: %w", endpoint.baseURL, err)
 			continue
 		}
-		SetPoeModelParams(params)
+		SetPoeModelCatalog(catalog)
 		return nil
 	}
 	return lastErr
 }
 
-func fetchPoeModelParams(endpoint poeModelsEndpoint) (map[string]map[string][]string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), poeModelParamsHTTPTimeout)
+func fetchPoeModelCatalog(endpoint poeModelsEndpoint) (map[string]PoeModelInfo, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), poeModelCatalogHTTPTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.baseURL+"/v1/models", nil)
@@ -163,33 +176,39 @@ func fetchPoeModelParams(endpoint poeModelsEndpoint) (map[string]map[string][]st
 		return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, poeModelParamsMaxBodyBytes))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, poeModelCatalogMaxBodyBytes))
 	if err != nil {
 		return nil, err
 	}
-	params, err := parsePoeModelParams(body)
+	catalog, err := parsePoeModelCatalog(body)
 	if err != nil {
 		return nil, err
 	}
-	if len(params) == 0 {
+	if len(catalog) == 0 {
 		return nil, errors.New("model list has no entries")
 	}
-	return params, nil
+	return catalog, nil
 }
 
-func parsePoeModelParams(body []byte) (map[string]map[string][]string, error) {
+func parsePoeModelCatalog(body []byte) (map[string]PoeModelInfo, error) {
 	var parsed poeBotModelsResponse
 	if err := common.Unmarshal(body, &parsed); err != nil {
 		return nil, fmt.Errorf("unmarshal models: %w", err)
 	}
 
-	result := make(map[string]map[string][]string, len(parsed.Data))
+	result := make(map[string]PoeModelInfo, len(parsed.Data))
 	for _, m := range parsed.Data {
 		id := strings.ToLower(strings.TrimSpace(m.Id))
 		if id == "" {
 			continue
 		}
-		params := make(map[string][]string, len(m.Parameters))
+		info := PoeModelInfo{
+			Params:    make(map[string][]string, len(m.Parameters)),
+			Endpoints: make([]string, 0, len(m.SupportedEndpoints)),
+		}
+		for _, endpoint := range m.SupportedEndpoints {
+			info.Endpoints = append(info.Endpoints, strings.ToLower(strings.TrimSpace(endpoint)))
+		}
 		for _, p := range m.Parameters {
 			if p.Name == "" {
 				continue
@@ -200,16 +219,41 @@ func parsePoeModelParams(body []byte) (map[string]map[string][]string, error) {
 					enum = append(enum, strings.ToLower(s))
 				}
 			}
-			params[p.Name] = enum
+			info.Params[p.Name] = enum
 		}
-		result[id] = params
+		result[id] = info
 	}
 	return result, nil
 }
 
-// SetPoeModelParams replaces the whole cache.
-func SetPoeModelParams(params map[string]map[string][]string) {
-	poeModelParamsCache.Store(&params)
+// SetPoeModelCatalog replaces the whole cache.
+func SetPoeModelCatalog(catalog map[string]PoeModelInfo) {
+	poeModelCatalogCache.Store(&catalog)
+}
+
+func lookupPoeModel(modelName string) (PoeModelInfo, bool) {
+	cache := poeModelCatalogCache.Load()
+	if cache == nil {
+		return PoeModelInfo{}, false
+	}
+	info, found := (*cache)[strings.ToLower(strings.TrimSpace(modelName))]
+	return info, found
+}
+
+// ShouldPoeResponsesUseChat reports whether a Responses request for the model has to
+// be served through Chat Completions because Poe does not list /v1/responses for it.
+// Models missing from the catalog keep the endpoint the client asked for.
+func ShouldPoeResponsesUseChat(modelName string) bool {
+	info, found := lookupPoeModel(modelName)
+	if !found {
+		return false
+	}
+	for _, endpoint := range info.Endpoints {
+		if endpoint == poeResponsesEndpoint {
+			return false
+		}
+	}
+	return true
 }
 
 // ResolvePoeReasoningParam returns the parameter name a Poe model accepts for
@@ -217,16 +261,12 @@ func SetPoeModelParams(params map[string]map[string][]string) {
 // enum. ok is false when the model is unknown or declares no such parameter, in
 // which case the caller should leave the request untouched.
 func ResolvePoeReasoningParam(modelName, effort string) (name, value string, ok bool) {
-	cache := poeModelParamsCache.Load()
-	if cache == nil {
-		return "", "", false
-	}
-	params, found := (*cache)[strings.ToLower(strings.TrimSpace(modelName))]
+	info, found := lookupPoeModel(modelName)
 	if !found {
 		return "", "", false
 	}
 	for _, candidate := range poeReasoningParamNames {
-		if enum, declared := params[candidate]; declared {
+		if enum, declared := info.Params[candidate]; declared {
 			return candidate, clampPoeEffort(effort, enum), true
 		}
 	}

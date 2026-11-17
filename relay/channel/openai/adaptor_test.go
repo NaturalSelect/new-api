@@ -386,8 +386,17 @@ func TestConvertOpenAIRequestPoeAutoPromptCacheRetentionUsesExtraBody(t *testing
 
 func setPoeModelParamsForTest(t *testing.T, params map[string]map[string][]string) {
 	t.Helper()
-	service.SetPoeModelParams(params)
-	t.Cleanup(func() { service.SetPoeModelParams(nil) })
+	catalog := make(map[string]service.PoeModelInfo, len(params))
+	for name, modelParams := range params {
+		catalog[name] = service.PoeModelInfo{Params: modelParams}
+	}
+	setPoeCatalogForTest(t, catalog)
+}
+
+func setPoeCatalogForTest(t *testing.T, catalog map[string]service.PoeModelInfo) {
+	t.Helper()
+	service.SetPoeModelCatalog(catalog)
+	t.Cleanup(func() { service.SetPoeModelCatalog(nil) })
 }
 
 func TestConvertOpenAIRequestPoeRenamesReasoningEffortToThinkingLevel(t *testing.T) {

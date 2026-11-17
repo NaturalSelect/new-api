@@ -38,6 +38,8 @@ import (
 type Adaptor struct {
 	ChannelType    int
 	ResponseFormat string
+	// responsesViaChat is set when a Responses request was converted to Chat Completions.
+	responsesViaChat bool
 }
 
 func extractPromptCacheKeyFromMetadata(metadata json.RawMessage) string {
@@ -139,6 +141,9 @@ func (a *Adaptor) Init(info *relaycommon.RelayInfo) {
 }
 
 func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
+	if a.responsesViaChat {
+		return relaycommon.GetFullRequestURL(info.ChannelBaseUrl, "/v1/chat/completions", info.ChannelType), nil
+	}
 	if info.RelayMode == relayconstant.RelayModeRealtime {
 		if strings.HasPrefix(info.ChannelBaseUrl, "https://") {
 			baseUrl := strings.TrimPrefix(info.ChannelBaseUrl, "https://")
@@ -651,6 +656,17 @@ func detectImageMimeType(filename string) string {
 }
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
+	if ShouldServeResponsesViaChat(info) {
+		chatRequest, err := service.ResponsesRequestToChatCompletionsRequest(&request)
+		if err != nil {
+			return nil, err
+		}
+		if info.IsStream {
+			chatRequest.StreamOptions = &dto.StreamOptions{IncludeUsage: true}
+		}
+		a.responsesViaChat = true
+		return a.ConvertOpenAIRequest(c, info, chatRequest)
+	}
 	if isPromptCacheKeyRawEmpty(request.PromptCacheKey) {
 		promptCacheKey := extractPromptCacheKeyFromMetadata(request.Metadata)
 		if promptCacheKey != "" {
@@ -777,6 +793,12 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, request
 }
 
 func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (usage any, err *types.NewAPIError) {
+	if a.responsesViaChat {
+		if info.IsStream {
+			return OaiChatToResponsesStreamHandler(c, info, resp)
+		}
+		return OaiChatToResponsesHandler(c, info, resp)
+	}
 	switch info.RelayMode {
 	case relayconstant.RelayModeRealtime:
 		err, usage = OpenaiRealtimeHandler(c, info)

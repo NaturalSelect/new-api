@@ -1194,6 +1194,13 @@ func GetChannelsByType(startIdx int, num int, idSort bool, channelType int) ([]*
 	return channels, err
 }
 
+// GetEnabledChannelsByTypeWithKey returns the enabled channels of one type with their keys loaded.
+func GetEnabledChannelsByTypeWithKey(channelType int) ([]*Channel, error) {
+	var channels []*Channel
+	err := DB.Where("type = ? AND status = ?", channelType, common.ChannelStatusEnabled).Order("id asc").Find(&channels).Error
+	return channels, err
+}
+
 // Count channels of specific type
 func CountChannelsByType(channelType int) (int64, error) {
 	var count int64

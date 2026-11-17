@@ -17,7 +17,7 @@ func TestGetEndpointTypesByChannelTypeGeminiSpecialModels(t *testing.T) {
 	}{
 		{name: "gemini decision model", channelType: constant.ChannelTypeGemini, modelName: "gemini-decision-1", want: []constant.EndpointType{constant.EndpointTypeGeminiDecision}},
 		{name: "system one model on a gemini channel", channelType: constant.ChannelTypeGemini, modelName: "jev-latest", want: []constant.EndpointType{constant.EndpointTypeTypeSafe}},
-		{name: "chat model on a gemini channel", channelType: constant.ChannelTypeGemini, modelName: "gemini-2.0-flash", want: []constant.EndpointType{constant.EndpointTypeGemini, constant.EndpointTypeOpenAI}},
+		{name: "chat model on a gemini channel", channelType: constant.ChannelTypeGemini, modelName: "gemini-2.0-flash", want: []constant.EndpointType{constant.EndpointTypeGemini, constant.EndpointTypeOpenAI, constant.EndpointTypeOpenAIResponse}},
 		{name: "vertex keeps the chat endpoints", channelType: constant.ChannelTypeVertexAi, modelName: "gemini-decision-1", want: []constant.EndpointType{constant.EndpointTypeGemini, constant.EndpointTypeOpenAI}},
 		{name: "typesafe channel", channelType: constant.ChannelTypeTypeSafe, modelName: "jev-latest", want: []constant.EndpointType{constant.EndpointTypeTypeSafe}},
 		{name: "opencode go serves all three families", channelType: constant.ChannelTypeOpenCodeGo, modelName: "glm-5.3", want: []constant.EndpointType{constant.EndpointTypeOpenAI, constant.EndpointTypeOpenAIResponse, constant.EndpointTypeAnthropic}},

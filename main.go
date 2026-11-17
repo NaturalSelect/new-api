@@ -132,6 +132,11 @@ func main() {
 	// per-process in-memory cache)
 	service.StartCPASyncTask()
 
+	// OpenCode Go usage sync task (queries the usage of every enabled OpenCode Go
+	// key through its channel proxy; runs on every node since it maintains a
+	// per-process in-memory cache)
+	service.StartOCGOSyncTask()
+
 	// Token stats cache backfill task (backfills TokenStatsCache one historical day
 	// per tick, speeding up Token/Key Distribution dashboard reads)
 	service.StartTokenStatsBackfillTask()

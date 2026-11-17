@@ -46,6 +46,10 @@ func GetEndpointTypesByChannelType(channelType int, modelName string) []constant
 			}
 		}
 		endpointTypes = []constant.EndpointType{constant.EndpointTypeGemini, constant.EndpointTypeOpenAI}
+		// NOTE: Only the Gemini adaptor converts Responses requests, the Vertex AI adaptor does not.
+		if channelType == constant.ChannelTypeGemini {
+			endpointTypes = append(endpointTypes, constant.EndpointTypeOpenAIResponse)
+		}
 	case constant.ChannelTypeOpenRouter: // OpenRouter 只支持 OpenAI 端点
 		endpointTypes = []constant.EndpointType{constant.EndpointTypeOpenAI}
 	case constant.ChannelTypeXai:

@@ -76,6 +76,13 @@ export type CodexUsageResponse = {
   data?: Record<string, unknown>
 }
 
+export type OpenCodeGoUsageResponse = {
+  success: boolean
+  message?: string
+  upstream_status?: number
+  data?: Record<string, unknown>
+}
+
 export type CodexCredentialRefreshResponse = {
   success: boolean
   message?: string
@@ -357,6 +364,16 @@ export async function getCodexUsage(
 ): Promise<CodexUsageResponse> {
   const res = await api.get(
     `/api/channel/${channelId}/codex/usage`,
+    channelActionConfig({ disableDuplicate: true })
+  )
+  return res.data
+}
+
+export async function getOpenCodeGoUsage(
+  channelId: number
+): Promise<OpenCodeGoUsageResponse> {
+  const res = await api.get(
+    `/api/channel/${channelId}/opencode-go/usage`,
     channelActionConfig({ disableDuplicate: true })
   )
   return res.data

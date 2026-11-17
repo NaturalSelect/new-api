@@ -263,6 +263,7 @@ func SetApiRouter(router *gin.Engine) {
 			channelRoute.POST("/:id/codex/oauth/complete", controller.CompleteCodexOAuthForChannel)
 			channelRoute.POST("/:id/codex/refresh", controller.RefreshCodexChannelCredential)
 			channelRoute.GET("/:id/codex/usage", controller.GetCodexChannelUsage)
+			channelRoute.GET("/:id/opencode-go/usage", controller.GetOpenCodeGoChannelUsage)
 			channelRoute.POST("/ollama/pull", controller.OllamaPullModel)
 			channelRoute.POST("/ollama/pull/stream", controller.OllamaPullModelStream)
 			channelRoute.DELETE("/ollama/delete", controller.OllamaDeleteModel)
@@ -335,6 +336,8 @@ func SetApiRouter(router *gin.Engine) {
 		dataRoute.GET("/intelligence-scores", middleware.AdminAuth(), controller.GetIntelligenceScores)
 		dataRoute.GET("/cpa-usage", middleware.AdminAuth(), controller.GetCPAUsage)
 		dataRoute.POST("/cpa-usage/refresh", middleware.AdminAuth(), controller.RefreshCPAUsage)
+		dataRoute.GET("/ocgo-usage", middleware.AdminAuth(), controller.GetOCGOUsage)
+		dataRoute.POST("/ocgo-usage/refresh", middleware.AdminAuth(), controller.RefreshOCGOUsage)
 
 		logRoute.Use(middleware.CORS(), middleware.CriticalRateLimit())
 		{

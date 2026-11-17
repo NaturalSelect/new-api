@@ -191,6 +191,22 @@ export interface CPAUsageItem {
   observed_at: string
 }
 
+export interface OCGOUsageWindow {
+  status: string
+  percent: number
+  reset_at: string
+}
+
+export interface OCGOUsageItem {
+  id: string
+  channel_id: number
+  name: string
+  rolling?: OCGOUsageWindow
+  weekly?: OCGOUsageWindow
+  monthly?: OCGOUsageWindow
+  error?: string
+}
+
 
 // ============================================================================
 // Announcement Types

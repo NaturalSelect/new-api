@@ -32,13 +32,21 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { getCodexUsage, updateChannelBalance } from '../../api'
+import {
+  getCodexUsage,
+  getOpenCodeGoUsage,
+  updateChannelBalance,
+} from '../../api'
 import { channelsQueryKeys } from '../../lib'
 import { useChannels } from '../channels-provider'
 import {
   CodexUsageDialog,
   type CodexUsageDialogData,
 } from './codex-usage-dialog'
+import {
+  OpenCodeGoUsageDialog,
+  type OpenCodeGoUsageDialogData,
+} from './opencode-go-usage-dialog'
 
 type BalanceQueryDialogProps = {
   open: boolean
@@ -59,8 +67,11 @@ export function BalanceQueryDialog({
   )
   const [codexUsageResponse, setCodexUsageResponse] =
     useState<CodexUsageDialogData | null>(null)
+  const [goUsageResponse, setGoUsageResponse] =
+    useState<OpenCodeGoUsageDialogData | null>(null)
 
   const isCodex = currentRow?.type === 57
+  const isOpenCodeGo = currentRow?.type === 63
 
   const handleQueryCodexUsage = async () => {
     const row = currentRow
@@ -87,6 +98,32 @@ export function BalanceQueryDialog({
     handleQueryCodexUsage()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, isCodex])
+
+  const handleQueryOpenCodeGoUsage = async () => {
+    const row = currentRow
+    if (!row) return
+    setIsQuerying(true)
+    try {
+      const res = await getOpenCodeGoUsage(row.id)
+      if (!res.success) {
+        throw new Error(res.message || t('Failed to fetch usage'))
+      }
+      setGoUsageResponse(res)
+    } catch (error: unknown) {
+      toast.error(
+        error instanceof Error ? error.message : t('Failed to fetch usage')
+      )
+    } finally {
+      setIsQuerying(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!isOpenCodeGo) return
+    if (!open) return
+    handleQueryOpenCodeGoUsage()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, isOpenCodeGo])
 
   if (!currentRow) return null
 
@@ -129,6 +166,7 @@ export function BalanceQueryDialog({
     setBalance(null)
     setBalanceUpdatedTime(null)
     setCodexUsageResponse(null)
+    setGoUsageResponse(null)
     onOpenChange(false)
   }
 
@@ -155,6 +193,22 @@ export function BalanceQueryDialog({
         channelId={currentRow.id}
         response={codexUsageResponse}
         onRefresh={handleQueryCodexUsage}
+        isRefreshing={isQuerying}
+      />
+    )
+  }
+
+  if (isOpenCodeGo) {
+    return (
+      <OpenCodeGoUsageDialog
+        open={open}
+        onOpenChange={(v) => {
+          if (!v) handleClose()
+        }}
+        channelName={currentRow.name}
+        channelId={currentRow.id}
+        response={goUsageResponse}
+        onRefresh={handleQueryOpenCodeGoUsage}
         isRefreshing={isQuerying}
       />
     )

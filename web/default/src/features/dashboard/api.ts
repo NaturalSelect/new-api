@@ -21,6 +21,7 @@ import type {
   CPAUsageItem,
   IntelligenceScoreItem,
   KeyDistributionDataItem,
+  OCGOUsageItem,
   QuotaDataItem,
   TokenDistributionDataItem,
   UptimeGroupResult,
@@ -154,5 +155,32 @@ export async function refreshCPAUsage() {
       type_order: string[]
     }
   }>('/api/data/cpa-usage/refresh')
+  return res.data
+}
+
+// ----------------------------------------------------------------------------
+// OpenCode Go Usage
+// ----------------------------------------------------------------------------
+
+type OCGOUsageData = {
+  usage: OCGOUsageItem[]
+  updated_at: number
+  configured: boolean
+}
+
+export async function getOCGOUsage() {
+  const res = await api.get<{
+    success: boolean
+    data: OCGOUsageData
+  }>('/api/data/ocgo-usage')
+  return res.data
+}
+
+export async function refreshOCGOUsage() {
+  const res = await api.post<{
+    success: boolean
+    message: string
+    data?: OCGOUsageData
+  }>('/api/data/ocgo-usage/refresh')
   return res.data
 }

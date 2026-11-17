@@ -51,7 +51,7 @@ import { GroupBadge } from '@/components/group-badge'
 import { StatusBadge, StatusBadgeList } from '@/components/status-badge'
 import { TableId } from '@/components/table-id'
 import { TruncatedText } from '@/components/truncated-text'
-import { getCodexUsage } from '../api'
+import { getCodexUsage, getOpenCodeGoUsage } from '../api'
 import { CHANNEL_STATUS_CONFIG, MODEL_FETCHABLE_TYPES } from '../constants'
 import {
   formatBalance,
@@ -80,6 +80,10 @@ import {
   CodexUsageDialog,
   type CodexUsageDialogData,
 } from './dialogs/codex-usage-dialog'
+import {
+  OpenCodeGoUsageDialog,
+  type OpenCodeGoUsageDialogData,
+} from './dialogs/opencode-go-usage-dialog'
 import { NumericSpinnerInput } from './numeric-spinner-input'
 
 function parseIonetMeta(otherInfo: string | null | undefined): null | {
@@ -295,6 +299,11 @@ function BalanceCell({ channel }: { channel: Channel }) {
   const [codexUsageOpen, setCodexUsageOpen] = useState(false)
   const [codexUsageResponse, setCodexUsageResponse] =
     useState<CodexUsageDialogData | null>(null)
+  const [goUsageOpen, setGoUsageOpen] = useState(false)
+  const [goUsageResponse, setGoUsageResponse] =
+    useState<OpenCodeGoUsageDialogData | null>(null)
+  const isCodex = channel.type === 57
+  const isOpenCodeGo = channel.type === 63
   const currencyLabel = getCurrencyLabel()
   const tokenSuffix = currencyLabel === 'Tokens' ? ' Tokens' : ''
   const withSuffix = (value: string) =>
@@ -325,7 +334,7 @@ function BalanceCell({ channel }: { channel: Channel }) {
     if (isUpdating) return
 
     setIsUpdating(true)
-    if (channel.type === 57) {
+    if (isCodex) {
       try {
         const res = await getCodexUsage(channel.id)
         if (!res.success) {
@@ -333,6 +342,24 @@ function BalanceCell({ channel }: { channel: Channel }) {
         }
         setCodexUsageResponse(res)
         setCodexUsageOpen(true)
+      } catch (error) {
+        toast.error(
+          error instanceof Error ? error.message : t('Failed to fetch usage')
+        )
+      } finally {
+        setIsUpdating(false)
+      }
+      return
+    }
+
+    if (isOpenCodeGo) {
+      try {
+        const res = await getOpenCodeGoUsage(channel.id)
+        if (!res.success) {
+          throw new Error(res.message || t('Failed to fetch usage'))
+        }
+        setGoUsageResponse(res)
+        setGoUsageOpen(true)
       } catch (error) {
         toast.error(
           error instanceof Error ? error.message : t('Failed to fetch usage')
@@ -374,12 +401,14 @@ function BalanceCell({ channel }: { channel: Channel }) {
                 label={
                   isUpdating
                     ? t('Updating...')
-                    : channel.type === 57
+                    : isCodex
                       ? t('Account Info')
-                      : remainingDisplay
+                      : isOpenCodeGo
+                        ? t('Usage')
+                        : remainingDisplay
                 }
                 variant={
-                  channel.type === 57
+                  isCodex || isOpenCodeGo
                     ? 'info'
                     : isUpdating
                       ? 'neutral'
@@ -395,11 +424,13 @@ function BalanceCell({ channel }: { channel: Channel }) {
           />
           <TooltipContent>
             <p>
-              {channel.type === 57
+              {isCodex
                 ? t('Click to view Codex usage')
-                : remainingLabel}
+                : isOpenCodeGo
+                  ? t('Click to view OpenCode Go usage')
+                  : remainingLabel}
             </p>
-            {channel.type !== 57 && <p>{t('Click to update balance')}</p>}
+            {!isCodex && !isOpenCodeGo && <p>{t('Click to update balance')}</p>}
           </TooltipContent>
         </Tooltip>
       </div>
@@ -419,6 +450,34 @@ function BalanceCell({ channel }: { channel: Channel }) {
               throw new Error(res.message || t('Failed to fetch usage'))
             }
             setCodexUsageResponse(res)
+          } catch (error) {
+            toast.error(
+              error instanceof Error
+                ? error.message
+                : t('Failed to fetch usage')
+            )
+          } finally {
+            setIsUpdating(false)
+          }
+        }}
+        isRefreshing={isUpdating}
+      />
+
+      <OpenCodeGoUsageDialog
+        open={goUsageOpen}
+        onOpenChange={setGoUsageOpen}
+        channelName={channel.name}
+        channelId={channel.id}
+        response={goUsageResponse}
+        onRefresh={async () => {
+          if (isUpdating) return
+          setIsUpdating(true)
+          try {
+            const res = await getOpenCodeGoUsage(channel.id)
+            if (!res.success) {
+              throw new Error(res.message || t('Failed to fetch usage'))
+            }
+            setGoUsageResponse(res)
           } catch (error) {
             toast.error(
               error instanceof Error

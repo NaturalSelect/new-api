@@ -108,6 +108,12 @@ const LazyCPAUsagePanel = lazy(() =>
   }))
 )
 
+const LazyOCGOUsagePanel = lazy(() =>
+  import('./components/ocgo/ocgo-usage-panel').then((m) => ({
+    default: m.OCGOUsagePanel,
+  }))
+)
+
 function LogStatCardsFallback() {
   return (
     <div className='overflow-hidden rounded-lg border'>
@@ -398,6 +404,13 @@ export function Dashboard() {
                 <FadeIn delay={0.25}>
                   <Suspense fallback={<ModelChartsFallback />}>
                     <LazyCPAUsagePanel />
+                  </Suspense>
+                </FadeIn>
+              )}
+              {isAdmin && (
+                <FadeIn delay={0.3}>
+                  <Suspense fallback={null}>
+                    <LazyOCGOUsagePanel />
                   </Suspense>
                 </FadeIn>
               )}

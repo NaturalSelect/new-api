@@ -8,6 +8,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/service"
 )
 
 func TestConvertOpenAIRequestPoeCopiesUnsupportedParamsToExtraBody(t *testing.T) {
@@ -381,6 +382,117 @@ func TestConvertOpenAIRequestPoeAutoPromptCacheRetentionUsesExtraBody(t *testing
 	}
 	extraBody := unmarshalRawObject(t, requestMap["extra_body"])
 	assertRawJSONEqual(t, extraBody["prompt_cache_retention"], `"24h"`)
+}
+
+func setPoeModelParamsForTest(t *testing.T, params map[string]map[string][]string) {
+	t.Helper()
+	service.SetPoeModelParams(params)
+	t.Cleanup(func() { service.SetPoeModelParams(nil) })
+}
+
+func TestConvertOpenAIRequestPoeRenamesReasoningEffortToThinkingLevel(t *testing.T) {
+	setPoeModelParamsForTest(t, map[string]map[string][]string{
+		"gemini-3.1-pro": {"thinking_level": {"low", "high"}, "web_search": {}},
+	})
+	info := newPoeRelayInfo()
+	info.UpstreamModelName = "Gemini-3.1-Pro"
+
+	request := &dto.GeneralOpenAIRequest{
+		Model:           "Gemini-3.1-Pro",
+		Messages:        []dto.Message{{Role: "user", Content: "hi"}},
+		ReasoningEffort: "medium",
+		ExtraBody:       json.RawMessage(`{"web_search":true}`),
+	}
+
+	converted, err := (&Adaptor{}).ConvertOpenAIRequest(nil, info, request)
+	if err != nil {
+		t.Fatalf("ConvertOpenAIRequest returned error: %v", err)
+	}
+
+	convertedRequest := converted.(*dto.GeneralOpenAIRequest)
+	if convertedRequest.ReasoningEffort != "" {
+		t.Fatalf("ReasoningEffort = %q, want it removed", convertedRequest.ReasoningEffort)
+	}
+	extraBody := unmarshalRawObject(t, convertedRequest.ExtraBody)
+	assertRawJSONEqual(t, extraBody["thinking_level"], `"high"`)
+	assertRawJSONEqual(t, extraBody["web_search"], `true`)
+	if _, ok := extraBody["reasoning_effort"]; ok {
+		t.Fatalf("extra_body must not contain reasoning_effort: %s", extraBody["reasoning_effort"])
+	}
+}
+
+func TestConvertOpenAIRequestPoeKeepsExplicitThinkingLevel(t *testing.T) {
+	setPoeModelParamsForTest(t, map[string]map[string][]string{
+		"gemini-3.1-pro": {"thinking_level": {"low", "high"}},
+	})
+	info := newPoeRelayInfo()
+	info.UpstreamModelName = "gemini-3.1-pro"
+
+	request := &dto.GeneralOpenAIRequest{
+		Model:           "gemini-3.1-pro",
+		Messages:        []dto.Message{{Role: "user", Content: "hi"}},
+		ReasoningEffort: "high",
+		ExtraBody:       json.RawMessage(`{"thinking_level":"low"}`),
+	}
+
+	converted, err := (&Adaptor{}).ConvertOpenAIRequest(nil, info, request)
+	if err != nil {
+		t.Fatalf("ConvertOpenAIRequest returned error: %v", err)
+	}
+
+	convertedRequest := converted.(*dto.GeneralOpenAIRequest)
+	extraBody := unmarshalRawObject(t, convertedRequest.ExtraBody)
+	assertRawJSONEqual(t, extraBody["thinking_level"], `"low"`)
+	if _, ok := extraBody["reasoning_effort"]; ok {
+		t.Fatalf("extra_body must not contain reasoning_effort: %s", extraBody["reasoning_effort"])
+	}
+}
+
+func TestConvertOpenAIRequestPoeClampsNativeReasoningEffort(t *testing.T) {
+	setPoeModelParamsForTest(t, map[string]map[string][]string{
+		"grok-4.7": {"reasoning_effort": {"low", "medium", "high", "xhigh"}},
+	})
+	info := newPoeRelayInfo()
+	info.UpstreamModelName = "grok-4.7"
+
+	request := &dto.GeneralOpenAIRequest{
+		Model:           "grok-4.7",
+		Messages:        []dto.Message{{Role: "user", Content: "hi"}},
+		ReasoningEffort: "minimal",
+	}
+
+	converted, err := (&Adaptor{}).ConvertOpenAIRequest(nil, info, request)
+	if err != nil {
+		t.Fatalf("ConvertOpenAIRequest returned error: %v", err)
+	}
+
+	extraBody := unmarshalRawObject(t, converted.(*dto.GeneralOpenAIRequest).ExtraBody)
+	assertRawJSONEqual(t, extraBody["reasoning_effort"], `"low"`)
+}
+
+func TestConvertOpenAIRequestPoeLeavesUnknownModelUntouched(t *testing.T) {
+	setPoeModelParamsForTest(t, map[string]map[string][]string{
+		"gemini-3.1-pro": {"thinking_level": {"low", "high"}},
+	})
+	info := newPoeRelayInfo()
+	info.UpstreamModelName = "some-community-bot"
+
+	request := &dto.GeneralOpenAIRequest{
+		Model:           "some-community-bot",
+		Messages:        []dto.Message{{Role: "user", Content: "hi"}},
+		ReasoningEffort: "medium",
+	}
+
+	converted, err := (&Adaptor{}).ConvertOpenAIRequest(nil, info, request)
+	if err != nil {
+		t.Fatalf("ConvertOpenAIRequest returned error: %v", err)
+	}
+
+	extraBody := unmarshalRawObject(t, converted.(*dto.GeneralOpenAIRequest).ExtraBody)
+	assertRawJSONEqual(t, extraBody["reasoning_effort"], `"medium"`)
+	if _, ok := extraBody["thinking_level"]; ok {
+		t.Fatalf("thinking_level must not be injected for unknown models")
+	}
 }
 
 func newPoeRelayInfo() *relaycommon.RelayInfo {

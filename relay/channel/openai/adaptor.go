@@ -407,6 +407,9 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 	if info.ChannelType == constant.ChannelTypePoeOpenAI {
 		one := 1
 		request.N = &one
+		if err := adaptPoeReasoningParam(request, info.UpstreamModelName); err != nil {
+			return nil, err
+		}
 		if err := mergePoeUnsupportedParamsToExtraBody(request); err != nil {
 			return nil, err
 		}
@@ -672,6 +675,46 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommo
 	}
 
 	return request, nil
+}
+
+// adaptPoeReasoningParam renames reasoning_effort to the parameter the target Poe
+// model declares (for example thinking_level on Gemini) using the cached model list.
+func adaptPoeReasoningParam(request *dto.GeneralOpenAIRequest, modelName string) error {
+	if request.ReasoningEffort == "" {
+		return nil
+	}
+	name, value, ok := service.ResolvePoeReasoningParam(modelName, request.ReasoningEffort)
+	if !ok {
+		return nil
+	}
+	if name == "reasoning_effort" {
+		request.ReasoningEffort = value
+		return nil
+	}
+
+	extraBodyMap := make(map[string]json.RawMessage)
+	if len(request.ExtraBody) > 0 {
+		if err := common.Unmarshal(request.ExtraBody, &extraBodyMap); err != nil {
+			return fmt.Errorf("error unmarshalling extra_body: %w", err)
+		}
+		if extraBodyMap == nil {
+			extraBodyMap = make(map[string]json.RawMessage)
+		}
+	}
+	if _, explicit := extraBodyMap[name]; !explicit {
+		valueJSON, err := common.Marshal(value)
+		if err != nil {
+			return fmt.Errorf("error marshalling %s: %w", name, err)
+		}
+		extraBodyMap[name] = valueJSON
+		mergedExtraBody, err := common.Marshal(extraBodyMap)
+		if err != nil {
+			return fmt.Errorf("error marshalling extra_body: %w", err)
+		}
+		request.ExtraBody = mergedExtraBody
+	}
+	request.ReasoningEffort = ""
+	return nil
 }
 
 func mergePoeUnsupportedParamsToExtraBody(request *dto.GeneralOpenAIRequest) error {

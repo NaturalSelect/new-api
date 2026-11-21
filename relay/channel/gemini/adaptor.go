@@ -264,6 +264,7 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommo
 	if err != nil {
 		return nil, err
 	}
+	restoreResponsesThoughtSignatures(chatRequest, request.Input, info.UpstreamModelName)
 	return CovertOpenAI2Gemini(c, *chatRequest, info)
 }
 

@@ -20,6 +20,7 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/service/openaicompat"
 	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/setting/reasoning"
 	"github.com/QuantumNous/new-api/types"
@@ -511,6 +512,12 @@ func CovertOpenAI2Gemini(c *gin.Context, textRequest dto.GeneralOpenAIRequest, i
 						FunctionName: call.Function.Name,
 						Arguments:    args,
 					},
+				}
+				if signature := openaicompat.ThoughtSignatureFromExtraContent(call.ExtraContent); signature != "" {
+					if raw, err := common.Marshal(signature); err == nil {
+						toolCall.ThoughtSignature = raw
+						signatureAttached = true
+					}
 				}
 				if shouldAttachThoughtSignature && !signatureAttached && hasFunctionCallContent(toolCall.FunctionCall) && len(toolCall.ThoughtSignature) == 0 {
 					toolCall.ThoughtSignature = json.RawMessage(strconv.Quote(thoughtSignatureBypassValue))

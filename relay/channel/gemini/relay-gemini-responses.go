@@ -33,6 +33,8 @@ type geminiResponsesItem struct {
 	outputIndex int
 	callID      string
 	name        string
+	// NOTE: encrypted is the replayable encrypted_content of a reasoning item, empty when the client did not ask for it.
+	encrypted string
 	// NOTE: text holds the reasoning summary, message text, function arguments or custom tool input, depending on kind.
 	text strings.Builder
 }
@@ -46,10 +48,14 @@ func (it *geminiResponsesItem) toMap(done bool) map[string]any {
 	switch it.kind {
 	case responsesItemReasoning:
 		summary := []any{}
-		if done {
+		if done && text != "" {
 			summary = append(summary, map[string]any{"type": "summary_text", "text": text})
 		}
-		return map[string]any{"type": it.kind, "id": it.id, "summary": summary}
+		obj := map[string]any{"type": it.kind, "id": it.id, "summary": summary}
+		if done && it.encrypted != "" {
+			obj["encrypted_content"] = it.encrypted
+		}
+		return obj
 	case responsesItemMessage:
 		content := []any{}
 		if done {
@@ -78,6 +84,8 @@ type geminiResponsesTranscoder struct {
 	createdAt   int64
 	customTools map[string]struct{}
 
+	encryptReasoning bool
+
 	seq          int
 	started      bool
 	items        []*geminiResponsesItem
@@ -96,6 +104,7 @@ func newGeminiResponsesTranscoder(c *gin.Context, info *relaycommon.RelayInfo, s
 		customTools: make(map[string]struct{}),
 	}
 	t.request, _ = info.Request.(*dto.OpenAIResponsesRequest)
+	t.encryptReasoning = responsesIncludesEncryptedReasoning(t.request)
 	if t.request != nil {
 		for _, tool := range t.request.GetToolsMap() {
 			if tool["type"] != "custom" {
@@ -154,7 +163,7 @@ func (t *geminiResponsesTranscoder) consume(gr *dto.GeminiChatResponse) {
 func (t *geminiResponsesTranscoder) addPart(part *dto.GeminiPart) {
 	switch {
 	case part.FunctionCall != nil:
-		t.addToolCall(part.FunctionCall)
+		t.addToolCall(part.FunctionCall, geminiPartSignature(part))
 	case part.Thought:
 		if part.Text != "" {
 			t.appendText(responsesItemReasoning, part.Text)
@@ -209,7 +218,24 @@ func (t *geminiResponsesTranscoder) appendText(kind, delta string) {
 	t.emit(eventType, fields)
 }
 
-func (t *geminiResponsesTranscoder) addToolCall(call *dto.FunctionCall) {
+// NOTE: Gemini signs the first function call of a step, so its signature rides on the reasoning item placed in front of that call.
+func (t *geminiResponsesTranscoder) carrySignature(signature string) {
+	if signature == "" || !t.encryptReasoning {
+		return
+	}
+	encrypted := encodeEncryptedReasoning(t.info.UpstreamModelName, signature)
+	if t.current != nil && t.current.kind == responsesItemReasoning {
+		t.current.encrypted = encrypted
+		return
+	}
+	t.closeCurrent()
+	it := t.newItem(responsesItemReasoning, "", "")
+	it.encrypted = encrypted
+	t.closeItem(it)
+}
+
+func (t *geminiResponsesTranscoder) addToolCall(call *dto.FunctionCall, signature string) {
+	t.carrySignature(signature)
 	t.closeCurrent()
 
 	_, isCustom := t.customTools[call.FunctionName]
@@ -255,7 +281,7 @@ func geminiCustomToolInput(args any) string {
 	return string(b)
 }
 
-func (t *geminiResponsesTranscoder) openItem(kind, callID, name string) *geminiResponsesItem {
+func (t *geminiResponsesTranscoder) newItem(kind, callID, name string) *geminiResponsesItem {
 	prefix := "msg_"
 	switch kind {
 	case responsesItemReasoning:
@@ -275,6 +301,11 @@ func (t *geminiResponsesTranscoder) openItem(kind, callID, name string) *geminiR
 	t.items = append(t.items, it)
 
 	t.emit("response.output_item.added", map[string]any{"output_index": it.outputIndex, "item": it.toMap(false)})
+	return it
+}
+
+func (t *geminiResponsesTranscoder) openItem(kind, callID, name string) *geminiResponsesItem {
+	it := t.newItem(kind, callID, name)
 	switch kind {
 	case responsesItemReasoning:
 		t.emit("response.reasoning_summary_part.added", map[string]any{
@@ -303,6 +334,10 @@ func (t *geminiResponsesTranscoder) closeItem(it *geminiResponsesItem) {
 	text := it.text.String()
 	switch it.kind {
 	case responsesItemReasoning:
+		// NOTE: A reasoning item that only carries a signature has no summary part to close.
+		if text == "" {
+			break
+		}
 		t.emit("response.reasoning_summary_text.done", map[string]any{
 			"item_id": it.id, "output_index": it.outputIndex, "summary_index": 0, "text": text,
 		})

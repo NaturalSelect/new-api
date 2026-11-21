@@ -1,6 +1,8 @@
 package openaicompat
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -12,6 +14,29 @@ func TestThoughtSignatureExtraContentRoundTrip(t *testing.T) {
 	raw := ExtraContentFromThoughtSignature("AY89a1+/=")
 	require.JSONEq(t, `{"google":{"thought_signature":"AY89a1+/="}}`, string(raw))
 	require.Equal(t, "AY89a1+/=", ThoughtSignatureFromExtraContent(raw))
+}
+
+func TestResponsesCallSignaturesBindsToTheNextCall(t *testing.T) {
+	decode := func(encrypted string) (string, bool) {
+		signature, ok := strings.CutPrefix(encrypted, "sig:")
+		return signature, ok
+	}
+	input := json.RawMessage(`[
+		{"type":"message","role":"user","content":"hi"},
+		{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"sig:A"},
+		{"type":"function_call","call_id":"call_a","name":"f","arguments":"{}"},
+		{"type":"function_call","call_id":"call_b","name":"f","arguments":"{}"},
+		{"type":"function_call_output","call_id":"call_a","output":"ok"},
+		{"type":"reasoning","id":"rs_2","summary":[],"encrypted_content":"foreign-ciphertext"},
+		{"type":"custom_tool_call","call_id":"call_c","name":"p","input":"x"},
+		{"type":"reasoning","id":"rs_3","summary":[],"encrypted_content":"sig:D"},
+		{"type":"message","role":"assistant","content":"done"},
+		{"type":"function_call","call_id":"call_d","name":"f","arguments":"{}"}
+	]`)
+
+	require.Equal(t, map[string]string{"call_a": "A"}, ResponsesCallSignatures(input, decode))
+	require.Nil(t, ResponsesCallSignatures(json.RawMessage(`"hi"`), decode))
+	require.Nil(t, ResponsesCallSignatures(nil, decode))
 }
 
 func TestThoughtSignatureHelpersIgnoreMissingOrMalformedInput(t *testing.T) {

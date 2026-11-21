@@ -496,6 +496,17 @@ func CovertOpenAI2Gemini(c *gin.Context, textRequest dto.GeneralOpenAIRequest, i
 		}
 		shouldAttachThoughtSignature := attachThoughtSignature && (message.Role == "assistant" || message.Role == "model")
 		signatureAttached := false
+		if message.Role == "assistant" || message.Role == "model" {
+			// NOTE: Signed thought summaries lead the model turn, as they did when Gemini produced them.
+			for _, thought := range openaicompat.ThoughtsFromExtraContent(message.ExtraContent) {
+				if thought.Text == "" || thought.ThoughtSignature == "" {
+					continue
+				}
+				if raw, err := common.Marshal(thought.ThoughtSignature); err == nil {
+					parts = append(parts, dto.GeminiPart{Text: thought.Text, Thought: true, ThoughtSignature: raw})
+				}
+			}
+		}
 		// isToolCall := false
 		if message.ToolCalls != nil {
 			// message.Role = "model"
@@ -608,7 +619,7 @@ func CovertOpenAI2Gemini(c *gin.Context, textRequest dto.GeneralOpenAIRequest, i
 		if signature := openaicompat.ThoughtSignatureFromExtraContent(message.ExtraContent); signature != "" {
 			if raw, err := common.Marshal(signature); err == nil {
 				for i := range parts {
-					if parts[i].FunctionCall == nil {
+					if parts[i].FunctionCall == nil && !parts[i].Thought {
 						parts[i].ThoughtSignature = raw
 						signatureAttached = true
 						break
@@ -621,7 +632,7 @@ func CovertOpenAI2Gemini(c *gin.Context, textRequest dto.GeneralOpenAIRequest, i
 		// 则在第一个文本 part 上附加 thoughtSignature
 		if shouldAttachThoughtSignature && !signatureAttached && len(parts) > 0 {
 			for i := range parts {
-				if parts[i].Text != "" {
+				if parts[i].Text != "" && !parts[i].Thought {
 					parts[i].ThoughtSignature = json.RawMessage(strconv.Quote(thoughtSignatureBypassValue))
 					break
 				}

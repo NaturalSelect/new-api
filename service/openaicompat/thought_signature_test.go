@@ -1,6 +1,7 @@
 package openaicompat
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -15,17 +16,23 @@ func TestThoughtSignatureExtraContentRoundTrip(t *testing.T) {
 	require.Equal(t, "AY89a1+/=", ThoughtSignatureFromExtraContent(raw))
 }
 
-func testSignatureDecoder(encrypted string) (string, bool, bool) {
-	if signature, ok := strings.CutPrefix(encrypted, "call:"); ok {
-		return signature, false, true
+func testSignatureDecoder(encrypted string) (string, ReasoningSignatureKind) {
+	for prefix, kind := range map[string]ReasoningSignatureKind{
+		"call:":    ReasoningSignatureForCall,
+		"msg:":     ReasoningSignatureForMessage,
+		"thought:": ReasoningSignatureForThought,
+	} {
+		if signature, ok := strings.CutPrefix(encrypted, prefix); ok {
+			return signature, kind
+		}
 	}
-	signature, ok := strings.CutPrefix(encrypted, "msg:")
-	return signature, true, ok
+	return "", ReasoningSignatureNone
 }
 
 func TestResponsesInputBindsReasoningSignatures(t *testing.T) {
 	req := parseResponsesRequest(t, `{"model":"m","input":[
 		{"type":"message","role":"user","content":"hi"},
+		{"type":"reasoning","id":"rs_0","summary":[{"type":"summary_text","text":"plan"}],"encrypted_content":"thought:T1"},
 		{"type":"message","role":"assistant","content":[{"type":"output_text","text":"checking"}]},
 		{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"msg:M"},
 		{"type":"reasoning","id":"rs_2","summary":[],"encrypted_content":"call:A"},
@@ -34,11 +41,14 @@ func TestResponsesInputBindsReasoningSignatures(t *testing.T) {
 		{"type":"function_call_output","call_id":"call_a","output":"ok"},
 		{"type":"function_call_output","call_id":"call_b","output":"ok"},
 		{"type":"reasoning","id":"rs_3","summary":[],"encrypted_content":"foreign-ciphertext"},
+		{"type":"reasoning","id":"rs_3b","summary":[{"type":"summary_text","text":"more"},{"type":"summary_text","text":"plan"}],"encrypted_content":"thought:T2"},
 		{"type":"custom_tool_call","call_id":"call_c","name":"p","input":"x"},
+		{"type":"reasoning","id":"rs_3c","summary":[],"encrypted_content":"thought:T3"},
 		{"type":"message","role":"assistant","content":[{"type":"output_text","text":"done"}]},
 		{"type":"reasoning","id":"rs_4","summary":[],"encrypted_content":"msg:D"},
 		{"type":"reasoning","id":"rs_5","summary":[],"encrypted_content":"msg:E"},
 		{"type":"reasoning","id":"rs_6","summary":[],"encrypted_content":"call:Z"},
+		{"type":"reasoning","id":"rs_6b","summary":[{"type":"summary_text","text":"lost"}],"encrypted_content":"thought:T4"},
 		{"type":"message","role":"user","content":"again"},
 		{"type":"reasoning","id":"rs_7","summary":[],"encrypted_content":"msg:X"}
 	]}`)
@@ -48,15 +58,17 @@ func TestResponsesInputBindsReasoningSignatures(t *testing.T) {
 	require.Len(t, out.Messages, 7)
 
 	require.Equal(t, "M", ThoughtSignatureFromExtraContent(out.Messages[1].ExtraContent))
+	require.Equal(t, []ReasoningThought{{Text: "plan", ThoughtSignature: "T1"}}, ThoughtsFromExtraContent(out.Messages[1].ExtraContent))
 	calls := out.Messages[1].ParseToolCalls()
 	require.Len(t, calls, 2)
 	require.Equal(t, "A", ThoughtSignatureFromExtraContent(calls[0].ExtraContent))
 	require.Empty(t, calls[1].ExtraContent)
 
-	require.Empty(t, out.Messages[4].ExtraContent)
+	require.Equal(t, []ReasoningThought{{Text: "more\nplan", ThoughtSignature: "T2"}}, ThoughtsFromExtraContent(out.Messages[4].ExtraContent))
 	require.Empty(t, out.Messages[4].ParseToolCalls()[0].ExtraContent)
 	require.Equal(t, "D", ThoughtSignatureFromExtraContent(out.Messages[5].ExtraContent))
-	require.Empty(t, out.Messages[6].ExtraContent)
+	require.Empty(t, ThoughtsFromExtraContent(out.Messages[5].ExtraContent), "a thought without summary text has nothing to replay")
+	require.Empty(t, out.Messages[6].ExtraContent, "signatures never move onto a user message")
 
 	plain, err := ResponsesRequestToChatCompletionsRequest(req)
 	require.NoError(t, err)
@@ -67,6 +79,18 @@ func TestResponsesInputBindsReasoningSignatures(t *testing.T) {
 			require.Empty(t, call.ExtraContent)
 		}
 	}
+}
+
+func TestWithGoogleExtraKeepsOtherFields(t *testing.T) {
+	thoughts := []ReasoningThought{{Text: "t", ThoughtSignature: "X"}}
+
+	merged := withGoogleExtra(json.RawMessage(`{"google":{"thought_signature":"S"},"other":{"k":1}}`), "thoughts", thoughts)
+	require.JSONEq(t, `{"google":{"thought_signature":"S","thoughts":[{"text":"t","thought_signature":"X"}]},"other":{"k":1}}`, string(merged))
+
+	require.JSONEq(t, `{"google":{"thoughts":[{"text":"t","thought_signature":"X"}]}}`, string(withGoogleExtra(nil, "thoughts", thoughts)))
+	require.JSONEq(t, `{"google":{"thoughts":[{"text":"t","thought_signature":"X"}]}}`, string(withGoogleExtra(json.RawMessage(`not json`), "thoughts", thoughts)))
+	require.Empty(t, ThoughtsFromExtraContent(nil))
+	require.Empty(t, ThoughtsFromExtraContent(json.RawMessage(`{"google":{"thoughts":"x"}}`)))
 }
 
 func TestThoughtSignatureHelpersIgnoreMissingOrMalformedInput(t *testing.T) {

@@ -15,6 +15,7 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/service/openaicompat"
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
@@ -166,9 +167,7 @@ func (t *geminiResponsesTranscoder) addPart(part *dto.GeminiPart) {
 	case part.FunctionCall != nil:
 		t.addToolCall(part.FunctionCall, signature)
 	case part.Thought:
-		if part.Text != "" {
-			t.appendText(responsesItemReasoning, part.Text)
-		}
+		t.addThoughtPart(part.Text, signature)
 	default:
 		if text := geminiPartVisibleText(part); text != "" {
 			if part.Text == "" && t.current != nil && t.current.kind == responsesItemMessage {
@@ -218,12 +217,24 @@ func (t *geminiResponsesTranscoder) appendText(kind, delta string) {
 	t.emit(eventType, fields)
 }
 
+// NOTE: A signed thought summary ends its reasoning item, so each signature stays with the text it was issued for.
+func (t *geminiResponsesTranscoder) addThoughtPart(text, signature string) {
+	if text != "" {
+		t.appendText(responsesItemReasoning, text)
+	}
+	if signature == "" || !t.encryptReasoning || t.current == nil || t.current.kind != responsesItemReasoning {
+		return
+	}
+	t.current.encrypted = encodeEncryptedReasoning(openaicompat.ReasoningSignatureForThought, t.info.UpstreamModelName, signature)
+	t.closeCurrent()
+}
+
 // NOTE: Gemini signs the first function call of a step, so its signature rides on the reasoning item placed in front of that call.
 func (t *geminiResponsesTranscoder) carrySignature(signature string) {
 	if signature == "" || !t.encryptReasoning {
 		return
 	}
-	encrypted := encodeEncryptedReasoning(callSignaturePrefix, t.info.UpstreamModelName, signature)
+	encrypted := encodeEncryptedReasoning(openaicompat.ReasoningSignatureForCall, t.info.UpstreamModelName, signature)
 	if t.current != nil && t.current.kind == responsesItemReasoning {
 		t.current.encrypted = encrypted
 		return
@@ -242,7 +253,7 @@ func (t *geminiResponsesTranscoder) carryMessageSignature(signature string) {
 	}
 	t.closeCurrent()
 	it := t.newItem(responsesItemReasoning, "", "")
-	it.encrypted = encodeEncryptedReasoning(messageSignaturePrefix, t.info.UpstreamModelName, signature)
+	it.encrypted = encodeEncryptedReasoning(openaicompat.ReasoningSignatureForMessage, t.info.UpstreamModelName, signature)
 	t.closeItem(it)
 }
 

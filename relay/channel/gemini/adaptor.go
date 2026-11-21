@@ -260,7 +260,7 @@ func (a *Adaptor) ConvertEmbeddingRequest(c *gin.Context, info *relaycommon.Rela
 }
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
-	chatRequest, err := openaicompat.ResponsesRequestToChatCompletionsRequestWithSignatures(&request, func(encrypted string) (string, bool, bool) {
+	chatRequest, err := openaicompat.ResponsesRequestToChatCompletionsRequestWithSignatures(&request, func(encrypted string) (string, openaicompat.ReasoningSignatureKind) {
 		return decodeEncryptedReasoning(info.UpstreamModelName, encrypted)
 	})
 	if err != nil {

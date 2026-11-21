@@ -1,45 +1,69 @@
 package gemini
 
 import (
+	"encoding/base64"
 	"slices"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/service/openaicompat"
 )
 
-const (
-	includeEncryptedReasoning = "reasoning.encrypted_content"
-	// NOTE: encrypted_content values issued by this channel start with one of these markers, so content from other providers is never mistaken for a Gemini signature.
-	// The first marks the signature of the tool call after the item, the second that of the message before it.
-	callSignaturePrefix    = "gemini-sig-v1:"
-	messageSignaturePrefix = "gemini-msg-sig-v1:"
-)
+const includeEncryptedReasoning = "reasoning.encrypted_content"
 
-// encodeEncryptedReasoning binds a Gemini thought signature to the model that issued it.
-func encodeEncryptedReasoning(prefix, model, signature string) string {
-	return prefix + model + ":" + signature
+// NOTE: encrypted_content values issued by this channel start with one of these markers, so content from other providers is never mistaken for a Gemini signature.
+var signatureMarkers = []struct {
+	prefix string
+	kind   openaicompat.ReasoningSignatureKind
+}{
+	{"gemini-sig-v1:", openaicompat.ReasoningSignatureForCall},
+	{"gemini-msg-sig-v1:", openaicompat.ReasoningSignatureForMessage},
+	{"gemini-thought-sig-v1:", openaicompat.ReasoningSignatureForThought},
 }
 
-// decodeEncryptedReasoning returns the signature only when it was issued by the same model.
-// NOTE: Gemini rejects signatures from another model, so those fall back to the placeholder signature instead.
-func decodeEncryptedReasoning(model, encrypted string) (signature string, forMessage, ok bool) {
-	rest, ok := strings.CutPrefix(encrypted, callSignaturePrefix)
-	if !ok {
-		if rest, ok = strings.CutPrefix(encrypted, messageSignaturePrefix); !ok {
-			return "", false, false
+// encodeEncryptedReasoning binds a Gemini thought signature to the model that issued it.
+func encodeEncryptedReasoning(kind openaicompat.ReasoningSignatureKind, model, signature string) string {
+	for _, marker := range signatureMarkers {
+		if marker.kind == kind {
+			return marker.prefix + model + ":" + signature
 		}
-		forMessage = true
 	}
-	sep := strings.LastIndex(rest, ":")
-	if sep < 0 {
-		return "", false, false
+	return ""
+}
+
+// decodeEncryptedReasoning returns the signature only when this channel issued it for the same model
+// and it is well-formed base64.
+// NOTE: Gemini rejects signatures from another model or with a broken encoding, so those fall back to the placeholder signature instead.
+func decodeEncryptedReasoning(model, encrypted string) (string, openaicompat.ReasoningSignatureKind) {
+	for _, marker := range signatureMarkers {
+		rest, ok := strings.CutPrefix(encrypted, marker.prefix)
+		if !ok {
+			continue
+		}
+		sep := strings.LastIndex(rest, ":")
+		if sep < 0 {
+			return "", openaicompat.ReasoningSignatureNone
+		}
+		issuer, signature := rest[:sep], rest[sep+1:]
+		if !strings.EqualFold(issuer, model) || !isBase64Signature(signature) {
+			return "", openaicompat.ReasoningSignatureNone
+		}
+		return signature, marker.kind
 	}
-	issuer, signature := rest[:sep], rest[sep+1:]
-	if signature == "" || !strings.EqualFold(issuer, model) {
-		return "", false, false
+	return "", openaicompat.ReasoningSignatureNone
+}
+
+func isBase64Signature(signature string) bool {
+	if signature == "" {
+		return false
 	}
-	return signature, forMessage, true
+	for _, encoding := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding} {
+		if _, err := encoding.DecodeString(signature); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 func geminiPartSignature(part *dto.GeminiPart) string {

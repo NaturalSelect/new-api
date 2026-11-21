@@ -14,10 +14,22 @@ import (
 // with when the upstream only understands JSON-schema function tools.
 const CustomToolInputKey = "input"
 
+// ReasoningSignatureKind tells which part of a replayed turn a reasoning item's signature belongs to.
+type ReasoningSignatureKind int
+
+const (
+	ReasoningSignatureNone ReasoningSignatureKind = iota
+	// ReasoningSignatureForCall signs the tool call behind the reasoning item.
+	ReasoningSignatureForCall
+	// ReasoningSignatureForMessage signs the assistant message in front of the reasoning item.
+	ReasoningSignatureForMessage
+	// ReasoningSignatureForThought signs the summary text of the reasoning item itself.
+	ReasoningSignatureForThought
+)
+
 // ReasoningSignatureDecoder recognizes the encrypted_content a channel issued for a reasoning item.
-// forMessage reports that the signature belongs to the assistant message in front of the item
-// instead of the tool call behind it.
-type ReasoningSignatureDecoder func(encrypted string) (signature string, forMessage, ok bool)
+// It returns ReasoningSignatureNone for content the channel did not issue or cannot use.
+type ReasoningSignatureDecoder func(encrypted string) (signature string, kind ReasoningSignatureKind)
 
 // ResponsesRequestToChatCompletionsRequest converts a Responses API request into the equivalent
 // Chat Completions request so providers that only implement the chat shape can reuse their
@@ -29,7 +41,8 @@ func ResponsesRequestToChatCompletionsRequest(req *dto.OpenAIResponsesRequest) (
 
 // ResponsesRequestToChatCompletionsRequestWithSignatures is ResponsesRequestToChatCompletionsRequest
 // for channels whose reasoning items carry an upstream thought signature. The signatures decode
-// recognizes are moved to the extra_content of the assistant message or tool call they belong to.
+// recognizes are moved to the extra_content of the assistant message or tool call they belong to,
+// and signed thought summaries to the extra_content of the assistant message they lead.
 func ResponsesRequestToChatCompletionsRequestWithSignatures(req *dto.OpenAIResponsesRequest, decode ReasoningSignatureDecoder) (*dto.GeneralOpenAIRequest, error) {
 	if req == nil {
 		return nil, errors.New("request is nil")
@@ -97,6 +110,8 @@ type responsesChatBuilder struct {
 	decode ReasoningSignatureDecoder
 	// pendingCallSignature belongs to the tool call that comes next.
 	pendingCallSignature string
+	// pendingThoughts belong to the assistant message that comes next.
+	pendingThoughts []ReasoningThought
 	// lastMessage is the index of the assistant message the previous input item went into, or -1.
 	lastMessage int
 }
@@ -150,45 +165,79 @@ func (b *responsesChatBuilder) addItem(item map[string]any) {
 	b.lastMessage = -1
 	switch itemType {
 	case "message":
-		if b.addMessage(role, item["content"]) {
-			if last := b.lastAssistant(); last != nil {
-				b.lastMessage = len(b.messages) - 1
-			}
+		if b.addMessage(role, item["content"]) && b.lastAssistant() != nil {
+			b.lastMessage = len(b.messages) - 1
+			b.attachThoughts(b.lastMessage)
 		}
 	case "function_call":
-		b.addToolCall(item, asString(item["arguments"]))
+		if b.addToolCall(item, asString(item["arguments"])) {
+			b.attachThoughts(len(b.messages) - 1)
+		}
 	case "custom_tool_call":
 		args, _ := common.Marshal(map[string]any{CustomToolInputKey: asString(item["input"])})
-		b.addToolCall(item, string(args))
+		if b.addToolCall(item, string(args)) {
+			b.attachThoughts(len(b.messages) - 1)
+		}
 	case "function_call_output", "custom_tool_call_output":
 		b.addToolOutput(item)
 	}
 	b.pendingCallSignature = ""
+	b.pendingThoughts = nil
 }
 
 func (b *responsesChatBuilder) addReasoning(item map[string]any) {
 	if b.decode == nil {
 		return
 	}
-	signature, forMessage, ok := b.decode(asString(item["encrypted_content"]))
-	if !ok || signature == "" {
+	signature, kind := b.decode(asString(item["encrypted_content"]))
+	if signature == "" {
 		return
 	}
-	if !forMessage {
+	switch kind {
+	case ReasoningSignatureForCall:
 		b.pendingCallSignature = signature
-		return
-	}
-	// NOTE: A message split into several items yields several signatures, and the first one wins.
-	if b.lastMessage >= 0 && len(b.messages[b.lastMessage].ExtraContent) == 0 {
-		b.messages[b.lastMessage].ExtraContent = ExtraContentFromThoughtSignature(signature)
+	case ReasoningSignatureForThought:
+		if text := responsesReasoningSummaryText(item); text != "" {
+			b.pendingThoughts = append(b.pendingThoughts, ReasoningThought{Text: text, ThoughtSignature: signature})
+		}
+	case ReasoningSignatureForMessage:
+		// NOTE: A message split into several items yields several signatures, and the first one wins.
+		if b.lastMessage >= 0 {
+			msg := &b.messages[b.lastMessage]
+			if ThoughtSignatureFromExtraContent(msg.ExtraContent) == "" {
+				msg.ExtraContent = withGoogleExtra(msg.ExtraContent, "thought_signature", signature)
+			}
+		}
 	}
 }
 
-func (b *responsesChatBuilder) addToolCall(item map[string]any, arguments string) {
+func (b *responsesChatBuilder) attachThoughts(index int) {
+	if len(b.pendingThoughts) == 0 {
+		return
+	}
+	msg := &b.messages[index]
+	thoughts := append(ThoughtsFromExtraContent(msg.ExtraContent), b.pendingThoughts...)
+	msg.ExtraContent = withGoogleExtra(msg.ExtraContent, "thoughts", thoughts)
+}
+
+func responsesReasoningSummaryText(item map[string]any) string {
+	summary, _ := item["summary"].([]any)
+	var texts []string
+	for _, raw := range summary {
+		part, _ := raw.(map[string]any)
+		if text := asString(part["text"]); text != "" {
+			texts = append(texts, text)
+		}
+	}
+	return strings.Join(texts, "\n")
+}
+
+// addToolCall reports whether the call went into the last message.
+func (b *responsesChatBuilder) addToolCall(item map[string]any, arguments string) bool {
 	name := strings.TrimSpace(asString(item["name"]))
 	callID := responsesCallID(item)
 	if name == "" || callID == "" {
-		return
+		return false
 	}
 	b.callNames[callID] = name
 
@@ -200,11 +249,12 @@ func (b *responsesChatBuilder) addToolCall(item map[string]any, arguments string
 	}
 	if last := b.lastAssistant(); last != nil {
 		last.SetToolCalls(append(last.ParseToolCalls(), call))
-		return
+		return true
 	}
 	msg := dto.Message{Role: "assistant"}
 	msg.SetToolCalls([]dto.ToolCallRequest{call})
 	b.messages = append(b.messages, msg)
+	return true
 }
 
 func (b *responsesChatBuilder) addToolOutput(item map[string]any) {

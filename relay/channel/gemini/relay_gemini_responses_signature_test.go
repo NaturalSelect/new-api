@@ -176,18 +176,214 @@ func TestGeminiResponsesIgnoresSignatureFromAnotherModel(t *testing.T) {
 }
 
 func TestDecodeEncryptedReasoning(t *testing.T) {
-	signature, ok := decodeEncryptedReasoning("Gemini-3-Flash", encodeEncryptedReasoning("gemini-3-flash", "AY89a1+/="))
+	signature, forMessage, ok := decodeEncryptedReasoning("Gemini-3-Flash", encodeEncryptedReasoning(callSignaturePrefix, "gemini-3-flash", "AY89a1+/="))
 	require.True(t, ok)
+	require.False(t, forMessage)
 	require.Equal(t, "AY89a1+/=", signature)
+
+	signature, forMessage, ok = decodeEncryptedReasoning("gemini-3-flash", encodeEncryptedReasoning(messageSignaturePrefix, "gemini-3-flash", "MSG"))
+	require.True(t, ok)
+	require.True(t, forMessage)
+	require.Equal(t, "MSG", signature)
 
 	for _, encrypted := range []string{
 		"",
 		"gAAAAABn-openai-ciphertext",
 		"gemini-sig-v1:gemini-3-flash",
 		"gemini-sig-v1:gemini-3-flash:",
-		encodeEncryptedReasoning("gemini-3-pro", "SIG"),
+		"gemini-msg-sig-v1:gemini-3-flash:",
+		encodeEncryptedReasoning(callSignaturePrefix, "gemini-3-pro", "SIG"),
+		encodeEncryptedReasoning(messageSignaturePrefix, "gemini-3-pro", "SIG"),
 	} {
-		_, ok := decodeEncryptedReasoning("gemini-3-flash", encrypted)
+		_, _, ok := decodeEncryptedReasoning("gemini-3-flash", encrypted)
 		require.False(t, ok, encrypted)
 	}
+}
+
+func signedText(text, signature string) dto.GeminiPart {
+	return dto.GeminiPart{Text: text, ThoughtSignature: json.RawMessage(strconv.Quote(signature))}
+}
+
+func signedImage(signature string) dto.GeminiPart {
+	return dto.GeminiPart{
+		InlineData:       &dto.GeminiInlineData{MimeType: "image/png", Data: "AAAA"},
+		ThoughtSignature: json.RawMessage(strconv.Quote(signature)),
+	}
+}
+
+func messageText(item map[string]any) string {
+	return item["content"].([]any)[0].(map[string]any)["text"].(string)
+}
+
+func TestGeminiResponsesHandlerCarriesMessageSignatureBehindMessage(t *testing.T) {
+	output := runResponsesHandler(t, includeEncryptedBody, signedText("Hello", "SIG-M"))
+
+	require.Equal(t, []string{"message", "reasoning"}, itemTypes(output))
+	require.Equal(t, "Hello", messageText(output[0]))
+	require.Equal(t, []any{}, output[1]["summary"])
+	require.Equal(t, "gemini-msg-sig-v1:gemini-3-flash-preview:SIG-M", output[1]["encrypted_content"])
+}
+
+func TestGeminiResponsesHandlerCarriesSignatureOfTrailingEmptyPart(t *testing.T) {
+	output := runResponsesHandler(t, includeEncryptedBody,
+		dto.GeminiPart{Text: "Hel"},
+		dto.GeminiPart{Text: "lo"},
+		signedText("", "SIG-M"),
+	)
+
+	require.Equal(t, []string{"message", "reasoning"}, itemTypes(output))
+	require.Equal(t, "Hello", messageText(output[0]))
+	require.Equal(t, "gemini-msg-sig-v1:gemini-3-flash-preview:SIG-M", output[1]["encrypted_content"])
+}
+
+func TestGeminiResponsesHandlerSplitsMessageAtSignedPart(t *testing.T) {
+	output := runResponsesHandler(t, includeEncryptedBody,
+		signedText("first", "SIG-1"),
+		dto.GeminiPart{Text: "second"},
+		signedText("", "SIG-2"),
+	)
+
+	require.Equal(t, []string{"message", "reasoning", "message", "reasoning"}, itemTypes(output))
+	require.Equal(t, "first", messageText(output[0]))
+	require.Equal(t, "second", messageText(output[2]))
+	require.Equal(t, "gemini-msg-sig-v1:gemini-3-flash-preview:SIG-1", output[1]["encrypted_content"])
+	require.Equal(t, "gemini-msg-sig-v1:gemini-3-flash-preview:SIG-2", output[3]["encrypted_content"])
+}
+
+func TestGeminiResponsesHandlerCarriesImageSignature(t *testing.T) {
+	output := runResponsesHandler(t, includeEncryptedBody, dto.GeminiPart{Text: "here"}, signedImage("SIG-I"))
+
+	require.Equal(t, []string{"message", "reasoning"}, itemTypes(output))
+	require.Equal(t, "here\n![image](data:image/png;base64,AAAA)", messageText(output[0]))
+	require.Equal(t, "gemini-msg-sig-v1:gemini-3-flash-preview:SIG-I", output[1]["encrypted_content"])
+}
+
+func TestGeminiResponsesHandlerOmitsMessageSignatureUnlessRequested(t *testing.T) {
+	output := runResponsesHandler(t, `{"model":"gemini-3-flash-preview","input":"hi"}`, signedText("Hello", "SIG-M"))
+
+	require.Equal(t, []string{"message"}, itemTypes(output))
+}
+
+func TestGeminiResponsesHandlerIgnoresMessageSignatureWithoutMessage(t *testing.T) {
+	output := runResponsesHandler(t, includeEncryptedBody, signedCall("get_weather", ""), signedText("", "SIG-M"))
+
+	require.Equal(t, []string{"function_call"}, itemTypes(output))
+}
+
+func TestGeminiResponsesStreamHandlerCarriesMessageSignature(t *testing.T) {
+	oldStreamingTimeout := constant.StreamingTimeout
+	constant.StreamingTimeout = 300
+	t.Cleanup(func() { constant.StreamingTimeout = oldStreamingTimeout })
+
+	c, rec := newResponsesTestContext()
+	info := newResponsesTestInfo(responsesTestRequest(t, includeEncryptedBody))
+	info.IsStream = true
+
+	_, apiErr := GeminiResponsesStreamHandler(c, info, geminiResponsesStreamHTTPResponse(t,
+		dto.GeminiChatResponse{Candidates: textCandidate("", dto.GeminiPart{Text: "Hel"})},
+		dto.GeminiChatResponse{Candidates: textCandidate("", dto.GeminiPart{Text: "lo"})},
+		dto.GeminiChatResponse{
+			Candidates:    textCandidate("STOP", signedText("", "SIG-M")),
+			UsageMetadata: dto.GeminiUsageMetadata{PromptTokenCount: 5, CandidatesTokenCount: 5, TotalTokenCount: 10},
+		},
+	))
+	require.Nil(t, apiErr)
+
+	events := parseResponsesSSE(t, rec.Body.String())
+	var doneItems []map[string]any
+	for _, ev := range events {
+		switch ev.name {
+		case "response.output_item.done":
+			doneItems = append(doneItems, ev.data["item"].(map[string]any))
+		case "response.reasoning_summary_part.added", "response.reasoning_summary_text.done":
+			t.Fatalf("a signature-only reasoning item must not open a summary part: %s", ev.name)
+		}
+	}
+	require.Equal(t, []string{"message", "reasoning"}, itemTypes(doneItems))
+	require.Equal(t, "gemini-msg-sig-v1:gemini-3-flash-preview:SIG-M", doneItems[1]["encrypted_content"])
+
+	final := events[len(events)-1]
+	require.Equal(t, "response.completed", final.name)
+	output := final.data["response"].(map[string]any)["output"].([]any)
+	require.Len(t, output, 2)
+	require.Equal(t, "gemini-msg-sig-v1:gemini-3-flash-preview:SIG-M", output[1].(map[string]any)["encrypted_content"])
+}
+
+func replayInput(t *testing.T, output []map[string]any, tail ...map[string]any) *dto.OpenAIResponsesRequest {
+	t.Helper()
+	input := []any{map[string]any{"type": "message", "role": "user", "content": "draw a cat"}}
+	for _, item := range output {
+		input = append(input, item)
+	}
+	for _, item := range tail {
+		input = append(input, item)
+	}
+	body, err := common.Marshal(map[string]any{
+		"model": "gemini-3-flash-preview",
+		"input": input,
+		"tools": []any{map[string]any{"type": "function", "name": "get_weather"}},
+	})
+	require.NoError(t, err)
+	return responsesTestRequest(t, string(body))
+}
+
+func userTurn(text string) map[string]any {
+	return map[string]any{"type": "message", "role": "user", "content": text}
+}
+
+func TestGeminiResponsesMessageSignatureSurvivesReplay(t *testing.T) {
+	output := runResponsesHandler(t, includeEncryptedBody, dto.GeminiPart{Text: "Hello"}, signedText("", "SIG-M"))
+
+	c, _ := newResponsesTestContext()
+	got, err := (&Adaptor{}).ConvertOpenAIResponsesRequest(c, newResponsesTestInfo(nil), *replayInput(t, output, userTurn("thanks")))
+	require.NoError(t, err)
+
+	contents := got.(*dto.GeminiChatRequest).Contents
+	require.Len(t, contents, 3)
+	require.Equal(t, "model", contents[1].Role)
+	require.Equal(t, "Hello", contents[1].Parts[0].Text)
+	require.Equal(t, `"SIG-M"`, string(contents[1].Parts[0].ThoughtSignature))
+}
+
+func TestGeminiResponsesImageSignatureSurvivesReplay(t *testing.T) {
+	output := runResponsesHandler(t, includeEncryptedBody, signedImage("SIG-I"))
+
+	c, _ := newResponsesTestContext()
+	got, err := (&Adaptor{}).ConvertOpenAIResponsesRequest(c, newResponsesTestInfo(nil), *replayInput(t, output, userTurn("make it blue")))
+	require.NoError(t, err)
+
+	part := got.(*dto.GeminiChatRequest).Contents[1].Parts[0]
+	require.NotNil(t, part.InlineData)
+	require.Equal(t, `"SIG-I"`, string(part.ThoughtSignature))
+}
+
+func TestGeminiResponsesMessageAndCallSignaturesSurviveReplayTogether(t *testing.T) {
+	output := runResponsesHandler(t, includeEncryptedBody, signedText("Let me check", "SIG-M"), signedCall("get_weather", "SIG-C"))
+	require.Equal(t, []string{"message", "reasoning", "reasoning", "function_call"}, itemTypes(output))
+
+	c, _ := newResponsesTestContext()
+	callOutput := map[string]any{"type": "function_call_output", "call_id": output[3]["call_id"], "output": "sunny"}
+	got, err := (&Adaptor{}).ConvertOpenAIResponsesRequest(c, newResponsesTestInfo(nil), *replayInput(t, output, callOutput))
+	require.NoError(t, err)
+
+	contents := got.(*dto.GeminiChatRequest).Contents
+	require.Len(t, contents, 3)
+	parts := contents[1].Parts
+	require.Len(t, parts, 2)
+	require.NotNil(t, parts[0].FunctionCall)
+	require.Equal(t, `"SIG-C"`, string(parts[0].ThoughtSignature))
+	require.Equal(t, "Let me check", parts[1].Text)
+	require.Equal(t, `"SIG-M"`, string(parts[1].ThoughtSignature))
+}
+
+func TestGeminiResponsesIgnoresMessageSignatureFromAnotherModel(t *testing.T) {
+	output := runResponsesHandler(t, includeEncryptedBody, signedText("Hello", "SIG-M"))
+
+	c, _ := newResponsesTestContext()
+	info := newResponsesTestInfo(nil)
+	info.UpstreamModelName = "gemini-3-pro-preview"
+	got, err := (&Adaptor{}).ConvertOpenAIResponsesRequest(c, info, *replayInput(t, output, userTurn("thanks")))
+	require.NoError(t, err)
+
+	require.Equal(t, strconv.Quote(thoughtSignatureBypassValue), string(got.(*dto.GeminiChatRequest).Contents[1].Parts[0].ThoughtSignature))
 }

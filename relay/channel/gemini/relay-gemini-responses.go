@@ -161,24 +161,24 @@ func (t *geminiResponsesTranscoder) consume(gr *dto.GeminiChatResponse) {
 }
 
 func (t *geminiResponsesTranscoder) addPart(part *dto.GeminiPart) {
+	signature := geminiPartSignature(part)
 	switch {
 	case part.FunctionCall != nil:
-		t.addToolCall(part.FunctionCall, geminiPartSignature(part))
+		t.addToolCall(part.FunctionCall, signature)
 	case part.Thought:
 		if part.Text != "" {
 			t.appendText(responsesItemReasoning, part.Text)
 		}
 	default:
-		text := geminiPartVisibleText(part)
-		if text == "" {
-			return
-		}
-		if part.Text == "" && t.current != nil && t.current.kind == responsesItemMessage {
-			if existing := t.current.text.String(); existing != "" && !strings.HasSuffix(existing, "\n") {
-				text = "\n" + text
+		if text := geminiPartVisibleText(part); text != "" {
+			if part.Text == "" && t.current != nil && t.current.kind == responsesItemMessage {
+				if existing := t.current.text.String(); existing != "" && !strings.HasSuffix(existing, "\n") {
+					text = "\n" + text
+				}
 			}
+			t.appendText(responsesItemMessage, text)
 		}
-		t.appendText(responsesItemMessage, text)
+		t.carryMessageSignature(signature)
 	}
 }
 
@@ -223,7 +223,7 @@ func (t *geminiResponsesTranscoder) carrySignature(signature string) {
 	if signature == "" || !t.encryptReasoning {
 		return
 	}
-	encrypted := encodeEncryptedReasoning(t.info.UpstreamModelName, signature)
+	encrypted := encodeEncryptedReasoning(callSignaturePrefix, t.info.UpstreamModelName, signature)
 	if t.current != nil && t.current.kind == responsesItemReasoning {
 		t.current.encrypted = encrypted
 		return
@@ -231,6 +231,18 @@ func (t *geminiResponsesTranscoder) carrySignature(signature string) {
 	t.closeCurrent()
 	it := t.newItem(responsesItemReasoning, "", "")
 	it.encrypted = encrypted
+	t.closeItem(it)
+}
+
+// NOTE: Gemini returns the signature of a text or image part with that part, often in the last chunk, so it rides on a reasoning item placed right behind the message it belongs to.
+// A signed part ends its message item, so a message is split in two when more text follows.
+func (t *geminiResponsesTranscoder) carryMessageSignature(signature string) {
+	if signature == "" || !t.encryptReasoning || len(t.items) == 0 || t.items[len(t.items)-1].kind != responsesItemMessage {
+		return
+	}
+	t.closeCurrent()
+	it := t.newItem(responsesItemReasoning, "", "")
+	it.encrypted = encodeEncryptedReasoning(messageSignaturePrefix, t.info.UpstreamModelName, signature)
 	t.closeItem(it)
 }
 

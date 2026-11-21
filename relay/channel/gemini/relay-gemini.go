@@ -605,6 +605,18 @@ func CovertOpenAI2Gemini(c *gin.Context, textRequest dto.GeneralOpenAIRequest, i
 			}
 		}
 
+		if signature := openaicompat.ThoughtSignatureFromExtraContent(message.ExtraContent); signature != "" {
+			if raw, err := common.Marshal(signature); err == nil {
+				for i := range parts {
+					if parts[i].FunctionCall == nil {
+						parts[i].ThoughtSignature = raw
+						signatureAttached = true
+						break
+					}
+				}
+			}
+		}
+
 		// 如果需要附加签名但还没有附加（没有 tool_calls 或 tool_calls 为空），
 		// 则在第一个文本 part 上附加 thoughtSignature
 		if shouldAttachThoughtSignature && !signatureAttached && len(parts) > 0 {

@@ -12,7 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel/openai"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/constant"
-	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/service/openaicompat"
 	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/setting/reasoning"
 	"github.com/QuantumNous/new-api/types"
@@ -260,11 +260,12 @@ func (a *Adaptor) ConvertEmbeddingRequest(c *gin.Context, info *relaycommon.Rela
 }
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
-	chatRequest, err := service.ResponsesRequestToChatCompletionsRequest(&request)
+	chatRequest, err := openaicompat.ResponsesRequestToChatCompletionsRequestWithSignatures(&request, func(encrypted string) (string, bool, bool) {
+		return decodeEncryptedReasoning(info.UpstreamModelName, encrypted)
+	})
 	if err != nil {
 		return nil, err
 	}
-	restoreResponsesThoughtSignatures(chatRequest, request.Input, info.UpstreamModelName)
 	return CovertOpenAI2Gemini(c, *chatRequest, info)
 }
 

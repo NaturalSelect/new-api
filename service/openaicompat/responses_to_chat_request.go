@@ -14,11 +14,23 @@ import (
 // with when the upstream only understands JSON-schema function tools.
 const CustomToolInputKey = "input"
 
+// ReasoningSignatureDecoder recognizes the encrypted_content a channel issued for a reasoning item.
+// forMessage reports that the signature belongs to the assistant message in front of the item
+// instead of the tool call behind it.
+type ReasoningSignatureDecoder func(encrypted string) (signature string, forMessage, ok bool)
+
 // ResponsesRequestToChatCompletionsRequest converts a Responses API request into the equivalent
 // Chat Completions request so providers that only implement the chat shape can reuse their
 // existing converters. Reasoning items, hosted tools and stored-conversation state have no chat
 // equivalent and are not carried over.
 func ResponsesRequestToChatCompletionsRequest(req *dto.OpenAIResponsesRequest) (*dto.GeneralOpenAIRequest, error) {
+	return ResponsesRequestToChatCompletionsRequestWithSignatures(req, nil)
+}
+
+// ResponsesRequestToChatCompletionsRequestWithSignatures is ResponsesRequestToChatCompletionsRequest
+// for channels whose reasoning items carry an upstream thought signature. The signatures decode
+// recognizes are moved to the extra_content of the assistant message or tool call they belong to.
+func ResponsesRequestToChatCompletionsRequestWithSignatures(req *dto.OpenAIResponsesRequest, decode ReasoningSignatureDecoder) (*dto.GeneralOpenAIRequest, error) {
 	if req == nil {
 		return nil, errors.New("request is nil")
 	}
@@ -32,7 +44,7 @@ func ResponsesRequestToChatCompletionsRequest(req *dto.OpenAIResponsesRequest) (
 		return nil, errors.New("conversation is not supported by this channel, send the full conversation in input")
 	}
 
-	b := &responsesChatBuilder{callNames: make(map[string]string)}
+	b := &responsesChatBuilder{callNames: make(map[string]string), decode: decode, lastMessage: -1}
 	if instructions := common.JsonRawMessageToString(req.Instructions); strings.TrimSpace(instructions) != "" {
 		b.addMessage("system", instructions)
 	}
@@ -81,6 +93,12 @@ type responsesChatBuilder struct {
 	messages []dto.Message
 	// callNames maps a function call id to its function name, so outputs can be paired with their call.
 	callNames map[string]string
+
+	decode ReasoningSignatureDecoder
+	// pendingCallSignature belongs to the tool call that comes next.
+	pendingCallSignature string
+	// lastMessage is the index of the assistant message the previous input item went into, or -1.
+	lastMessage int
 }
 
 func (b *responsesChatBuilder) lastAssistant() *dto.Message {
@@ -124,10 +142,19 @@ func (b *responsesChatBuilder) addItem(item map[string]any) {
 		item = map[string]any{"role": "user", "content": []any{item}}
 		itemType = "message"
 	}
+	if itemType == "reasoning" {
+		b.addReasoning(item)
+		return
+	}
 
+	b.lastMessage = -1
 	switch itemType {
 	case "message":
-		b.addMessage(role, item["content"])
+		if b.addMessage(role, item["content"]) {
+			if last := b.lastAssistant(); last != nil {
+				b.lastMessage = len(b.messages) - 1
+			}
+		}
 	case "function_call":
 		b.addToolCall(item, asString(item["arguments"]))
 	case "custom_tool_call":
@@ -135,6 +162,25 @@ func (b *responsesChatBuilder) addItem(item map[string]any) {
 		b.addToolCall(item, string(args))
 	case "function_call_output", "custom_tool_call_output":
 		b.addToolOutput(item)
+	}
+	b.pendingCallSignature = ""
+}
+
+func (b *responsesChatBuilder) addReasoning(item map[string]any) {
+	if b.decode == nil {
+		return
+	}
+	signature, forMessage, ok := b.decode(asString(item["encrypted_content"]))
+	if !ok || signature == "" {
+		return
+	}
+	if !forMessage {
+		b.pendingCallSignature = signature
+		return
+	}
+	// NOTE: A message split into several items yields several signatures, and the first one wins.
+	if b.lastMessage >= 0 && len(b.messages[b.lastMessage].ExtraContent) == 0 {
+		b.messages[b.lastMessage].ExtraContent = ExtraContentFromThoughtSignature(signature)
 	}
 }
 
@@ -147,9 +193,10 @@ func (b *responsesChatBuilder) addToolCall(item map[string]any, arguments string
 	b.callNames[callID] = name
 
 	call := dto.ToolCallRequest{
-		ID:       callID,
-		Type:     "function",
-		Function: dto.FunctionRequest{Name: name, Arguments: arguments},
+		ID:           callID,
+		Type:         "function",
+		Function:     dto.FunctionRequest{Name: name, Arguments: arguments},
+		ExtraContent: ExtraContentFromThoughtSignature(b.pendingCallSignature),
 	}
 	if last := b.lastAssistant(); last != nil {
 		last.SetToolCalls(append(last.ParseToolCalls(), call))
@@ -174,7 +221,8 @@ func (b *responsesChatBuilder) addToolOutput(item map[string]any) {
 	b.messages = append(b.messages, msg)
 }
 
-func (b *responsesChatBuilder) addMessage(role string, content any) {
+// addMessage reports whether the content went into a message.
+func (b *responsesChatBuilder) addMessage(role string, content any) bool {
 	switch strings.ToLower(role) {
 	case "assistant", "model":
 		role = "assistant"
@@ -187,23 +235,25 @@ func (b *responsesChatBuilder) addMessage(role string, content any) {
 	if role == "system" {
 		if text := strings.TrimSpace(responsesContentText(content)); text != "" {
 			b.messages = append(b.messages, dto.Message{Role: role, Content: text})
+			return true
 		}
-		return
+		return false
 	}
 
 	parts := responsesContentToChatParts(role, content)
 	if len(parts) == 0 {
-		return
+		return false
 	}
 	// NOTE: Gemini rejects a function call that does not directly follow a user or function-response turn,
 	// so assistant text and the tool calls that follow it must stay in one model turn.
 	if last := b.lastAssistant(); role == "assistant" && last != nil && len(last.ParseToolCalls()) == 0 {
 		last.SetMediaContent(append(last.ParseContent(), parts...))
-		return
+		return true
 	}
 	msg := dto.Message{Role: role}
 	msg.SetMediaContent(parts)
 	b.messages = append(b.messages, msg)
+	return true
 }
 
 func responsesContentToChatParts(role string, content any) []dto.MediaContent {

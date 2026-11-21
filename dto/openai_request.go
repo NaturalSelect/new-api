@@ -280,7 +280,9 @@ type Message struct {
 	Reasoning        *string         `json:"reasoning,omitempty"`
 	ToolCalls        json.RawMessage `json:"tool_calls,omitempty"`
 	ToolCallId       string          `json:"tool_call_id,omitempty"`
-	parsedContent    []MediaContent
+	// ExtraContent carries provider extensions such as Gemini's google.thought_signature.
+	ExtraContent  json.RawMessage `json:"extra_content,omitempty"`
+	parsedContent []MediaContent
 	//parsedStringContent *string
 }
 

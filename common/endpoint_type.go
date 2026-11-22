@@ -30,7 +30,7 @@ func GetEndpointTypesByChannelType(channelType int, modelName string) []constant
 	case constant.ChannelTypeAnthropic:
 		fallthrough
 	case constant.ChannelTypePoeAnthropic:
-		endpointTypes = []constant.EndpointType{constant.EndpointTypeAnthropic, constant.EndpointTypeOpenAI}
+		endpointTypes = []constant.EndpointType{constant.EndpointTypeAnthropic, constant.EndpointTypeOpenAI, constant.EndpointTypeOpenAIResponse}
 	case constant.ChannelTypeVertexAi:
 		fallthrough
 	case constant.ChannelTypeGemini:
@@ -46,8 +46,8 @@ func GetEndpointTypesByChannelType(channelType int, modelName string) []constant
 			}
 		}
 		endpointTypes = []constant.EndpointType{constant.EndpointTypeGemini, constant.EndpointTypeOpenAI}
-		// NOTE: Only the Gemini adaptor converts Responses requests, the Vertex AI adaptor does not.
-		if channelType == constant.ChannelTypeGemini {
+		// NOTE: Gemini adaptor converts Responses requests, and Vertex AI converts them for Claude models only.
+		if channelType == constant.ChannelTypeGemini || strings.HasPrefix(modelName, "claude") {
 			endpointTypes = append(endpointTypes, constant.EndpointTypeOpenAIResponse)
 		}
 	case constant.ChannelTypeOpenRouter: // OpenRouter 只支持 OpenAI 端点

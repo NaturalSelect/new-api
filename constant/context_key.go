@@ -87,4 +87,7 @@ const (
 	// ContextKeyTypeSafeUpstreamError holds the raw TypeSafe error body ({"detail": ...}) of the
 	// latest failed attempt so the relay error renderer can return it to the client verbatim.
 	ContextKeyTypeSafeUpstreamError ContextKey = "typesafe_upstream_error"
+
+	// ContextKeyClaudeSignatureModel stores the resolved Claude model name used to bind encrypted thinking signatures.
+	ContextKeyClaudeSignatureModel ContextKey = "claude_signature_model"
 )

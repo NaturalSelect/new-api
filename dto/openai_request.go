@@ -555,6 +555,11 @@ func (m *Message) ParseContent() []MediaContent {
 		return contentList
 	}
 
+	if mediaContent, ok := m.Content.([]MediaContent); ok {
+		m.parsedContent = mediaContent
+		return mediaContent
+	}
+
 	// 尝试解析为数组
 	//var arrayContent []map[string]interface{}
 

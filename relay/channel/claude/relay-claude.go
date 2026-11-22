@@ -3,6 +3,7 @@ package claude
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/relay/reasonmap"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/service/openaicompat"
 	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/setting/reasoning"
 	"github.com/QuantumNous/new-api/types"
@@ -272,6 +274,9 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 		if message.Role == "assistant" && message.ToolCalls != nil {
 			fmtMessage.ToolCalls = message.ToolCalls
 		}
+		if message.Role == "assistant" && len(message.ExtraContent) > 0 {
+			fmtMessage.ExtraContent = message.ExtraContent
+		}
 		if lastMessage.Role == message.Role && lastMessage.Role != "tool" {
 			if lastMessage.IsStringContent() && message.IsStringContent() {
 				fmtMessage.SetStringContent(strings.Trim(fmt.Sprintf("%s %s", lastMessage.StringContent(), message.StringContent()), "\""))
@@ -280,7 +285,9 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 			}
 		}
 		if fmtMessage.Content == nil || (fmtMessage.IsStringContent() && fmtMessage.StringContent() == "") {
-			fmtMessage.SetStringContent("...")
+			if len(replayableClaudeThinkingBlocks(fmtMessage.ExtraContent, &claudeRequest)) == 0 {
+				fmtMessage.SetStringContent("...")
+			}
 		}
 		formatMessages = append(formatMessages, fmtMessage)
 		lastMessage = fmtMessage
@@ -334,6 +341,10 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 			claudeMessage := dto.ClaudeMessage{
 				Role: message.Role,
 			}
+			var replayThinking []dto.ClaudeMediaMessage
+			if message.Role == "assistant" {
+				replayThinking = replayableClaudeThinkingBlocks(message.ExtraContent, &claudeRequest)
+			}
 			if message.Role == "tool" {
 				if len(claudeMessages) > 0 && claudeMessages[len(claudeMessages)-1].Role == "user" {
 					lastMessage := claudeMessages[len(claudeMessages)-1]
@@ -362,52 +373,62 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 						},
 					}
 				}
-			} else if message.IsStringContent() && message.ToolCalls == nil {
+			} else if message.IsStringContent() && message.ToolCalls == nil && len(replayThinking) == 0 {
 				text := message.StringContent()
 				if text == "" {
 					text = "..."
 				}
 				claudeMessage.Content = text
 			} else {
-				claudeMediaMessages := make([]dto.ClaudeMediaMessage, 0)
-				for _, mediaMessage := range message.ParseContent() {
-					switch mediaMessage.Type {
-					case "text":
-						if mediaMessage.Text != "" {
-							claudeMediaMessages = append(claudeMediaMessages, dto.ClaudeMediaMessage{
-								Type:         "text",
-								Text:         common.GetPointer[string](mediaMessage.Text),
-								CacheControl: mediaMessage.CacheControl,
-							})
-						}
-					case dto.ContentTypeFile:
-						if block, ok := claudeFileBlock(c, mediaMessage); ok {
-							claudeMediaMessages = append(claudeMediaMessages, block)
-						}
-					default:
-						source := mediaMessage.ToFileSource()
-						if source == nil {
+				claudeMediaMessages := make([]dto.ClaudeMediaMessage, 0, len(replayThinking))
+				claudeMediaMessages = append(claudeMediaMessages, replayThinking...)
+				if message.IsStringContent() {
+					if text := message.StringContent(); text != "" {
+						claudeMediaMessages = append(claudeMediaMessages, dto.ClaudeMediaMessage{
+							Type: "text",
+							Text: common.GetPointer[string](text),
+						})
+					}
+				} else {
+					for _, mediaMessage := range message.ParseContent() {
+						switch mediaMessage.Type {
+						case "text":
+							if mediaMessage.Text != "" {
+								claudeMediaMessages = append(claudeMediaMessages, dto.ClaudeMediaMessage{
+									Type:         "text",
+									Text:         common.GetPointer[string](mediaMessage.Text),
+									CacheControl: mediaMessage.CacheControl,
+								})
+							}
+						case dto.ContentTypeFile:
+							if block, ok := claudeFileBlock(c, mediaMessage); ok {
+								claudeMediaMessages = append(claudeMediaMessages, block)
+							}
+						default:
+							source := mediaMessage.ToFileSource()
+							if source == nil {
+								continue
+							}
+							base64Data, mimeType, err := service.GetBase64Data(c, source, "formatting image for Claude")
+							if err != nil {
+								return nil, fmt.Errorf("get file data failed: %s", err.Error())
+							}
+							claudeMediaMessage := dto.ClaudeMediaMessage{
+								Source: &dto.ClaudeMessageSource{
+									Type: "base64",
+								},
+							}
+							if strings.HasPrefix(mimeType, "application/pdf") {
+								claudeMediaMessage.Type = "document"
+							} else {
+								claudeMediaMessage.Type = "image"
+							}
+
+							claudeMediaMessage.Source.MediaType = mimeType
+							claudeMediaMessage.Source.Data = base64Data
+							claudeMediaMessages = append(claudeMediaMessages, claudeMediaMessage)
 							continue
 						}
-						base64Data, mimeType, err := service.GetBase64Data(c, source, "formatting image for Claude")
-						if err != nil {
-							return nil, fmt.Errorf("get file data failed: %s", err.Error())
-						}
-						claudeMediaMessage := dto.ClaudeMediaMessage{
-							Source: &dto.ClaudeMessageSource{
-								Type: "base64",
-							},
-						}
-						if strings.HasPrefix(mimeType, "application/pdf") {
-							claudeMediaMessage.Type = "document"
-						} else {
-							claudeMediaMessage.Type = "image"
-						}
-
-						claudeMediaMessage.Source.MediaType = mimeType
-						claudeMediaMessage.Source.Data = base64Data
-						claudeMediaMessages = append(claudeMediaMessages, claudeMediaMessage)
-						continue
 					}
 				}
 
@@ -442,6 +463,43 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 	claudeRequest.Messages = claudeMessages
 	service.EnsureClaudeMetadataUserIDFromPromptCacheKey(&claudeRequest, textRequest.PromptCacheKey)
 	return &claudeRequest, nil
+}
+
+func replayableClaudeThinkingBlocks(raw json.RawMessage, claudeRequest *dto.ClaudeRequest) []dto.ClaudeMediaMessage {
+	if claudeRequest == nil || claudeRequest.Thinking == nil || len(raw) == 0 {
+		return nil
+	}
+	blocks := openaicompat.ClaudeThinkingBlocksFromExtraContent(raw)
+	if len(blocks) == 0 {
+		return nil
+	}
+	replayed := make([]dto.ClaudeMediaMessage, 0, len(blocks))
+	for _, b := range blocks {
+		if !strings.EqualFold(b.Model, claudeRequest.Model) {
+			continue
+		}
+		switch b.Type {
+		case "thinking":
+			if b.Signature == "" {
+				continue
+			}
+			text := b.Thinking
+			replayed = append(replayed, dto.ClaudeMediaMessage{
+				Type:      "thinking",
+				Thinking:  &text,
+				Signature: b.Signature,
+			})
+		case "redacted_thinking":
+			if b.Data == "" {
+				continue
+			}
+			replayed = append(replayed, dto.ClaudeMediaMessage{
+				Type: "redacted_thinking",
+				Data: b.Data,
+			})
+		}
+	}
+	return replayed
 }
 
 // EffortFromRequest returns the reasoning effort level to record for a Claude-bound
@@ -648,6 +706,7 @@ type ClaudeResponseInfo struct {
 	ResponseText strings.Builder
 	Usage        *dto.Usage
 	Done         bool
+	responses    *claudeResponsesTranscoder
 }
 
 func cacheCreationTokensForOpenAIUsage(usage *dto.Usage) int {
@@ -851,7 +910,11 @@ func HandleStreamResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 		return types.NewError(err, types.ErrorCodeBadResponseBody)
 	}
 	if claudeError := claudeResponse.GetClaudeError(); claudeError != nil && claudeError.Type != "" {
-		return types.WithClaudeError(*claudeError, http.StatusInternalServerError)
+		apiErr := types.WithClaudeError(*claudeError, http.StatusInternalServerError)
+		if info.RelayFormat == types.RelayFormatOpenAIResponses && claudeInfo.responses != nil && claudeInfo.responses.started {
+			claudeInfo.responses.fail(claudeError.Type, claudeError.Message)
+		}
+		return apiErr
 	}
 	if claudeResponse.StopReason != "" {
 		maybeMarkClaudeRefusal(c, claudeResponse.StopReason)
@@ -886,6 +949,12 @@ func HandleStreamResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 		if err != nil {
 			logger.LogError(c, "send_stream_response_failed: "+err.Error())
 		}
+	} else if info.RelayFormat == types.RelayFormatOpenAIResponses {
+		FormatClaudeResponseInfo(&claudeResponse, nil, claudeInfo)
+		if claudeInfo.responses == nil {
+			claudeInfo.responses = newClaudeResponsesTranscoder(c, info, true)
+		}
+		claudeInfo.responses.consumeEvent(&claudeResponse)
 	}
 	return nil
 }
@@ -925,6 +994,11 @@ func HandleStreamFinalResponse(c *gin.Context, info *relaycommon.RelayInfo, clau
 			}
 		}
 		helper.Done(c)
+	} else if info.RelayFormat == types.RelayFormatOpenAIResponses {
+		if claudeInfo.responses != nil && claudeInfo.responses.started {
+			eventType, responseObj := claudeInfo.responses.complete(claudeInfo.Usage)
+			claudeInfo.responses.emit(eventType, map[string]any{"response": responseObj})
+		}
 	}
 }
 
@@ -948,6 +1022,9 @@ func ClaudeStreamHandler(c *gin.Context, resp *http.Response, info *relaycommon.
 	}
 	if err != nil {
 		return nil, err
+	}
+	if info.RelayFormat == types.RelayFormatOpenAIResponses && (claudeInfo.responses == nil || !claudeInfo.responses.started) {
+		return claudeInfo.Usage, types.NewOpenAIError(errors.New("empty response from Claude API"), types.ErrorCodeEmptyResponse, http.StatusInternalServerError)
 	}
 
 	HandleStreamFinalResponse(c, info, claudeInfo)
@@ -988,6 +1065,14 @@ func HandleClaudeResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 		}
 	case types.RelayFormatClaude:
 		responseData = data
+	case types.RelayFormatOpenAIResponses:
+		transcoder := newClaudeResponsesTranscoder(c, info, false)
+		transcoder.consumeResponse(&claudeResponse)
+		_, responseObj := transcoder.complete(claudeInfo.Usage)
+		responseData, err = common.Marshal(responseObj)
+		if err != nil {
+			return types.NewError(err, types.ErrorCodeBadResponseBody)
+		}
 	}
 
 	if claudeResponse.Usage != nil && claudeResponse.Usage.ServerToolUse != nil && claudeResponse.Usage.ServerToolUse.WebSearchRequests > 0 {

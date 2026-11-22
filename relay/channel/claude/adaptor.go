@@ -120,8 +120,12 @@ func (a *Adaptor) ConvertEmbeddingRequest(c *gin.Context, info *relaycommon.Rela
 }
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
-	// TODO implement me
-	return nil, errors.New("not implemented")
+	claudeReq, err := RequestResponses2ClaudeMessage(c, info, request)
+	if err != nil {
+		return nil, err
+	}
+	ApplyClaudeCodeDisguiseBody(c, claudeReq, info)
+	return claudeReq, nil
 }
 
 func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, requestBody io.Reader) (any, error) {

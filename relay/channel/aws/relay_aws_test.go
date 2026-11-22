@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
 	"github.com/gin-gonic/gin"
@@ -52,4 +53,34 @@ func TestDoAwsClientRequest_AppliesRuntimeHeaderOverrideToAnthropicBeta(t *testi
 	values, ok := anthropicBeta.([]any)
 	require.True(t, ok)
 	require.Equal(t, []any{"computer-use-2025-01-24"}, values)
+}
+
+func TestAdaptorConvertOpenAIResponsesRequest(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("claude model converts to claude request", func(t *testing.T) {
+		ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+		info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "claude-3-5-sonnet-20240620"}}
+		var req dto.OpenAIResponsesRequest
+		require.NoError(t, common.UnmarshalJsonStr(`{"model":"claude-3-5-sonnet-20240620","input":"hi"}`, &req))
+
+		adaptor := &Adaptor{}
+		out, err := adaptor.ConvertOpenAIResponsesRequest(ctx, info, req)
+		require.NoError(t, err)
+		claudeReq, ok := out.(*dto.ClaudeRequest)
+		require.True(t, ok)
+		require.Equal(t, "claude-3-5-sonnet-20240620", claudeReq.Model)
+		require.Equal(t, "claude-3-5-sonnet-20240620", info.UpstreamModelName)
+	})
+
+	t.Run("nova model returns unsupported error", func(t *testing.T) {
+		ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+		info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "amazon.nova-pro-v1:0"}}
+		var req dto.OpenAIResponsesRequest
+		require.NoError(t, common.UnmarshalJsonStr(`{"model":"amazon.nova-pro-v1:0","input":"hi"}`, &req))
+
+		adaptor := &Adaptor{}
+		_, err := adaptor.ConvertOpenAIResponsesRequest(ctx, info, req)
+		require.Error(t, err)
+	})
 }

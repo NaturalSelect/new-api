@@ -142,8 +142,15 @@ func (a *Adaptor) ConvertEmbeddingRequest(c *gin.Context, info *relaycommon.Rela
 }
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
-	// TODO implement me
-	return nil, errors.New("not implemented")
+	if isNovaModel(request.Model) {
+		return nil, errors.New("responses API is not supported for Nova models")
+	}
+	claudeReq, err := claude.RequestResponses2ClaudeMessage(c, info, request)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to convert responses request to claude request")
+	}
+	info.UpstreamModelName = claudeReq.Model
+	return claudeReq, nil
 }
 
 func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, requestBody io.Reader) (any, error) {

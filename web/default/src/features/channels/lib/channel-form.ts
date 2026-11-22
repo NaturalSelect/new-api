@@ -186,6 +186,7 @@ export const channelFormSchema = z
     system_prompt: z.string().optional(),
     system_prompt_override: z.boolean().optional(),
     retry_on_429: z.number().int().min(0).max(50).optional(),
+    disable_chat_completions: z.boolean().optional(),
     // Type-specific settings (stored in settings JSON)
     is_enterprise_account: z.boolean().optional(), // OpenRouter specific
     vertex_key_type: z.enum(['json', 'api_key']).optional(), // Vertex AI specific
@@ -310,6 +311,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   system_prompt: '',
   system_prompt_override: false,
   retry_on_429: 0,
+  disable_chat_completions: false,
   // Type-specific settings
   is_enterprise_account: false,
   vertex_key_type: 'json',
@@ -350,6 +352,7 @@ export function transformChannelToFormDefaults(
     system_prompt: '',
     system_prompt_override: false,
     retry_on_429: 0,
+    disable_chat_completions: false,
   }
 
   if (channel.setting) {
@@ -363,6 +366,7 @@ export function transformChannelToFormDefaults(
         system_prompt: parsed.system_prompt || '',
         system_prompt_override: parsed.system_prompt_override || false,
         retry_on_429: typeof parsed.retry_on_429 === 'number' ? parsed.retry_on_429 : 0,
+        disable_chat_completions: parsed.disable_chat_completions || false,
       }
     } catch (error) {
       // eslint-disable-next-line no-console
@@ -492,6 +496,7 @@ function buildSettingJSON(formData: ChannelFormValues): string {
     system_prompt: formData.system_prompt || '',
     system_prompt_override: formData.system_prompt_override || false,
     retry_on_429: formData.retry_on_429 ?? 0,
+    disable_chat_completions: formData.disable_chat_completions || false,
   }
   return JSON.stringify(settingObj)
 }

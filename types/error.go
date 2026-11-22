@@ -65,6 +65,8 @@ const (
 	ErrorCodeConvertRequestFailed  ErrorCode = "convert_request_failed"
 	ErrorCodeAccessDenied          ErrorCode = "access_denied"
 
+	ErrorCodeChatCompletionsDisabled ErrorCode = "chat_completions_disabled"
+
 	// request error
 	ErrorCodeBadRequestBody ErrorCode = "bad_request_body"
 

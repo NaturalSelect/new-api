@@ -93,6 +93,18 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 		return nil
 	}
 
+	// NOTE: 放在 Chat->Responses 转换之后，转为 Responses 上游的请求不属于 Chat 接口调用，不拦截。
+	if info.RelayMode == relayconstant.RelayModeChatCompletions &&
+		info.ChannelType == constant.ChannelTypeOpenAI &&
+		info.ChannelSetting.DisableChatCompletions {
+		return types.NewErrorWithStatusCode(
+			fmt.Errorf("channel #%d does not allow the chat completions interface", info.ChannelId),
+			types.ErrorCodeChatCompletionsDisabled,
+			http.StatusForbidden,
+			types.ErrOptionWithSkipRetry(),
+		)
+	}
+
 	var requestBody io.Reader
 
 	if passThroughGlobal || info.ChannelSetting.PassThroughBodyEnabled {

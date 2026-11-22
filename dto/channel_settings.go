@@ -11,6 +11,7 @@ type ChannelSettings struct {
 	SystemPrompt           string `json:"system_prompt,omitempty"`
 	SystemPromptOverride   bool   `json:"system_prompt_override,omitempty"`
 	RetryOn429             int    `json:"retry_on_429,omitempty"`
+	DisableChatCompletions bool   `json:"disable_chat_completions,omitempty"` // 仅 OpenAI 渠道生效：禁止该渠道处理 Chat Completions 请求
 }
 
 type VertexKeyType string

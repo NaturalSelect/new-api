@@ -89,6 +89,7 @@ export interface ChannelSettings {
   system_prompt?: string
   system_prompt_override?: boolean
   retry_on_429?: number
+  disable_chat_completions?: boolean
 }
 
 // Claude Code 伪装努力程度 bitmask 位定义，需与后端 dto.ClaudeDisguise* 常量保持一致。

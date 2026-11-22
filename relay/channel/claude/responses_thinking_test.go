@@ -4,9 +4,7 @@ import (
 	"encoding/base64"
 	"testing"
 
-	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
-	"github.com/QuantumNous/new-api/service/openaicompat"
 	"github.com/stretchr/testify/require"
 )
 
@@ -20,11 +18,9 @@ func TestEncodeDecodeClaudeThinking(t *testing.T) {
 		})
 		require.NotEmpty(t, enc)
 
-		decoded, kind := decodeClaudeThinking(enc)
-		require.Equal(t, openaicompat.ReasoningSignatureForBlock, kind)
-		var block openaicompat.ClaudeThinkingBlock
-		require.NoError(t, common.UnmarshalJsonStr(decoded, &block))
-		require.Equal(t, openaicompat.ClaudeThinkingBlock{
+		block, ok := decodeClaudeThinkingBlock(enc)
+		require.True(t, ok)
+		require.Equal(t, claudeThinkingBlock{
 			Model:     "claude-sonnet-4-5",
 			Type:      "thinking",
 			Thinking:  text,
@@ -41,10 +37,8 @@ func TestEncodeDecodeClaudeThinking(t *testing.T) {
 		})
 		require.NotEmpty(t, enc)
 
-		decoded, kind := decodeClaudeThinking(enc)
-		require.Equal(t, openaicompat.ReasoningSignatureForBlock, kind)
-		var block openaicompat.ClaudeThinkingBlock
-		require.NoError(t, common.UnmarshalJsonStr(decoded, &block))
+		block, ok := decodeClaudeThinkingBlock(enc)
+		require.True(t, ok)
 		require.Equal(t, "", block.Thinking)
 		require.Equal(t, "sig_omitted", block.Signature)
 		require.Equal(t, "thinking", block.Type)
@@ -57,11 +51,9 @@ func TestEncodeDecodeClaudeThinking(t *testing.T) {
 		})
 		require.NotEmpty(t, enc)
 
-		decoded, kind := decodeClaudeThinking(enc)
-		require.Equal(t, openaicompat.ReasoningSignatureForBlock, kind)
-		var block openaicompat.ClaudeThinkingBlock
-		require.NoError(t, common.UnmarshalJsonStr(decoded, &block))
-		require.Equal(t, openaicompat.ClaudeThinkingBlock{
+		block, ok := decodeClaudeThinkingBlock(enc)
+		require.True(t, ok)
+		require.Equal(t, claudeThinkingBlock{
 			Model: "claude-sonnet-4-5",
 			Type:  "redacted_thinking",
 			Data:  "EmwKAhgB_redacted",
@@ -78,10 +70,8 @@ func TestEncodeDecodeClaudeThinking(t *testing.T) {
 		})
 		require.NotEmpty(t, enc)
 
-		decoded, kind := decodeClaudeThinking(enc)
-		require.Equal(t, openaicompat.ReasoningSignatureForBlock, kind)
-		var block openaicompat.ClaudeThinkingBlock
-		require.NoError(t, common.UnmarshalJsonStr(decoded, &block))
+		block, ok := decodeClaudeThinkingBlock(enc)
+		require.True(t, ok)
 		require.Equal(t, model, block.Model)
 		require.Equal(t, text, block.Thinking)
 		require.Equal(t, "sig_bedrock", block.Signature)
@@ -103,9 +93,8 @@ func TestEncodeDecodeClaudeThinking(t *testing.T) {
 			missingData,
 			unknownType,
 		} {
-			decoded, kind := decodeClaudeThinking(bad)
-			require.Empty(t, decoded, bad)
-			require.Equal(t, openaicompat.ReasoningSignatureNone, kind, bad)
+			_, ok := decodeClaudeThinkingBlock(bad)
+			require.False(t, ok, bad)
 		}
 	})
 
@@ -115,4 +104,63 @@ func TestEncodeDecodeClaudeThinking(t *testing.T) {
 		require.Empty(t, encodeClaudeThinking("claude-sonnet-4-5", dto.ClaudeMediaMessage{Type: "redacted_thinking"}))
 		require.Empty(t, encodeClaudeThinking("", dto.ClaudeMediaMessage{Type: "redacted_thinking", Data: "x"}))
 	})
+}
+
+func TestCanonicalClaudeModelNameAndMatch(t *testing.T) {
+	matchingGroups := [][]string{
+		{
+			"claude-sonnet-4-5",
+			"claude-sonnet-4-5-20250929",
+			"anthropic.claude-sonnet-4-5-20250929-v1:0",
+			"us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+			"claude-sonnet-4-5@20250929",
+			"publishers/anthropic/models/claude-sonnet-4-5@20250929",
+			"claude-sonnet-4-5-thinking",
+			"claude-sonnet-4-5-20250929-thinking",
+		},
+		{
+			"claude-opus-4-6",
+			"global.anthropic.claude-opus-4-6-v1",
+			"us.anthropic.claude-opus-4-6-v1:0",
+			"claude-opus-4-6-high",
+		},
+		{
+			"claude-opus-4-7",
+			"us.anthropic.claude-opus-4-7-v1:0",
+			"claude-opus-4-7-xhigh",
+		},
+	}
+
+	for _, group := range matchingGroups {
+		for _, a := range group {
+			for _, b := range group {
+				require.True(t, claudeModelsMatch(a, b), "expected %q to match %q", a, b)
+			}
+		}
+	}
+
+	nonMatchingPairs := [][2]string{
+		{"claude-sonnet-4-5", "claude-opus-4-5"},
+		{"claude-opus-4-6", "claude-opus-4-7"},
+		{"claude-sonnet-4-5", "claude-sonnet-4-6"},
+		{"", "claude-sonnet-4-5"},
+		{"claude-sonnet-4-5", ""},
+	}
+	for _, pair := range nonMatchingPairs {
+		require.False(t, claudeModelsMatch(pair[0], pair[1]), "expected %q not to match %q", pair[0], pair[1])
+	}
+}
+
+func TestAdaptiveAndOpus47ModelDetection(t *testing.T) {
+	require.True(t, isClaudeAdaptiveThinkingModel("claude-opus-4-6"))
+	require.True(t, isClaudeAdaptiveThinkingModel("us.anthropic.claude-opus-4-6-v1:0"))
+	require.True(t, isClaudeAdaptiveThinkingModel("claude-sonnet-4-6"))
+	require.True(t, isClaudeAdaptiveThinkingModel("claude-opus-4-7"))
+	require.True(t, isClaudeAdaptiveThinkingModel("global.anthropic.claude-opus-4-7-v1"))
+	require.False(t, isClaudeAdaptiveThinkingModel("claude-sonnet-4-5-20250929"))
+	require.False(t, isClaudeAdaptiveThinkingModel("claude-3-7-sonnet@20250219"))
+
+	require.True(t, isClaudeOpus47Model("claude-opus-4-7"))
+	require.True(t, isClaudeOpus47Model("us.anthropic.claude-opus-4-7-v1:0"))
+	require.False(t, isClaudeOpus47Model("claude-opus-4-6"))
 }

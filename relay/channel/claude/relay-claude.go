@@ -18,9 +18,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/relay/reasonmap"
 	"github.com/QuantumNous/new-api/service"
-	"github.com/QuantumNous/new-api/service/openaicompat"
 	"github.com/QuantumNous/new-api/setting/model_setting"
-	"github.com/QuantumNous/new-api/setting/reasoning"
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
@@ -131,8 +129,10 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 		Tools:         claudeTools,
 		Metadata:      textRequest.Metadata,
 	}
+	explicitMaxTokens := false
 	if maxTokens := textRequest.GetMaxTokens(); maxTokens > 0 {
 		claudeRequest.MaxTokens = common.GetPointer(maxTokens)
+		explicitMaxTokens = true
 	}
 	if textRequest.TopP != nil {
 		claudeRequest.TopP = common.GetPointer(*textRequest.TopP)
@@ -157,75 +157,7 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 		claudeRequest.MaxTokens = &defaultMaxTokens
 	}
 
-	if baseModel, effortLevel, ok := reasoning.TrimEffortSuffix(textRequest.Model); ok && effortLevel != "" &&
-		(strings.HasPrefix(textRequest.Model, "claude-opus-4-6") || strings.HasPrefix(textRequest.Model, "claude-opus-4-7")) {
-		claudeRequest.Model = baseModel
-		claudeRequest.Thinking = &dto.Thinking{
-			Type: "adaptive",
-		}
-		claudeRequest.OutputConfig = json.RawMessage(fmt.Sprintf(`{"effort":"%s"}`, effortLevel))
-		if strings.HasPrefix(baseModel, "claude-opus-4-7") {
-			// Opus 4.7 rejects non-default temperature/top_p/top_k with 400
-			// and defaults display to "omitted"; restore the 4.6 visible summary.
-			claudeRequest.Thinking.Display = "summarized"
-			claudeRequest.Temperature = nil
-			claudeRequest.TopP = nil
-			claudeRequest.TopK = nil
-		} else {
-			claudeRequest.TopP = nil
-			claudeRequest.Temperature = common.GetPointer[float64](1.0)
-		}
-	} else if model_setting.GetClaudeSettings().ThinkingAdapterEnabled &&
-		strings.HasSuffix(textRequest.Model, "-thinking") {
-
-		trimmedModel := strings.TrimSuffix(textRequest.Model, "-thinking")
-		if strings.HasPrefix(trimmedModel, "claude-opus-4-7") {
-			// Opus 4.7 rejects thinking.type="enabled"; use adaptive at high effort.
-			claudeRequest.Thinking = &dto.Thinking{Type: "adaptive", Display: "summarized"}
-			claudeRequest.OutputConfig = json.RawMessage(`{"effort":"high"}`)
-			claudeRequest.Temperature = nil
-			claudeRequest.TopP = nil
-			claudeRequest.TopK = nil
-		} else {
-			// 因为BudgetTokens 必须大于1024
-			if claudeRequest.MaxTokens == nil || *claudeRequest.MaxTokens < 1280 {
-				claudeRequest.MaxTokens = common.GetPointer[uint](1280)
-			}
-
-			// BudgetTokens 为 max_tokens 的 80%
-			claudeRequest.Thinking = &dto.Thinking{
-				Type:         "enabled",
-				BudgetTokens: common.GetPointer[int](int(float64(*claudeRequest.MaxTokens) * model_setting.GetClaudeSettings().ThinkingAdapterBudgetTokensPercentage)),
-			}
-			// TODO: 临时处理
-			// https://docs.anthropic.com/en/docs/build-with-claude/extended-thinking#important-considerations-when-using-extended-thinking
-			claudeRequest.TopP = nil
-			claudeRequest.Temperature = common.GetPointer[float64](1.0)
-		}
-		if !model_setting.ShouldPreserveThinkingSuffix(textRequest.Model) {
-			claudeRequest.Model = trimmedModel
-		}
-	}
-
-	if textRequest.ReasoningEffort != "" {
-		switch textRequest.ReasoningEffort {
-		case "low":
-			claudeRequest.Thinking = &dto.Thinking{
-				Type:         "enabled",
-				BudgetTokens: common.GetPointer[int](1280),
-			}
-		case "medium":
-			claudeRequest.Thinking = &dto.Thinking{
-				Type:         "enabled",
-				BudgetTokens: common.GetPointer[int](2048),
-			}
-		case "high":
-			claudeRequest.Thinking = &dto.Thinking{
-				Type:         "enabled",
-				BudgetTokens: common.GetPointer[int](4096),
-			}
-		}
-	}
+	applyClaudeThinkingAndSampling(&claudeRequest, textRequest.ReasoningEffort, "", explicitMaxTokens)
 
 	// 指定了 reasoning 参数,覆盖 budgetTokens
 	if textRequest.Reasoning != nil {
@@ -240,6 +172,7 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 				Type:         "enabled",
 				BudgetTokens: &budgetTokens,
 			}
+			normalizeClaudeSampling(&claudeRequest)
 		}
 	}
 
@@ -274,9 +207,6 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 		if message.Role == "assistant" && message.ToolCalls != nil {
 			fmtMessage.ToolCalls = message.ToolCalls
 		}
-		if message.Role == "assistant" && len(message.ExtraContent) > 0 {
-			fmtMessage.ExtraContent = message.ExtraContent
-		}
 		if lastMessage.Role == message.Role && lastMessage.Role != "tool" {
 			if lastMessage.IsStringContent() && message.IsStringContent() {
 				fmtMessage.SetStringContent(strings.Trim(fmt.Sprintf("%s %s", lastMessage.StringContent(), message.StringContent()), "\""))
@@ -285,9 +215,7 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 			}
 		}
 		if fmtMessage.Content == nil || (fmtMessage.IsStringContent() && fmtMessage.StringContent() == "") {
-			if len(replayableClaudeThinkingBlocks(fmtMessage.ExtraContent, &claudeRequest)) == 0 {
-				fmtMessage.SetStringContent("...")
-			}
+			fmtMessage.SetStringContent("...")
 		}
 		formatMessages = append(formatMessages, fmtMessage)
 		lastMessage = fmtMessage
@@ -341,10 +269,6 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 			claudeMessage := dto.ClaudeMessage{
 				Role: message.Role,
 			}
-			var replayThinking []dto.ClaudeMediaMessage
-			if message.Role == "assistant" {
-				replayThinking = replayableClaudeThinkingBlocks(message.ExtraContent, &claudeRequest)
-			}
 			if message.Role == "tool" {
 				if len(claudeMessages) > 0 && claudeMessages[len(claudeMessages)-1].Role == "user" {
 					lastMessage := claudeMessages[len(claudeMessages)-1]
@@ -373,15 +297,14 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 						},
 					}
 				}
-			} else if message.IsStringContent() && message.ToolCalls == nil && len(replayThinking) == 0 {
+			} else if message.IsStringContent() && message.ToolCalls == nil {
 				text := message.StringContent()
 				if text == "" {
 					text = "..."
 				}
 				claudeMessage.Content = text
 			} else {
-				claudeMediaMessages := make([]dto.ClaudeMediaMessage, 0, len(replayThinking))
-				claudeMediaMessages = append(claudeMediaMessages, replayThinking...)
+				claudeMediaMessages := make([]dto.ClaudeMediaMessage, 0)
 				if message.IsStringContent() {
 					if text := message.StringContent(); text != "" {
 						claudeMediaMessages = append(claudeMediaMessages, dto.ClaudeMediaMessage{
@@ -463,43 +386,6 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 	claudeRequest.Messages = claudeMessages
 	service.EnsureClaudeMetadataUserIDFromPromptCacheKey(&claudeRequest, textRequest.PromptCacheKey)
 	return &claudeRequest, nil
-}
-
-func replayableClaudeThinkingBlocks(raw json.RawMessage, claudeRequest *dto.ClaudeRequest) []dto.ClaudeMediaMessage {
-	if claudeRequest == nil || claudeRequest.Thinking == nil || len(raw) == 0 {
-		return nil
-	}
-	blocks := openaicompat.ClaudeThinkingBlocksFromExtraContent(raw)
-	if len(blocks) == 0 {
-		return nil
-	}
-	replayed := make([]dto.ClaudeMediaMessage, 0, len(blocks))
-	for _, b := range blocks {
-		if !strings.EqualFold(b.Model, claudeRequest.Model) {
-			continue
-		}
-		switch b.Type {
-		case "thinking":
-			if b.Signature == "" {
-				continue
-			}
-			text := b.Thinking
-			replayed = append(replayed, dto.ClaudeMediaMessage{
-				Type:      "thinking",
-				Thinking:  &text,
-				Signature: b.Signature,
-			})
-		case "redacted_thinking":
-			if b.Data == "" {
-				continue
-			}
-			replayed = append(replayed, dto.ClaudeMediaMessage{
-				Type: "redacted_thinking",
-				Data: b.Data,
-			})
-		}
-	}
-	return replayed
 }
 
 // EffortFromRequest returns the reasoning effort level to record for a Claude-bound

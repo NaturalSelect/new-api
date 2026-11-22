@@ -12,7 +12,6 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
-	"github.com/QuantumNous/new-api/service/openaicompat"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -90,7 +89,7 @@ func claudeHTTPSSEResponse(events ...string) *http.Response {
 	}
 }
 
-func TestClaudeResponsesNonStream_AllBlockTypesAndIncludeGating(t *testing.T) {
+func TestClaudeResponsesNonStream_AllBlockTypesAndAlwaysEmitsEncryptedContent(t *testing.T) {
 	claudePayload := `{
 		"id": "msg_01",
 		"type": "message",
@@ -151,10 +150,8 @@ func TestClaudeResponsesNonStream_AllBlockTypesAndIncludeGating(t *testing.T) {
 		require.Equal(t, "analyze request", summary0[0].(map[string]any)["text"])
 		enc0, _ := r0["encrypted_content"].(string)
 		require.NotEmpty(t, enc0)
-		decoded0, kind0 := decodeClaudeThinking(enc0)
-		require.Equal(t, openaicompat.ReasoningSignatureForBlock, kind0)
-		var blk0 openaicompat.ClaudeThinkingBlock
-		require.NoError(t, common.UnmarshalJsonStr(decoded0, &blk0))
+		blk0, ok0 := decodeClaudeThinkingBlock(enc0)
+		require.True(t, ok0)
 		require.Equal(t, "thinking", blk0.Type)
 		require.Equal(t, "analyze request", blk0.Thinking)
 		require.Equal(t, "sig_think_1", blk0.Signature)
@@ -165,10 +162,8 @@ func TestClaudeResponsesNonStream_AllBlockTypesAndIncludeGating(t *testing.T) {
 		require.Empty(t, r1["summary"].([]any))
 		enc1, _ := r1["encrypted_content"].(string)
 		require.NotEmpty(t, enc1)
-		decoded1, kind1 := decodeClaudeThinking(enc1)
-		require.Equal(t, openaicompat.ReasoningSignatureForBlock, kind1)
-		var blk1 openaicompat.ClaudeThinkingBlock
-		require.NoError(t, common.UnmarshalJsonStr(decoded1, &blk1))
+		blk1, ok1 := decodeClaudeThinkingBlock(enc1)
+		require.True(t, ok1)
 		require.Equal(t, "redacted_thinking", blk1.Type)
 		require.Equal(t, "EmwKAhgB_secret", blk1.Data)
 
@@ -185,7 +180,7 @@ func TestClaudeResponsesNonStream_AllBlockTypesAndIncludeGating(t *testing.T) {
 		require.JSONEq(t, `{"q":"go"}`, f3["arguments"].(string))
 	})
 
-	t.Run("without include omits encrypted_content", func(t *testing.T) {
+	t.Run("without include still emits encrypted_content", func(t *testing.T) {
 		req := parseResponsesRequestForTest(t, `{"model": "claude-sonnet-4-5", "input": "hi"}`)
 		c, rec := newClaudeResponsesTestCtx(t, "claude-sonnet-4-5")
 		info := newClaudeResponsesTestInfo("claude-sonnet-4-5", &req)
@@ -197,10 +192,12 @@ func TestClaudeResponsesNonStream_AllBlockTypesAndIncludeGating(t *testing.T) {
 		require.NoError(t, common.Unmarshal(rec.Body.Bytes(), &out))
 		items := out["output"].([]any)
 		require.Len(t, items, 4)
-		_, hasEnc0 := items[0].(map[string]any)["encrypted_content"]
-		_, hasEnc1 := items[1].(map[string]any)["encrypted_content"]
-		require.False(t, hasEnc0)
-		require.False(t, hasEnc1)
+		enc0, hasEnc0 := items[0].(map[string]any)["encrypted_content"].(string)
+		enc1, hasEnc1 := items[1].(map[string]any)["encrypted_content"].(string)
+		require.True(t, hasEnc0)
+		require.True(t, hasEnc1)
+		require.NotEmpty(t, enc0)
+		require.NotEmpty(t, enc1)
 	})
 }
 
@@ -280,10 +277,8 @@ func TestClaudeResponsesStream_EventsOrderSequenceAndEncryptedOnDoneOnly(t *test
 	doneThink := events[8].data["item"].(map[string]any)
 	encThink, _ := doneThink["encrypted_content"].(string)
 	require.NotEmpty(t, encThink)
-	decoded, kind := decodeClaudeThinking(encThink)
-	require.Equal(t, openaicompat.ReasoningSignatureForBlock, kind)
-	var blk openaicompat.ClaudeThinkingBlock
-	require.NoError(t, common.UnmarshalJsonStr(decoded, &blk))
+	blk, ok := decodeClaudeThinkingBlock(encThink)
+	require.True(t, ok)
 	require.Equal(t, "step one", blk.Thinking)
 	require.Equal(t, "sig_part_1_part_2", blk.Signature)
 
@@ -322,6 +317,50 @@ func TestClaudeResponsesStream_MaxTokensIncomplete(t *testing.T) {
 	respObj := last.data["response"].(map[string]any)
 	require.Equal(t, "incomplete", respObj["status"])
 	require.Equal(t, "max_output_tokens", respObj["incomplete_details"].(map[string]any)["reason"])
+}
+
+func TestClaudeResponses_RefusalIncomplete(t *testing.T) {
+	req := parseResponsesRequestForTest(t, `{"model":"claude-sonnet-4-5","input":"hi"}`)
+
+	t.Run("non-stream", func(t *testing.T) {
+		c, rec := newClaudeResponsesTestCtx(t, "claude-sonnet-4-5")
+		info := newClaudeResponsesTestInfo("claude-sonnet-4-5", &req)
+		payload := `{
+			"id": "msg_ref_1", "type": "message", "role": "assistant", "model": "claude-sonnet-4-5", "stop_reason": "refusal",
+			"content": [{"type": "text", "text": "cannot help"}],
+			"usage": {"input_tokens": 10, "output_tokens": 2}
+		}`
+		_, apiErr := ClaudeHandler(c, claudeHTTPJSONResponse(payload), info)
+		require.Nil(t, apiErr)
+
+		var out map[string]any
+		require.NoError(t, common.Unmarshal(rec.Body.Bytes(), &out))
+		require.Equal(t, "incomplete", out["status"])
+		require.Equal(t, "content_filter", out["incomplete_details"].(map[string]any)["reason"])
+	})
+
+	t.Run("stream", func(t *testing.T) {
+		c, rec := newClaudeResponsesTestCtx(t, "claude-sonnet-4-5")
+		info := newClaudeResponsesTestInfo("claude-sonnet-4-5", &req)
+		info.IsStream = true
+		resp := claudeHTTPSSEResponse(
+			`{"type":"message_start","message":{"id":"msg_ref_2","model":"claude-sonnet-4-5","usage":{"input_tokens":10,"output_tokens":1}}}`,
+			`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`,
+			`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"no"}}`,
+			`{"type":"content_block_stop","index":0}`,
+			`{"type":"message_delta","delta":{"stop_reason":"refusal"},"usage":{"output_tokens":2}}`,
+			`{"type":"message_stop"}`,
+		)
+		_, apiErr := ClaudeStreamHandler(c, resp, info)
+		require.Nil(t, apiErr)
+
+		events := parseResponsesSSE(t, rec.Body.String())
+		last := events[len(events)-1]
+		require.Equal(t, "response.incomplete", last.name)
+		respObj := last.data["response"].(map[string]any)
+		require.Equal(t, "incomplete", respObj["status"])
+		require.Equal(t, "content_filter", respObj["incomplete_details"].(map[string]any)["reason"])
+	})
 }
 
 func TestClaudeResponses_CustomToolUnwrap(t *testing.T) {
@@ -419,16 +458,15 @@ func TestClaudeResponsesStream_EmptyStreamAndMidStreamError(t *testing.T) {
 }
 
 func TestClaudeResponses_RoundTripThinkingAndModelMismatchFallback(t *testing.T) {
-	// Step 1: Upstream Claude responds with thinking + redacted_thinking + tool_use.
+	// Step 1: Upstream Claude responds with thinking + redacted_thinking + tool_use (even without include).
 	turn1Req := parseResponsesRequestForTest(t, `{
-		"model": "claude-sonnet-4-5",
-		"include": ["reasoning.encrypted_content"],
+		"model": "claude-sonnet-4-5-20250929",
 		"reasoning": {"effort": "high"},
 		"input": "check status",
 		"tools": [{"type": "function", "name": "check_status", "parameters": {"type": "object"}}]
 	}`)
-	c1, rec1 := newClaudeResponsesTestCtx(t, "claude-sonnet-4-5")
-	info1 := newClaudeResponsesTestInfo("claude-sonnet-4-5", &turn1Req)
+	c1, rec1 := newClaudeResponsesTestCtx(t, "claude-sonnet-4-5-20250929")
+	info1 := newClaudeResponsesTestInfo("claude-sonnet-4-5-20250929", &turn1Req)
 
 	turn1Upstream := `{
 		"id": "msg_rt_1",
@@ -463,15 +501,15 @@ func TestClaudeResponses_RoundTripThinkingAndModelMismatchFallback(t *testing.T)
 	inputRaw, err := common.Marshal(nextInput)
 	require.NoError(t, err)
 
-	// Same model: byte-identical thinking + redacted_thinking replayed before tool_use.
+	// Cross-channel equivalent model (Bedrock): byte-identical thinking + redacted_thinking replayed before tool_use.
 	turn2Req := dto.OpenAIResponsesRequest{
-		Model:     "claude-sonnet-4-5",
+		Model:     "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
 		Input:     inputRaw,
 		Reasoning: &dto.Reasoning{Effort: "high"},
 		Tools:     turn1Req.Tools,
 	}
 	c2, _ := newClaudeResponsesTestCtx(t, "")
-	claudeReqSame, err := RequestResponses2ClaudeMessage(c2, newClaudeResponsesTestInfo("claude-sonnet-4-5", &turn2Req), turn2Req)
+	claudeReqSame, err := RequestResponses2ClaudeMessage(c2, newClaudeResponsesTestInfo(turn2Req.Model, &turn2Req), turn2Req)
 	require.NoError(t, err)
 	require.NotNil(t, claudeReqSame.Thinking)
 	require.Len(t, claudeReqSame.Messages, 3)

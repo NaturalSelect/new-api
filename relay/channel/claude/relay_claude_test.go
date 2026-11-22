@@ -7,7 +7,6 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
-	"github.com/QuantumNous/new-api/service/openaicompat"
 	"github.com/stretchr/testify/require"
 )
 
@@ -383,88 +382,42 @@ func TestRequestOpenAI2ClaudeMessage_ConvertsTextFileContentToText(t *testing.T)
 	require.Equal(t, "alpha\nbeta", *content[0].Text)
 }
 
-func TestRequestOpenAI2ClaudeMessage_ReplaysThinkingBlocks(t *testing.T) {
-	extra, err := common.Marshal(map[string]any{
-		"anthropic": map[string]any{
-			"thinking_blocks": []openaicompat.ClaudeThinkingBlock{
-				{Model: "claude-sonnet-4-5", Type: "thinking", Thinking: "plan", Signature: "sig1"},
-				{Model: "claude-sonnet-4-5", Type: "redacted_thinking", Data: "enc2"},
-			},
-		},
-	})
-	require.NoError(t, err)
-
-	assistant := dto.Message{
-		Role:         "assistant",
-		ExtraContent: extra,
-	}
-	assistant.SetMediaContent([]dto.MediaContent{{Type: dto.ContentTypeText, Text: "calling"}})
-	assistant.SetToolCalls([]dto.ToolCallRequest{{
-		ID:       "call_1",
-		Type:     "function",
-		Function: dto.FunctionRequest{Name: "lookup", Arguments: `{"q":"a"}`},
-	}})
-
-	t.Run("replays matching thinking and redacted blocks before text and tool_use", func(t *testing.T) {
+func TestRequestOpenAI2ClaudeMessage_ThinkingAndSampling(t *testing.T) {
+	t.Run("opus 4.7 with reasoning_effort keeps adaptive thinking and clears sampling", func(t *testing.T) {
 		req := dto.GeneralOpenAIRequest{
-			Model:           "claude-sonnet-4-5",
-			ReasoningEffort: "high",
-			Messages: []dto.Message{
-				{Role: "user", Content: "find a"},
-				assistant,
-			},
+			Model:           "claude-opus-4-7",
+			ReasoningEffort: "xhigh",
+			Temperature:     common.GetPointer(0.6),
+			TopP:            common.GetPointer(0.9),
+			Messages:        []dto.Message{{Role: "user", Content: "solve"}},
 		}
 		out, err := RequestOpenAI2ClaudeMessage(nil, req)
 		require.NoError(t, err)
 		require.NotNil(t, out.Thinking)
-		require.Len(t, out.Messages, 2)
-
-		blocks, ok := out.Messages[1].Content.([]dto.ClaudeMediaMessage)
-		require.True(t, ok)
-		require.Len(t, blocks, 4)
-		require.Equal(t, "thinking", blocks[0].Type)
-		require.NotNil(t, blocks[0].Thinking)
-		require.Equal(t, "plan", *blocks[0].Thinking)
-		require.Equal(t, "sig1", blocks[0].Signature)
-		require.Equal(t, "redacted_thinking", blocks[1].Type)
-		require.Equal(t, "enc2", blocks[1].Data)
-		require.Equal(t, "text", blocks[2].Type)
-		require.Equal(t, "calling", *blocks[2].Text)
-		require.Equal(t, "tool_use", blocks[3].Type)
-		require.Equal(t, "call_1", blocks[3].Id)
+		require.Equal(t, "adaptive", out.Thinking.Type)
+		require.Equal(t, "summarized", out.Thinking.Display)
+		require.Nil(t, out.Thinking.BudgetTokens)
+		require.Equal(t, "xhigh", out.GetEfforts())
+		require.Nil(t, out.Temperature)
+		require.Nil(t, out.TopP)
 	})
 
-	t.Run("skips replay on model mismatch or thinking disabled", func(t *testing.T) {
-		reqMismatch := dto.GeneralOpenAIRequest{
-			Model:           "claude-opus-4-5",
+	t.Run("forced tool_choice disables thinking on chat path", func(t *testing.T) {
+		req := dto.GeneralOpenAIRequest{
+			Model:           "claude-sonnet-4-5",
 			ReasoningEffort: "high",
-			Messages: []dto.Message{
-				{Role: "user", Content: "find a"},
-				assistant,
-			},
+			ToolChoice:      "required",
+			Tools: []dto.ToolCallRequest{{
+				Type: "function",
+				Function: dto.FunctionRequest{
+					Name:       "lookup",
+					Parameters: map[string]any{"type": "object"},
+				},
+			}},
+			Messages: []dto.Message{{Role: "user", Content: "call tool"}},
 		}
-		outMismatch, err := RequestOpenAI2ClaudeMessage(nil, reqMismatch)
+		out, err := RequestOpenAI2ClaudeMessage(nil, req)
 		require.NoError(t, err)
-		blocks, ok := outMismatch.Messages[1].Content.([]dto.ClaudeMediaMessage)
-		require.True(t, ok)
-		require.Len(t, blocks, 2)
-		require.Equal(t, "text", blocks[0].Type)
-		require.Equal(t, "tool_use", blocks[1].Type)
-
-		reqDisabled := dto.GeneralOpenAIRequest{
-			Model: "claude-sonnet-4-5",
-			Messages: []dto.Message{
-				{Role: "user", Content: "find a"},
-				assistant,
-			},
-		}
-		outDisabled, err := RequestOpenAI2ClaudeMessage(nil, reqDisabled)
-		require.NoError(t, err)
-		require.Nil(t, outDisabled.Thinking)
-		blocksDisabled, ok := outDisabled.Messages[1].Content.([]dto.ClaudeMediaMessage)
-		require.True(t, ok)
-		require.Len(t, blocksDisabled, 2)
-		require.Equal(t, "text", blocksDisabled[0].Type)
-		require.Equal(t, "tool_use", blocksDisabled[1].Type)
+		require.Nil(t, out.Thinking)
 	})
 }

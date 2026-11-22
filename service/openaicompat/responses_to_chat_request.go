@@ -25,8 +25,6 @@ const (
 	ReasoningSignatureForMessage
 	// ReasoningSignatureForThought signs the summary text of the reasoning item itself.
 	ReasoningSignatureForThought
-	// ReasoningSignatureForBlock carries a JSON-encoded ClaudeThinkingBlock to replay verbatim.
-	ReasoningSignatureForBlock
 )
 
 // ReasoningSignatureDecoder recognizes the encrypted_content a channel issued for a reasoning item.
@@ -114,8 +112,6 @@ type responsesChatBuilder struct {
 	pendingCallSignature string
 	// pendingThoughts belong to the assistant message that comes next.
 	pendingThoughts []ReasoningThought
-	// pendingBlocks belong to the assistant message that comes next.
-	pendingBlocks []ClaudeThinkingBlock
 	// lastMessage is the index of the assistant message the previous input item went into, or -1.
 	lastMessage int
 }
@@ -172,25 +168,21 @@ func (b *responsesChatBuilder) addItem(item map[string]any) {
 		if b.addMessage(role, item["content"]) && b.lastAssistant() != nil {
 			b.lastMessage = len(b.messages) - 1
 			b.attachThoughts(b.lastMessage)
-			b.attachBlocks(b.lastMessage)
 		}
 	case "function_call":
 		if b.addToolCall(item, asString(item["arguments"])) {
 			b.attachThoughts(len(b.messages) - 1)
-			b.attachBlocks(len(b.messages) - 1)
 		}
 	case "custom_tool_call":
 		args, _ := common.Marshal(map[string]any{CustomToolInputKey: asString(item["input"])})
 		if b.addToolCall(item, string(args)) {
 			b.attachThoughts(len(b.messages) - 1)
-			b.attachBlocks(len(b.messages) - 1)
 		}
 	case "function_call_output", "custom_tool_call_output":
 		b.addToolOutput(item)
 	}
 	b.pendingCallSignature = ""
 	b.pendingThoughts = nil
-	b.pendingBlocks = nil
 }
 
 func (b *responsesChatBuilder) addReasoning(item map[string]any) {
@@ -216,21 +208,7 @@ func (b *responsesChatBuilder) addReasoning(item map[string]any) {
 				msg.ExtraContent = withGoogleExtra(msg.ExtraContent, "thought_signature", signature)
 			}
 		}
-	case ReasoningSignatureForBlock:
-		var block ClaudeThinkingBlock
-		if err := common.UnmarshalJsonStr(signature, &block); err == nil {
-			b.pendingBlocks = append(b.pendingBlocks, block)
-		}
 	}
-}
-
-func (b *responsesChatBuilder) attachBlocks(index int) {
-	if len(b.pendingBlocks) == 0 {
-		return
-	}
-	msg := &b.messages[index]
-	blocks := append(ClaudeThinkingBlocksFromExtraContent(msg.ExtraContent), b.pendingBlocks...)
-	msg.ExtraContent = withAnthropicExtra(msg.ExtraContent, "thinking_blocks", blocks)
 }
 
 func (b *responsesChatBuilder) attachThoughts(index int) {

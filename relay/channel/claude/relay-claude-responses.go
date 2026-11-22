@@ -81,11 +81,10 @@ type claudeResponsesTranscoder struct {
 	stream  bool
 	request *dto.OpenAIResponsesRequest
 
-	respID           string
-	createdAt        int64
-	customTools      map[string]struct{}
-	encryptReasoning bool
-	signatureModel   string
+	respID         string
+	createdAt      int64
+	customTools    map[string]struct{}
+	signatureModel string
 
 	seq        int
 	started    bool
@@ -107,7 +106,6 @@ func newClaudeResponsesTranscoder(c *gin.Context, info *relaycommon.RelayInfo, s
 	if info != nil {
 		t.request, _ = info.Request.(*dto.OpenAIResponsesRequest)
 	}
-	t.encryptReasoning = openaicompat.ResponsesIncludesEncryptedReasoning(t.request)
 	if c != nil {
 		t.signatureModel = common.GetContextKeyString(c, constant.ContextKeyClaudeSignatureModel)
 	}
@@ -354,20 +352,18 @@ func (t *claudeResponsesTranscoder) closeItem(it *claudeResponsesItem) {
 	switch it.kind {
 	case responsesItemReasoning:
 		text := it.text.String()
-		if t.encryptReasoning {
-			if it.redacted {
-				it.encrypted = encodeClaudeThinking(t.signatureModel, dto.ClaudeMediaMessage{
-					Type: "redacted_thinking",
-					Data: it.redactedData,
-				})
-			} else if sig := it.signature.String(); sig != "" {
-				thinkingText := text
-				it.encrypted = encodeClaudeThinking(t.signatureModel, dto.ClaudeMediaMessage{
-					Type:      "thinking",
-					Thinking:  &thinkingText,
-					Signature: sig,
-				})
-			}
+		if it.redacted {
+			it.encrypted = encodeClaudeThinking(t.signatureModel, dto.ClaudeMediaMessage{
+				Type: "redacted_thinking",
+				Data: it.redactedData,
+			})
+		} else if sig := it.signature.String(); sig != "" {
+			thinkingText := text
+			it.encrypted = encodeClaudeThinking(t.signatureModel, dto.ClaudeMediaMessage{
+				Type:      "thinking",
+				Thinking:  &thinkingText,
+				Signature: sig,
+			})
 		}
 		if it.hasSummaryPart {
 			t.emit("response.reasoning_summary_text.done", map[string]any{
@@ -426,6 +422,8 @@ func claudeResponsesTerminalState(stopReason string) (status, incompleteReason s
 	switch strings.ToLower(strings.TrimSpace(stopReason)) {
 	case "max_tokens", "model_context_window_exceeded":
 		return "incomplete", "max_output_tokens"
+	case "refusal":
+		return "incomplete", "content_filter"
 	default:
 		return "completed", ""
 	}

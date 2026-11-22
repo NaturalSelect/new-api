@@ -44,6 +44,7 @@ const defaultOperationsSettings: OperationsSettings = {
   'monitor_setting.auto_test_channel_minutes': 10,
   'monitor_setting.auto_test_disabled_channels_only': false,
   'monitor_setting.auto_ban_optimistic_minutes': 30,
+  'monitor_setting.auto_unban_balance_threshold': 0,
   SMTPServer: '',
   SMTPPort: '',
   SMTPAccount: '',

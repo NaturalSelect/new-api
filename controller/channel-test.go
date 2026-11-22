@@ -1033,7 +1033,7 @@ func testAllChannels(notify bool, isAutomatic bool) error {
 			// 仅对悲观路径生效，乐观渠道由定时器处理。
 			if isAutoDisabled && !channel.GetAutoBanOptimistic() && channel.GetAutoUnbanByBalance() && channel.IsDisabledByBalance() {
 				balance, err := updateChannelBalance(channel)
-				if err == nil && balance > 0 {
+				if err == nil && shouldUnbanByBalance(balance, monitorSetting.AutoUnbanBalanceThreshold) {
 					service.EnableChannel(channel.Id, "", channel.Name)
 				}
 				continue
@@ -1091,6 +1091,16 @@ func TestAllChannels(c *gin.Context) {
 		"success": true,
 		"message": "",
 	})
+}
+
+func shouldUnbanByBalance(balance float64, threshold float64) bool {
+	if math.IsNaN(balance) {
+		return false
+	}
+	if math.IsNaN(threshold) || threshold < 0 {
+		threshold = 0
+	}
+	return balance > threshold
 }
 
 func parseChannelStatusTime(statusTime any) (int64, bool) {

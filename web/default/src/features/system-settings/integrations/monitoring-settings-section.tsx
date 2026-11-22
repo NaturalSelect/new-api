@@ -74,6 +74,9 @@ const monitoringSchema = z
         .number()
         .int()
         .min(1, 'Interval must be at least 1 minute'),
+      auto_unban_balance_threshold: z.coerce
+        .number()
+        .min(0, 'Threshold must be at least 0'),
     }),
   })
   .superRefine((values, ctx) => {
@@ -122,6 +125,7 @@ type MonitoringSettingsSectionProps = {
     'monitor_setting.auto_test_channel_minutes': number
     'monitor_setting.auto_test_disabled_channels_only': boolean
     'monitor_setting.auto_ban_optimistic_minutes': number
+    'monitor_setting.auto_unban_balance_threshold': number
   }
 }
 
@@ -143,6 +147,7 @@ type NormalizedMonitoringValues = {
   'monitor_setting.auto_test_channel_minutes': number
   'monitor_setting.auto_test_disabled_channels_only': boolean
   'monitor_setting.auto_ban_optimistic_minutes': number
+  'monitor_setting.auto_unban_balance_threshold': number
 }
 
 const buildFormDefaults = (
@@ -170,6 +175,8 @@ const buildFormDefaults = (
       defaults['monitor_setting.auto_test_disabled_channels_only'],
     auto_ban_optimistic_minutes:
       defaults['monitor_setting.auto_ban_optimistic_minutes'],
+    auto_unban_balance_threshold:
+      defaults['monitor_setting.auto_unban_balance_threshold'],
   },
 })
 
@@ -201,6 +208,8 @@ const normalizeDefaults = (
     defaults['monitor_setting.auto_test_disabled_channels_only'],
   'monitor_setting.auto_ban_optimistic_minutes':
     defaults['monitor_setting.auto_ban_optimistic_minutes'],
+  'monitor_setting.auto_unban_balance_threshold':
+    defaults['monitor_setting.auto_unban_balance_threshold'],
 })
 
 const normalizeFormValues = (
@@ -231,6 +240,8 @@ const normalizeFormValues = (
     values.monitor_setting.auto_test_disabled_channels_only,
   'monitor_setting.auto_ban_optimistic_minutes':
     values.monitor_setting.auto_ban_optimistic_minutes,
+  'monitor_setting.auto_unban_balance_threshold':
+    values.monitor_setting.auto_unban_balance_threshold,
 })
 
 export function MonitoringSettingsSection({
@@ -381,6 +392,30 @@ export function MonitoringSettingsSection({
                   </FormControl>
                   <FormDescription>
                     {t('Auto-disabled channels with optimistic unban enabled will be re-enabled after this interval without testing. If still broken, the next request will disable them again.')}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name='monitor_setting.auto_unban_balance_threshold'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Balance auto-unban threshold')}</FormLabel>
+                  <FormControl>
+                    <Input
+                      type='number'
+                      min={0}
+                      step='any'
+                      {...safeNumberFieldProps(field)}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    {t(
+                      'Auto-disabled channels due to insufficient balance will only be re-enabled when their balance exceeds this threshold.'
+                    )}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

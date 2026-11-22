@@ -12,13 +12,15 @@ type MonitorSetting struct {
 	AutoTestChannelMinutes       float64 `json:"auto_test_channel_minutes"`
 	AutoTestDisabledChannelsOnly bool    `json:"auto_test_disabled_channels_only"`
 	AutoBanOptimisticMinutes     float64 `json:"auto_ban_optimistic_minutes"`
+	AutoUnbanBalanceThreshold    float64 `json:"auto_unban_balance_threshold"`
 }
 
 // 默认配置
 var monitorSetting = MonitorSetting{
-	AutoTestChannelEnabled:   false,
-	AutoTestChannelMinutes:   10,
-	AutoBanOptimisticMinutes: 30,
+	AutoTestChannelEnabled:    false,
+	AutoTestChannelMinutes:    10,
+	AutoBanOptimisticMinutes:  30,
+	AutoUnbanBalanceThreshold: 0,
 }
 
 func init() {

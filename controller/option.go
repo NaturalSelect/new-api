@@ -2,6 +2,7 @@ package controller
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -27,6 +28,17 @@ var completionRatioMetaOptionKeys = []string{
 	"ImageRatio",
 	"AudioRatio",
 	"AudioCompletionRatio",
+}
+
+func parseAutoUnbanBalanceThreshold(raw string) (string, error) {
+	threshold, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+	if err != nil || math.IsNaN(threshold) || math.IsInf(threshold, 0) || threshold < 0 {
+		return "", fmt.Errorf("余额自动解禁阈值必须为大于等于 0 的数字")
+	}
+	if threshold == 0 {
+		threshold = 0
+	}
+	return strconv.FormatFloat(threshold, 'f', -1, 64), nil
 }
 
 func isPaymentComplianceOptionKey(key string) bool {
@@ -295,6 +307,16 @@ func UpdateOption(c *gin.Context) {
 			})
 			return
 		}
+	case "monitor_setting.auto_unban_balance_threshold":
+		normalizedThreshold, parseErr := parseAutoUnbanBalanceThreshold(option.Value.(string))
+		if parseErr != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": parseErr.Error(),
+			})
+			return
+		}
+		option.Value = normalizedThreshold
 	case "console_setting.api_info":
 		err = console_setting.ValidateConsoleSettings(option.Value.(string), "ApiInfo")
 		if err != nil {

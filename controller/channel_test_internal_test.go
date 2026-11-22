@@ -2,6 +2,7 @@ package controller
 
 import (
 	"encoding/json"
+	"math"
 	"net/http/httptest"
 	"testing"
 
@@ -162,4 +163,61 @@ func TestOptimisticUnbanKeysMultiKeySkipsManualInvalidAndFreshKeys(t *testing.T)
 
 	channel.Status = common.ChannelStatusManuallyDisabled
 	require.Empty(t, optimisticUnbanKeys(channel, 160, 1))
+}
+
+func TestShouldUnbanByBalance(t *testing.T) {
+	tests := []struct {
+		name      string
+		balance   float64
+		threshold float64
+		expected  bool
+	}{
+		{name: "default threshold rejects negative balance", balance: -0.01, threshold: 0, expected: false},
+		{name: "default threshold rejects zero balance", balance: 0, threshold: 0, expected: false},
+		{name: "default threshold allows positive balance", balance: 0.01, threshold: 0, expected: true},
+		{name: "positive threshold rejects below threshold", balance: 4.99, threshold: 5, expected: false},
+		{name: "positive threshold rejects equal balance", balance: 5, threshold: 5, expected: false},
+		{name: "positive threshold allows above threshold", balance: 5.01, threshold: 5, expected: true},
+		{name: "fractional threshold rejects equal balance", balance: 0.5, threshold: 0.5, expected: false},
+		{name: "fractional threshold allows above threshold", balance: 0.51, threshold: 0.5, expected: true},
+		{name: "negative threshold clamps to zero for zero balance", balance: 0, threshold: -5, expected: false},
+		{name: "negative threshold clamps to zero for positive balance", balance: 0.01, threshold: -5, expected: true},
+		{name: "nan balance never unbans", balance: math.NaN(), threshold: 0, expected: false},
+		{name: "nan threshold falls back to zero", balance: 1, threshold: math.NaN(), expected: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.expected, shouldUnbanByBalance(tt.balance, tt.threshold))
+		})
+	}
+}
+
+func TestParseAutoUnbanBalanceThreshold(t *testing.T) {
+	validTests := []struct {
+		name     string
+		raw      string
+		expected string
+	}{
+		{name: "zero", raw: "0", expected: "0"},
+		{name: "negative zero normalized", raw: "-0", expected: "0"},
+		{name: "integer with spaces", raw: " 10 ", expected: "10"},
+		{name: "decimal", raw: "2.50", expected: "2.5"},
+	}
+
+	for _, tt := range validTests {
+		t.Run(tt.name, func(t *testing.T) {
+			actual, err := parseAutoUnbanBalanceThreshold(tt.raw)
+			require.NoError(t, err)
+			require.Equal(t, tt.expected, actual)
+		})
+	}
+
+	invalidCases := []string{"", "   ", "-0.01", "-5", "abc", "NaN", "Inf", "-Inf"}
+	for _, raw := range invalidCases {
+		t.Run("invalid_"+raw, func(t *testing.T) {
+			_, err := parseAutoUnbanBalanceThreshold(raw)
+			require.Error(t, err)
+		})
+	}
 }

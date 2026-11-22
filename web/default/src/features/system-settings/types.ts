@@ -311,6 +311,7 @@ export type OperationsSettings = {
   'monitor_setting.auto_test_channel_minutes': number
   'monitor_setting.auto_test_disabled_channels_only': boolean
   'monitor_setting.auto_ban_optimistic_minutes': number
+  'monitor_setting.auto_unban_balance_threshold': number
   SMTPServer: string
   SMTPPort: string
   SMTPAccount: string

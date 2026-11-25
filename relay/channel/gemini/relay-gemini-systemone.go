@@ -69,6 +69,11 @@ var decisionAnswerFields = map[string][]decisionAnswerField{
 	"score":  {{"score", gjson.Number}, {"confidence", gjson.Number}, {"probabilities", gjson.JSON}},
 }
 
+// NOTE: With jev form off, a noul answer keeps Google's own confidence.
+var geminiNoulAnswerFields = []decisionAnswerField{{"noul", gjson.Number}, {"confidence", gjson.Number}}
+
+const noulJevDefaultInstructions = "Does the input match the true description rather than the false description?"
+
 type systemOneAsset struct {
 	literal string
 	escaped string
@@ -91,7 +96,7 @@ type systemOneSegment struct {
 
 // ConvertSystemOneToDecision rewrites a System One request as a Decisions request.
 // Every error comes from the client's input.
-func ConvertSystemOneToDecision(c *gin.Context, request *dto.TypeSafeRequest, upstreamModel string) ([]byte, error) {
+func ConvertSystemOneToDecision(c *gin.Context, request *dto.TypeSafeRequest, upstreamModel string, jevNoul bool) ([]byte, error) {
 	root := gjson.ParseBytes(request.RequestJSON)
 
 	state := root.Get("state")
@@ -109,7 +114,7 @@ func ConvertSystemOneToDecision(c *gin.Context, request *dto.TypeSafeRequest, up
 	questions := make(map[string]decisionQuestion)
 	var questionErr error
 	root.Get("questions").ForEach(func(id, question gjson.Result) bool {
-		converted, err := convertSystemOneQuestion(id.String(), question)
+		converted, err := convertSystemOneQuestion(id.String(), question, jevNoul)
 		if err != nil {
 			questionErr = err
 			return false
@@ -283,7 +288,7 @@ func splitStateByAssets(text string, inJSONText bool, assets []*systemOneAsset) 
 	return segments
 }
 
-func convertSystemOneQuestion(id string, question gjson.Result) (decisionQuestion, error) {
+func convertSystemOneQuestion(id string, question gjson.Result, jevNoul bool) (decisionQuestion, error) {
 	kind := question.Get("type").String()
 	converted := decisionQuestion{Type: kind}
 	switch kind {
@@ -295,26 +300,18 @@ func convertSystemOneQuestion(id string, question gjson.Result) (decisionQuestio
 	}
 
 	converted.Instructions = systemOneText(question.Get("instructions"))
+	criteria := question.Get("criteria")
+	if kind == "noul" {
+		return convertNoulQuestion(id, criteria, converted, jevNoul)
+	}
 	if converted.Instructions == "" {
 		return converted, fmt.Errorf("question %q needs instructions on this channel", id)
 	}
 
-	criteria := question.Get("criteria")
 	if criteria.Type == gjson.Null {
 		return converted, nil
 	}
 	switch kind {
-	case "noul":
-		if !criteria.IsObject() {
-			return converted, fmt.Errorf("question %q criteria must be an object", id)
-		}
-		noul := decisionNoulCriteria{
-			TrueDescription:  systemOneText(criteria.Get("true")),
-			FalseDescription: systemOneText(criteria.Get("false")),
-		}
-		if noul != (decisionNoulCriteria{}) {
-			converted.Criteria = noul
-		}
 	case "choice":
 		if !criteria.IsObject() {
 			return converted, fmt.Errorf("question %q criteria must be an object", id)
@@ -335,6 +332,49 @@ func convertSystemOneQuestion(id string, question gjson.Result) (decisionQuestio
 			return true
 		})
 		converted.Criteria = levels
+	}
+	return converted, nil
+}
+
+// NOTE: In jev form a noul question reads like System One's own: criteria hold only true and false, and instructions may be left out.
+func convertNoulQuestion(id string, criteria gjson.Result, converted decisionQuestion, jevNoul bool) (decisionQuestion, error) {
+	var noul decisionNoulCriteria
+	if criteria.Type != gjson.Null {
+		if !criteria.IsObject() {
+			return converted, fmt.Errorf("question %q criteria must be an object", id)
+		}
+		trueKey, falseKey := "true_description", "false_description"
+		if jevNoul {
+			trueKey, falseKey = "true", "false"
+			unknownKey := ""
+			criteria.ForEach(func(key, _ gjson.Result) bool {
+				if name := key.String(); name != trueKey && name != falseKey {
+					unknownKey = name
+					return false
+				}
+				return true
+			})
+			if unknownKey != "" {
+				return converted, fmt.Errorf("question %q criteria may only have true and false, got %q", id, unknownKey)
+			}
+		}
+		noul = decisionNoulCriteria{
+			TrueDescription:  systemOneText(criteria.Get(trueKey)),
+			FalseDescription: systemOneText(criteria.Get(falseKey)),
+		}
+		if noul != (decisionNoulCriteria{}) {
+			converted.Criteria = noul
+		}
+	}
+
+	if converted.Instructions == "" {
+		if !jevNoul {
+			return converted, fmt.Errorf("question %q needs instructions on this channel", id)
+		}
+		if noul == (decisionNoulCriteria{}) {
+			return converted, fmt.Errorf("question %q needs instructions or criteria on this channel", id)
+		}
+		converted.Instructions = noulJevDefaultInstructions
 	}
 	return converted, nil
 }
@@ -373,7 +413,7 @@ func SystemOneHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 		outputTokens = tokens.Int()
 	}
 
-	converted, err := buildSystemOneResponse(responseBody, request, info.UpstreamModelName, systemOneUsage{InputTokens: usage.PromptTokens, OutputTokens: outputTokens})
+	converted, err := buildSystemOneResponse(responseBody, request, info.UpstreamModelName, systemOneUsage{InputTokens: usage.PromptTokens, OutputTokens: outputTokens}, info.ChannelSetting.IsSystemOneNoulJevForm())
 	if err != nil {
 		return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
 	}
@@ -382,7 +422,7 @@ func SystemOneHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 }
 
 // NOTE: Answers follow the request's question order, and a question id is never used as a gjson path because ids may contain dots.
-func buildSystemOneResponse(responseBody []byte, request *dto.TypeSafeRequest, model string, usage systemOneUsage) ([]byte, error) {
+func buildSystemOneResponse(responseBody []byte, request *dto.TypeSafeRequest, model string, usage systemOneUsage, jevNoul bool) ([]byte, error) {
 	googleAnswers := gjson.GetBytes(responseBody, "answers")
 	if !googleAnswers.IsObject() {
 		return nil, errors.New("gemini decision response is missing answers")
@@ -405,7 +445,7 @@ func buildSystemOneResponse(responseBody []byte, request *dto.TypeSafeRequest, m
 	var buildErr error
 	first := true
 	gjson.GetBytes(request.RequestJSON, "questions").ForEach(func(id, question gjson.Result) bool {
-		answer, err := convertDecisionAnswer(answersByID[id.String()], question)
+		answer, err := convertDecisionAnswer(answersByID[id.String()], question, jevNoul)
 		if err == nil {
 			var idJSON []byte
 			if idJSON, err = common.Marshal(id.String()); err == nil {
@@ -438,7 +478,7 @@ func buildSystemOneResponse(responseBody []byte, request *dto.TypeSafeRequest, m
 	return out.Bytes(), nil
 }
 
-func convertDecisionAnswer(answer, question gjson.Result) ([]byte, error) {
+func convertDecisionAnswer(answer, question gjson.Result, jevNoul bool) ([]byte, error) {
 	kind := question.Get("type").String()
 	if !answer.IsObject() || answer.Get("type").String() != kind {
 		return nil, errors.New("gemini decision response has no matching answer")
@@ -449,7 +489,11 @@ func convertDecisionAnswer(answer, question gjson.Result) ([]byte, error) {
 		return nil, err
 	}
 	fields := map[string]json.RawMessage{"type": kindJSON}
-	for _, field := range decisionAnswerFields[kind] {
+	answerFields := decisionAnswerFields[kind]
+	if kind == "noul" && !jevNoul {
+		answerFields = geminiNoulAnswerFields
+	}
+	for _, field := range answerFields {
 		value := answer.Get(field.name)
 		if value.Type != field.kind || (field.kind == gjson.JSON && !value.IsObject()) {
 			return nil, fmt.Errorf("gemini decision answer has an invalid %s", field.name)

@@ -88,7 +88,7 @@ func systemOneRequestBody(c *gin.Context, info *relaycommon.RelayInfo, request *
 		return body, closer, nil
 	case constant.APITypeGemini:
 		// NOTE: A conversion error comes from the client's request, so no other channel can serve it either.
-		data, err := gemini.ConvertSystemOneToDecision(c, request, info.UpstreamModelName)
+		data, err := gemini.ConvertSystemOneToDecision(c, request, info.UpstreamModelName, info.ChannelSetting.IsSystemOneNoulJevForm())
 		if err != nil {
 			return nil, nil, types.NewErrorWithStatusCode(err, types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 		}

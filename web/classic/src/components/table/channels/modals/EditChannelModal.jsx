@@ -195,6 +195,7 @@ const EditChannelModal = (props) => {
     // 渠道额外设置的默认值
     force_format: false,
     disable_chat_completions: false,
+    system_one_noul_jev_form: true,
     thinking_to_content: false,
     proxy: '',
     pass_through_body_enabled: false,
@@ -519,6 +520,7 @@ const EditChannelModal = (props) => {
   const [channelSettings, setChannelSettings] = useState({
     force_format: false,
     disable_chat_completions: false,
+    system_one_noul_jev_form: true,
     thinking_to_content: false,
     proxy: '',
     pass_through_body_enabled: false,
@@ -870,6 +872,8 @@ const EditChannelModal = (props) => {
           data.force_format = parsedSettings.force_format || false;
           data.disable_chat_completions =
             parsedSettings.disable_chat_completions || false;
+          data.system_one_noul_jev_form =
+            parsedSettings.system_one_noul_jev_form !== false;
           data.thinking_to_content =
             parsedSettings.thinking_to_content || false;
           data.proxy = parsedSettings.proxy || '';
@@ -882,6 +886,7 @@ const EditChannelModal = (props) => {
           console.error('解析渠道设置失败:', error);
           data.force_format = false;
           data.disable_chat_completions = false;
+          data.system_one_noul_jev_form = true;
           data.thinking_to_content = false;
           data.proxy = '';
           data.pass_through_body_enabled = false;
@@ -891,6 +896,7 @@ const EditChannelModal = (props) => {
       } else {
         data.force_format = false;
         data.disable_chat_completions = false;
+        data.system_one_noul_jev_form = true;
         data.thinking_to_content = false;
         data.proxy = '';
         data.pass_through_body_enabled = false;
@@ -1001,6 +1007,7 @@ const EditChannelModal = (props) => {
       setChannelSettings({
         force_format: data.force_format,
         disable_chat_completions: data.disable_chat_completions,
+        system_one_noul_jev_form: data.system_one_noul_jev_form,
         thinking_to_content: data.thinking_to_content,
         proxy: data.proxy,
         pass_through_body_enabled: data.pass_through_body_enabled,
@@ -1048,6 +1055,7 @@ const EditChannelModal = (props) => {
         data.pass_through_body_enabled ||
         data.force_format ||
         data.disable_chat_completions ||
+        data.system_one_noul_jev_form === false ||
         data.claude_beta_query ||
         data.system_prompt_override;
       if (hasAdvancedValues) {
@@ -1392,6 +1400,7 @@ const EditChannelModal = (props) => {
     setChannelSettings({
       force_format: false,
       disable_chat_completions: false,
+      system_one_noul_jev_form: true,
       thinking_to_content: false,
       proxy: '',
       pass_through_body_enabled: false,
@@ -1767,6 +1776,7 @@ const EditChannelModal = (props) => {
     const channelExtraSettings = {
       force_format: localInputs.force_format || false,
       disable_chat_completions: localInputs.disable_chat_completions || false,
+      system_one_noul_jev_form: localInputs.system_one_noul_jev_form !== false,
       thinking_to_content: localInputs.thinking_to_content || false,
       proxy: localInputs.proxy || '',
       pass_through_body_enabled: localInputs.pass_through_body_enabled || false,
@@ -1849,6 +1859,7 @@ const EditChannelModal = (props) => {
     // 清理不需要发送到后端的字段
     delete localInputs.force_format;
     delete localInputs.disable_chat_completions;
+    delete localInputs.system_one_noul_jev_form;
     delete localInputs.thinking_to_content;
     delete localInputs.proxy;
     delete localInputs.pass_through_body_enabled;
@@ -2544,6 +2555,10 @@ const EditChannelModal = (props) => {
 
                   {inputs.type === 1 && (
                     <Form.Switch field='disable_chat_completions' label={t('禁用 Chat 接口')} checkedText={t('开')} uncheckedText={t('关')} onChange={(value) => handleChannelSettingsChange('disable_chat_completions', value)} extraText={t('开启后，该渠道将拒绝 Chat Completions（/v1/chat/completions）请求，仅对 OpenAI 渠道生效')} />
+                  )}
+
+                  {inputs.type === 24 && (
+                    <Form.Switch field='system_one_noul_jev_form' label={t('System One noul 归一化为 Jev 形式')} checkedText={t('开')} uncheckedText={t('关')} onChange={(value) => handleChannelSettingsChange('system_one_noul_jev_form', value)} extraText={t('开启后，该渠道的 System One（Jev）noul 问题与答案按 Jev 形式处理：criteria 使用 true/false、可省略 instructions、答案不含 confidence，仅对 Gemini 渠道生效')} />
                   )}
 
                   <Form.Switch field='thinking_to_content' label={t('思考内容转换')} checkedText={t('开')} uncheckedText={t('关')} onChange={(value) => handleChannelSettingsChange('thinking_to_content', value)} extraText={t('将 reasoning_content 转换为 <think> 标签拼接到内容中')} />

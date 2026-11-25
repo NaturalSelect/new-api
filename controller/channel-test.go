@@ -381,7 +381,7 @@ func testChannel(channel *model.Channel, testUserID int, testModel string, endpo
 		if info.ApiType == constant.APITypeGemini {
 			// Gemini 渠道 - 转换为 Decisions 请求
 			var decisionJSON []byte
-			decisionJSON, err = gemini.ConvertSystemOneToDecision(c, typeSafeReq, info.UpstreamModelName)
+			decisionJSON, err = gemini.ConvertSystemOneToDecision(c, typeSafeReq, info.UpstreamModelName, info.ChannelSetting.IsSystemOneNoulJevForm())
 			convertedRequest = json.RawMessage(decisionJSON)
 		} else {
 			// TypeSafe 请求 - 请求体就是原始 JSON，不做转换

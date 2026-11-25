@@ -3,10 +3,39 @@ package dto
 import (
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/stretchr/testify/assert"
 )
 
 func ptr(v int) *int { return &v }
+
+func TestIsSystemOneNoulJevForm(t *testing.T) {
+	t.Run("unset is enabled", func(t *testing.T) {
+		assert.True(t, ChannelSettings{}.IsSystemOneNoulJevForm())
+	})
+
+	t.Run("explicit true is enabled", func(t *testing.T) {
+		assert.True(t, ChannelSettings{SystemOneNoulJevForm: common.GetPointer(true)}.IsSystemOneNoulJevForm())
+	})
+
+	t.Run("explicit false is disabled", func(t *testing.T) {
+		assert.False(t, ChannelSettings{SystemOneNoulJevForm: common.GetPointer(false)}.IsSystemOneNoulJevForm())
+	})
+
+	t.Run("absent in JSON stays unset", func(t *testing.T) {
+		var s ChannelSettings
+		assert.NoError(t, common.Unmarshal([]byte(`{}`), &s))
+		assert.Nil(t, s.SystemOneNoulJevForm)
+		assert.True(t, s.IsSystemOneNoulJevForm())
+	})
+
+	t.Run("explicit false in JSON is kept", func(t *testing.T) {
+		var s ChannelSettings
+		assert.NoError(t, common.Unmarshal([]byte(`{"system_one_noul_jev_form":false}`), &s))
+		assert.NotNil(t, s.SystemOneNoulJevForm)
+		assert.False(t, s.IsSystemOneNoulJevForm())
+	})
+}
 
 // TestEffectiveClaudeCodeDisguiseMode verifies the three-branch fallback logic:
 //   - mode pointer set (even to 0) → use it directly, never fall back to legacy bool

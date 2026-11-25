@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -32,9 +33,14 @@ func newSystemOneContext(t *testing.T, contentType string, body []byte) *gin.Con
 
 func convertSystemOne(t *testing.T, body string) (string, error) {
 	t.Helper()
+	return convertSystemOneWithJevNoul(t, body, true)
+}
+
+func convertSystemOneWithJevNoul(t *testing.T, body string, jevNoul bool) (string, error) {
+	t.Helper()
 	request, err := dto.NewTypeSafeRequest([]byte(body), false, false)
 	require.NoError(t, err)
-	out, err := ConvertSystemOneToDecision(newSystemOneContext(t, "application/json", []byte(body)), request, "gemini-decision-1")
+	out, err := ConvertSystemOneToDecision(newSystemOneContext(t, "application/json", []byte(body)), request, "gemini-decision-1", jevNoul)
 	return string(out), err
 }
 
@@ -64,6 +70,64 @@ func TestConvertSystemOneStructuredStateKeepsMemberOrder(t *testing.T) {
 	out, err := convertSystemOne(t, `{"model":"m","state":{"z":1,"a":[2,3]},"questions":{"q":{"type":"noul","instructions":"ok?"}}}`)
 	require.NoError(t, err)
 	require.Contains(t, out, `"input":"{\"z\":1,\"a\":[2,3]}"`)
+}
+
+func TestConvertSystemOneNoulJevForm(t *testing.T) {
+	t.Run("criteria alone gets the default instructions", func(t *testing.T) {
+		out, err := convertSystemOne(t, `{"model":"m","state":"s","questions":{"q":{"type":"noul","criteria":{"true":"Broken.","false":"Fine."}}}}`)
+		require.NoError(t, err)
+		require.JSONEq(t, `{
+			"model":"gemini-decision-1",
+			"input":"s",
+			"questions":{"q":{"type":"noul","instructions":"`+noulJevDefaultInstructions+`","criteria":{"true_description":"Broken.","false_description":"Fine."}}}
+		}`, out)
+	})
+
+	t.Run("given instructions are kept", func(t *testing.T) {
+		out, err := convertSystemOne(t, `{"model":"m","state":"s","questions":{"q":{"type":"noul","instructions":"Is it damaged?","criteria":{"true":"Broken."}}}}`)
+		require.NoError(t, err)
+		require.JSONEq(t, `{
+			"model":"gemini-decision-1",
+			"input":"s",
+			"questions":{"q":{"type":"noul","instructions":"Is it damaged?","criteria":{"true_description":"Broken."}}}
+		}`, out)
+	})
+
+	t.Run("no instructions and no descriptions is rejected", func(t *testing.T) {
+		for name, body := range map[string]string{
+			"no criteria":    `{"model":"m","state":"s","questions":{"q":{"type":"noul"}}}`,
+			"null criteria":  `{"model":"m","state":"s","questions":{"q":{"type":"noul","criteria":null}}}`,
+			"null both":      `{"model":"m","state":"s","questions":{"q":{"type":"noul","criteria":{"true":null,"false":null}}}}`,
+			"empty criteria": `{"model":"m","state":"s","questions":{"q":{"type":"noul","criteria":{}}}}`,
+		} {
+			t.Run(name, func(t *testing.T) {
+				_, err := convertSystemOne(t, body)
+				require.ErrorContains(t, err, "needs instructions or criteria")
+			})
+		}
+	})
+
+	t.Run("criteria with other keys is rejected", func(t *testing.T) {
+		_, err := convertSystemOne(t, `{"model":"m","state":"s","questions":{"q":{"type":"noul","instructions":"i","criteria":{"true":"a","maybe":"b"}}}}`)
+		require.ErrorContains(t, err, "criteria may only have true and false")
+	})
+}
+
+func TestConvertSystemOneNoulGeminiForm(t *testing.T) {
+	t.Run("gemini criteria pass through", func(t *testing.T) {
+		out, err := convertSystemOneWithJevNoul(t, `{"model":"m","state":"s","questions":{"q":{"type":"noul","instructions":"Is it damaged?","criteria":{"true_description":"Broken.","false_description":"Fine."}}}}`, false)
+		require.NoError(t, err)
+		require.JSONEq(t, `{
+			"model":"gemini-decision-1",
+			"input":"s",
+			"questions":{"q":{"type":"noul","instructions":"Is it damaged?","criteria":{"true_description":"Broken.","false_description":"Fine."}}}
+		}`, out)
+	})
+
+	t.Run("instructions are required", func(t *testing.T) {
+		_, err := convertSystemOneWithJevNoul(t, `{"model":"m","state":"s","questions":{"q":{"type":"noul","criteria":{"true_description":"Broken."}}}}`, false)
+		require.ErrorContains(t, err, "needs instructions on this channel")
+	})
 }
 
 func TestConvertSystemOneRejectsUnsupportedInput(t *testing.T) {
@@ -164,7 +228,7 @@ func TestConvertSystemOneMultipartAssets(t *testing.T) {
 
 	t.Run("png part becomes an inline image", func(t *testing.T) {
 		c, request := build(t, "img", testPNG)
-		out, err := ConvertSystemOneToDecision(c, request, "gemini-decision-1")
+		out, err := ConvertSystemOneToDecision(c, request, "gemini-decision-1", true)
 		require.NoError(t, err)
 		require.JSONEq(t, `{
 			"model":"gemini-decision-1",
@@ -179,13 +243,13 @@ func TestConvertSystemOneMultipartAssets(t *testing.T) {
 
 	t.Run("missing part", func(t *testing.T) {
 		c, request := build(t, "", nil)
-		_, err := ConvertSystemOneToDecision(c, request, "gemini-decision-1")
+		_, err := ConvertSystemOneToDecision(c, request, "gemini-decision-1", true)
 		require.ErrorContains(t, err, `image part "img" is missing`)
 	})
 
 	t.Run("part that is not an image", func(t *testing.T) {
 		c, request := build(t, "img", []byte("just text, not an image"))
-		_, err := ConvertSystemOneToDecision(c, request, "gemini-decision-1")
+		_, err := ConvertSystemOneToDecision(c, request, "gemini-decision-1", true)
 		require.ErrorContains(t, err, "must be a PNG or JPEG image")
 	})
 }
@@ -253,6 +317,35 @@ func TestSystemOneHandlerConvertsAnswers(t *testing.T) {
 		},
 		"usage":{"input_tokens":120,"output_tokens":0}
 	}`, recorder.Body.String())
+}
+
+func TestSystemOneHandlerNoulConfidenceFollowsJevForm(t *testing.T) {
+	const request = `{"model":"m","state":"s","questions":{"damaged":{"type":"noul","instructions":"Is it damaged?"}}}`
+
+	t.Run("confidence is kept when jev form is off", func(t *testing.T) {
+		info := newSystemOneInfo(t, request, 1)
+		info.ChannelSetting.SystemOneNoulJevForm = common.GetPointer(false)
+
+		_, apiErr, recorder := runSystemOneHandler(t, info, `{"answers":{"damaged":{"type":"noul","noul":0.97,"confidence":0.97}},"usage":{"total_input_tokens":5}}`)
+
+		require.Nil(t, apiErr)
+		require.JSONEq(t, `{
+			"model":"gemini-decision-1",
+			"answers":{"damaged":{"type":"noul","noul":0.97,"confidence":0.97}},
+			"usage":{"input_tokens":5,"output_tokens":0}
+		}`, recorder.Body.String())
+	})
+
+	t.Run("a missing confidence is a bad response when jev form is off", func(t *testing.T) {
+		info := newSystemOneInfo(t, request, 1)
+		info.ChannelSetting.SystemOneNoulJevForm = common.GetPointer(false)
+
+		usage, apiErr, recorder := runSystemOneHandler(t, info, `{"answers":{"damaged":{"type":"noul","noul":0.97}},"usage":{"total_input_tokens":5}}`)
+
+		require.Nil(t, usage)
+		require.NotNil(t, apiErr)
+		require.Empty(t, recorder.Body.String())
+	})
 }
 
 func TestSystemOneHandlerKeepsRequestQuestionOrder(t *testing.T) {

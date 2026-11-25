@@ -228,6 +228,7 @@ function hasAdvancedSettingsValues(values: ChannelFormValues): boolean {
     values.system_prompt_override ||
     values.retry_on_429 ||
     values.disable_chat_completions ||
+    values.system_one_noul_jev_form === false ||
     values.claude_beta_query ||
     Boolean(values.claude_code_disguise_mode) ||
     values.codex_disguise ||
@@ -3325,6 +3326,33 @@ export function ChannelMutateDrawer({
                                   <FormDescription>
                                     {t(
                                       'Reject Chat Completions (/v1/chat/completions) requests on this channel (OpenAI channel only)'
+                                    )}
+                                  </FormDescription>
+                                </div>
+                                <FormControl>
+                                  <Switch
+                                    checked={field.value}
+                                    onCheckedChange={field.onChange}
+                                  />
+                                </FormControl>
+                              </FormItem>
+                            )}
+                          />
+                        )}
+
+                        {currentType === 24 && (
+                          <FormField
+                            control={form.control}
+                            name='system_one_noul_jev_form'
+                            render={({ field }) => (
+                              <FormItem className='flex items-center justify-between px-4 py-3'>
+                                <div className='space-y-0.5'>
+                                  <FormLabel>
+                                    {t('Normalize System One noul to Jev form')}
+                                  </FormLabel>
+                                  <FormDescription>
+                                    {t(
+                                      'Make System One (Jev) noul questions and answers on this channel behave like Jev: criteria use true/false, instructions may be omitted, answers have no confidence (Gemini channel only)'
                                     )}
                                   </FormDescription>
                                 </div>

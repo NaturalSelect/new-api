@@ -12,6 +12,12 @@ type ChannelSettings struct {
 	SystemPromptOverride   bool   `json:"system_prompt_override,omitempty"`
 	RetryOn429             int    `json:"retry_on_429,omitempty"`
 	DisableChatCompletions bool   `json:"disable_chat_completions,omitempty"` // 仅 OpenAI 渠道生效：禁止该渠道处理 Chat Completions 请求
+
+	SystemOneNoulJevForm *bool `json:"system_one_noul_jev_form,omitempty"` // 仅 Gemini 渠道的 System One 请求生效：noul 问题与答案按 jev 形式归一化；nil 视为开启
+}
+
+func (s ChannelSettings) IsSystemOneNoulJevForm() bool {
+	return s.SystemOneNoulJevForm == nil || *s.SystemOneNoulJevForm
 }
 
 type VertexKeyType string

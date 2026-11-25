@@ -356,6 +356,10 @@ export type OperationsSettings = {
   'intelligence_setting.refresh_interval': number
   'intelligence_setting.auto_effort_enabled': boolean
   'intelligence_setting.disabled_auto_efforts': string[]
+  'openrouter_catalog_setting.enabled': boolean
+  'openrouter_catalog_setting.refresh_interval': number
+  'openrouter_catalog_setting.models_url': string
+  'openrouter_catalog_setting.proxy': string
 }
 
 export type SecuritySettings = {

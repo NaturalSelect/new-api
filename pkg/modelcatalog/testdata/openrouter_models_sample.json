@@ -1,0 +1,221 @@
+{
+  "data": [
+    {
+      "architecture": {
+        "input_modalities": [
+          "audio",
+          "file",
+          "image",
+          "text",
+          "video"
+        ],
+        "instruct_type": null,
+        "modality": "text+image+file+audio+video-\u003etext",
+        "output_modalities": [
+          "text"
+        ],
+        "tokenizer": "Gemini"
+      },
+      "context_length": 1048576,
+      "created": 1795006977,
+      "description": "sample model",
+      "hugging_face_id": null,
+      "id": "google/gemini-4-neon",
+      "knowledge_cutoff": null,
+      "name": "Google: Gemini 4 Neon",
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_p"
+      ],
+      "top_provider": {
+        "context_length": 1048576,
+        "is_moderated": false,
+        "max_completion_tokens": 943718
+      }
+    },
+    {
+      "architecture": {
+        "input_modalities": [
+          "text",
+          "image",
+          "file"
+        ],
+        "instruct_type": null,
+        "modality": "text+image+file-\u003etext",
+        "output_modalities": [
+          "text"
+        ],
+        "tokenizer": "Claude"
+      },
+      "context_length": 1000000,
+      "created": 1794253781,
+      "description": "sample model",
+      "hugging_face_id": null,
+      "id": "anthropic/claude-fable-5.2",
+      "knowledge_cutoff": null,
+      "name": "Anthropic: Claude Fable 5.2",
+      "supported_parameters": [
+        "include_reasoning",
+        "max_completion_tokens",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "stop",
+        "structured_outputs",
+        "tool_choice",
+        "tools",
+        "verbosity"
+      ],
+      "top_provider": {
+        "context_length": 1000000,
+        "is_moderated": true,
+        "max_completion_tokens": 128000
+      }
+    },
+    {
+      "architecture": {
+        "input_modalities": [
+          "file",
+          "image",
+          "text"
+        ],
+        "instruct_type": null,
+        "modality": "text+image+file-\u003etext",
+        "output_modalities": [
+          "text"
+        ],
+        "tokenizer": "GPT"
+      },
+      "context_length": 1050000,
+      "created": 1783590864,
+      "description": "sample model",
+      "hugging_face_id": null,
+      "id": "openai/gpt-5.6-luna",
+      "knowledge_cutoff": "2026-02-16",
+      "name": "OpenAI: GPT-5.6 Luna",
+      "supported_parameters": [
+        "include_reasoning",
+        "max_completion_tokens",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools",
+        "verbosity"
+      ],
+      "top_provider": {
+        "context_length": 1050000,
+        "is_moderated": true,
+        "max_completion_tokens": 128000
+      }
+    },
+    {
+      "architecture": {
+        "input_modalities": [
+          "file",
+          "image",
+          "text"
+        ],
+        "instruct_type": null,
+        "modality": "text+image+file-\u003etext",
+        "output_modalities": [
+          "text"
+        ],
+        "tokenizer": "GPT"
+      },
+      "context_length": 1050000,
+      "created": 1783590864,
+      "description": "sample model",
+      "hugging_face_id": null,
+      "id": "openai/gpt-5.6-luna:batch",
+      "knowledge_cutoff": "2026-02-16",
+      "name": "OpenAI: GPT-5.6 Luna (batch)",
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools",
+        "verbosity"
+      ],
+      "top_provider": {
+        "context_length": 1050000,
+        "is_moderated": true,
+        "max_completion_tokens": 128000
+      }
+    },
+    {
+      "architecture": {
+        "input_modalities": [
+          "text",
+          "image",
+          "audio",
+          "file",
+          "video"
+        ],
+        "instruct_type": null,
+        "modality": "text+image+file+audio+video-\u003etext+image",
+        "output_modalities": [
+          "text",
+          "image"
+        ],
+        "tokenizer": "Router"
+      },
+      "context_length": 2000000,
+      "created": 1793885889,
+      "description": "sample model",
+      "hugging_face_id": null,
+      "id": "openrouter/auto",
+      "knowledge_cutoff": null,
+      "name": "Auto Router",
+      "supported_parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "logit_bias",
+        "logprobs",
+        "max_tokens",
+        "min_p",
+        "prediction",
+        "presence_penalty",
+        "reasoning",
+        "reasoning_effort",
+        "repetition_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_a",
+        "top_k",
+        "top_logprobs",
+        "top_p",
+        "web_search_options"
+      ],
+      "top_provider": {
+        "context_length": null,
+        "is_moderated": false,
+        "max_completion_tokens": null
+      }
+    }
+  ]
+}

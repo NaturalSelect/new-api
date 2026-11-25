@@ -61,7 +61,6 @@ import {
 } from '../lib/dynamic-price'
 import { parseTags } from '../lib/filters'
 import { getAvailableGroups, isTokenBasedModel } from '../lib/model-helpers'
-import { inferModelMetadata } from '../lib/model-metadata'
 import { formatFixedPrice, formatGroupPrice } from '../lib/price'
 import type {
   Modality,
@@ -155,6 +154,14 @@ function ModelSignalsSection(props: {
   output: Modality[]
 }) {
   const { t } = useTranslation()
+
+  if (
+    props.capabilities.length === 0 &&
+    props.input.length === 0 &&
+    props.output.length === 0
+  ) {
+    return null
+  }
 
   return (
     <section>
@@ -910,7 +917,6 @@ export interface ModelDetailsContentProps {
 export function ModelDetailsContent(props: ModelDetailsContentProps) {
   const { t } = useTranslation()
   const showRechargePrice = props.showRechargePrice ?? false
-  const metadata = useMemo(() => inferModelMetadata(props.model), [props.model])
 
   const isDynamic =
     props.model.billing_mode === 'tiered_expr' &&
@@ -964,12 +970,12 @@ export function ModelDetailsContent(props: ModelDetailsContentProps) {
             />
           </section>
 
-          <ModelDetailsQuickStats metadata={metadata} />
+          <ModelDetailsQuickStats model={props.model} />
 
           <ModelSignalsSection
-            capabilities={metadata.capabilities}
-            input={metadata.input_modalities}
-            output={metadata.output_modalities}
+            capabilities={props.model.capabilities ?? []}
+            input={props.model.input_modalities ?? []}
+            output={props.model.output_modalities ?? []}
           />
 
           <ModelDetailsProviderInfo model={props.model} />

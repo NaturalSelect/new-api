@@ -10,6 +10,28 @@ type OpenAIModels struct {
 	OwnedBy                string                  `json:"owned_by"`
 	SupportedEndpointTypes []constant.EndpointType `json:"supported_endpoint_types"`
 	Pricing                *OpenRouterPricing      `json:"pricing,omitempty"`
+
+	// NOTE: Fields below mirror the OpenRouter models API and are filled from the model catalog when a model matches.
+	Name                string             `json:"name,omitempty"`
+	Description         string             `json:"description,omitempty"`
+	ContextLength       int                `json:"context_length,omitempty"`
+	Architecture        *ModelArchitecture `json:"architecture,omitempty"`
+	TopProvider         *ModelTopProvider  `json:"top_provider,omitempty"`
+	KnowledgeCutoff     string             `json:"knowledge_cutoff,omitempty"`
+	SupportedParameters []string           `json:"supported_parameters,omitempty"`
+	HuggingFaceID       string             `json:"hugging_face_id,omitempty"`
+}
+
+type ModelArchitecture struct {
+	Modality         string   `json:"modality,omitempty"`
+	InputModalities  []string `json:"input_modalities,omitempty"`
+	OutputModalities []string `json:"output_modalities,omitempty"`
+	Tokenizer        string   `json:"tokenizer,omitempty"`
+}
+
+type ModelTopProvider struct {
+	ContextLength       int `json:"context_length,omitempty"`
+	MaxCompletionTokens int `json:"max_completion_tokens,omitempty"`
 }
 
 // NOTE: Values are decimal strings in USD per token (per request for Request), matching the OpenRouter models API.

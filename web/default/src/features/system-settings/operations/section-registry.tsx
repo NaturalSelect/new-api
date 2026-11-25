@@ -21,6 +21,7 @@ import { CPASettingsSection } from '../integrations/cpa-settings-section'
 import { EmailSettingsSection } from '../integrations/email-settings-section'
 import { IntelligenceSettingsSection } from '../integrations/intelligence-settings-section'
 import { MonitoringSettingsSection } from '../integrations/monitoring-settings-section'
+import { OpenRouterCatalogSettingsSection } from '../integrations/openrouter-catalog-settings-section'
 import { PoeLogSettingsSection } from '../integrations/poe-log-settings-section'
 import { WorkerSettingsSection } from '../integrations/worker-settings-section'
 import { LogSettingsSection } from '../maintenance/log-settings-section'
@@ -159,6 +160,25 @@ const OPERATIONS_SECTIONS = [
             settings['intelligence_setting.auto_effort_enabled'] ?? false,
           'intelligence_setting.disabled_auto_efforts':
             settings['intelligence_setting.disabled_auto_efforts'] ?? [],
+        }}
+      />
+    ),
+  },
+  {
+    id: 'openrouter-catalog',
+    titleKey: 'OpenRouter Model Metadata',
+    build: (settings: OperationsSettings) => (
+      <OpenRouterCatalogSettingsSection
+        defaultValues={{
+          'openrouter_catalog_setting.enabled':
+            settings['openrouter_catalog_setting.enabled'] ?? true,
+          'openrouter_catalog_setting.refresh_interval':
+            settings['openrouter_catalog_setting.refresh_interval'] ?? 360,
+          'openrouter_catalog_setting.models_url':
+            settings['openrouter_catalog_setting.models_url'] ??
+            'https://openrouter.ai/api/v1/models',
+          'openrouter_catalog_setting.proxy':
+            settings['openrouter_catalog_setting.proxy'] ?? '',
         }}
       />
     ),

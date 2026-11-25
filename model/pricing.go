@@ -10,6 +10,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/pkg/modelcatalog"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
@@ -36,6 +37,13 @@ type Pricing struct {
 	BillingMode            string                  `json:"billing_mode,omitempty"`
 	BillingExpr            string                  `json:"billing_expr,omitempty"`
 	PricingVersion         string                  `json:"pricing_version,omitempty"`
+	ContextLength          int                     `json:"context_length,omitempty"`
+	MaxOutputTokens        int                     `json:"max_output_tokens,omitempty"`
+	InputModalities        []string                `json:"input_modalities,omitempty"`
+	OutputModalities       []string                `json:"output_modalities,omitempty"`
+	KnowledgeCutoff        string                  `json:"knowledge_cutoff,omitempty"`
+	ReleaseDate            string                  `json:"release_date,omitempty"`
+	Capabilities           []string                `json:"capabilities,omitempty"`
 }
 
 type PricingVendor struct {
@@ -303,6 +311,9 @@ func updatePricing() {
 			pricing.Icon = meta.Icon
 			pricing.Tags = meta.Tags
 			pricing.VendorID = meta.VendorID
+		}
+		if entry, ok := modelcatalog.Lookup(model); ok {
+			applyCatalogMetadata(&pricing, entry)
 		}
 		modelPrice, findPrice := ratio_setting.GetModelPrice(model, false)
 		if findPrice {

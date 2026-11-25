@@ -25,16 +25,12 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
-import {
-  formatTokenCount,
-  formatYearMonth,
-  type ModelMetadata,
-} from '../lib/model-metadata'
-import type { Modality } from '../types'
+import { formatTokenCount, formatYearMonth } from '../lib/model-metadata'
+import type { Modality, PricingModel } from '../types'
 import { ModalityIcons } from './model-details-modalities'
 
 type QuickStatsProps = {
-  metadata: ModelMetadata
+  model: PricingModel
 }
 
 type Stat = {
@@ -45,57 +41,55 @@ type Stat = {
   hint?: string
 }
 
-function buildStats(
-  metadata: ModelMetadata,
-  t: (key: string) => string
-): Stat[] {
-  const stats: Stat[] = [
-    {
+function buildStats(model: PricingModel, t: (key: string) => string): Stat[] {
+  const stats: Stat[] = []
+  const inputModalities = model.input_modalities ?? []
+  const outputModalities = model.output_modalities ?? []
+
+  if (model.context_length != null && model.context_length > 0) {
+    stats.push({
       key: 'context',
       icon: Layers,
       label: t('Context'),
-      value: formatTokenCount(metadata.context_length),
+      value: formatTokenCount(model.context_length),
       hint: t('Maximum input window'),
-    },
-  ]
+    })
+  }
 
-  if (metadata.max_output_tokens > 0) {
+  if (model.max_output_tokens != null && model.max_output_tokens > 0) {
     stats.push({
       key: 'max-output',
       icon: Maximize2,
       label: t('Max output'),
-      value: formatTokenCount(metadata.max_output_tokens),
+      value: formatTokenCount(model.max_output_tokens),
       hint: t('Maximum tokens per response'),
     })
   }
 
-  stats.push({
-    key: 'modalities',
-    icon: FileText,
-    label: t('Modalities'),
-    value: (
-      <ModalityFlow
-        input={metadata.input_modalities}
-        output={metadata.output_modalities}
-      />
-    ),
-  })
+  if (inputModalities.length > 0 || outputModalities.length > 0) {
+    stats.push({
+      key: 'modalities',
+      icon: FileText,
+      label: t('Modalities'),
+      value: <ModalityFlow input={inputModalities} output={outputModalities} />,
+    })
+  }
 
-  if (metadata.knowledge_cutoff) {
+  if (model.knowledge_cutoff) {
     stats.push({
       key: 'knowledge',
       icon: Sparkles,
       label: t('Knowledge cutoff'),
-      value: formatYearMonth(metadata.knowledge_cutoff),
+      value: formatYearMonth(model.knowledge_cutoff),
     })
   }
 
-  if (metadata.release_date) {
+  if (model.release_date) {
     stats.push({
       key: 'release',
       icon: CalendarClock,
       label: t('Released'),
-      value: formatYearMonth(metadata.release_date),
+      value: formatYearMonth(model.release_date),
     })
   }
 
@@ -114,7 +108,9 @@ function ModalityFlow(props: { input: Modality[]; output: Modality[] }) {
 
 export function ModelDetailsQuickStats(props: QuickStatsProps) {
   const { t } = useTranslation()
-  const stats = buildStats(props.metadata, t)
+  const stats = buildStats(props.model, t)
+
+  if (stats.length === 0) return null
 
   return (
     <div className='bg-muted/20 grid grid-cols-2 gap-px overflow-hidden rounded-lg border @md/details:grid-cols-3 @2xl/details:grid-cols-5'>

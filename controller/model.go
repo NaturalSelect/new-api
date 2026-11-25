@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/pkg/modelcatalog"
 	"github.com/QuantumNous/new-api/relay"
 	"github.com/QuantumNous/new-api/relay/channel/ai360"
 	"github.com/QuantumNous/new-api/relay/channel/lingyiwanwu"
@@ -169,6 +170,36 @@ func buildOpenAIModel(modelName string, ownerByModel map[string]string) dto.Open
 	return oaiModel
 }
 
+func applyCatalogToOpenAIModel(m *dto.OpenAIModels) {
+	entry, ok := modelcatalog.Lookup(m.Id)
+	if !ok {
+		return
+	}
+	if entry.Created > 0 {
+		m.Created = int(entry.Created)
+	}
+	m.Name = entry.Name
+	m.Description = entry.Description
+	m.ContextLength = entry.ContextLength
+	m.Architecture = &dto.ModelArchitecture{
+		Modality:         entry.Modality,
+		InputModalities:  entry.InputModalities,
+		OutputModalities: entry.OutputModalities,
+		Tokenizer:        entry.Tokenizer,
+	}
+	topContextLength := entry.TopContextLength
+	if topContextLength <= 0 {
+		topContextLength = entry.ContextLength
+	}
+	m.TopProvider = &dto.ModelTopProvider{
+		ContextLength:       topContextLength,
+		MaxCompletionTokens: entry.MaxCompletionTokens,
+	}
+	m.KnowledgeCutoff = entry.KnowledgeCutoff
+	m.SupportedParameters = entry.SupportedParameters
+	m.HuggingFaceID = entry.HuggingFaceID
+}
+
 type modelListGroups struct {
 	userGroup   string
 	tokenGroup  string
@@ -303,7 +334,9 @@ func ListModels(c *gin.Context, modelType int) {
 	}
 	userOpenAiModels := make([]dto.OpenAIModels, 0, len(userModelNames))
 	for _, modelName := range userModelNames {
-		userOpenAiModels = append(userOpenAiModels, buildOpenAIModel(modelName, ownerByModel))
+		oaiModel := buildOpenAIModel(modelName, ownerByModel)
+		applyCatalogToOpenAIModel(&oaiModel)
+		userOpenAiModels = append(userOpenAiModels, oaiModel)
 	}
 
 	switch modelType {
@@ -325,11 +358,21 @@ func ListModels(c *gin.Context, modelType int) {
 		})
 	case constant.ChannelTypeGemini:
 		userGeminiModels := make([]dto.GeminiModel, len(userOpenAiModels))
-		for i, model := range userOpenAiModels {
-			userGeminiModels[i] = dto.GeminiModel{
-				Name:        model.Id,
-				DisplayName: model.Id,
+		for i, m := range userOpenAiModels {
+			geminiModel := dto.GeminiModel{
+				Name:        m.Id,
+				DisplayName: m.Id,
 			}
+			if m.ContextLength > 0 {
+				geminiModel.InputTokenLimit = m.ContextLength
+			}
+			if m.TopProvider != nil && m.TopProvider.MaxCompletionTokens > 0 {
+				geminiModel.OutputTokenLimit = m.TopProvider.MaxCompletionTokens
+			}
+			if m.Description != "" {
+				geminiModel.Description = m.Description
+			}
+			userGeminiModels[i] = geminiModel
 		}
 		c.JSON(200, gin.H{
 			"models":        userGeminiModels,
@@ -369,6 +412,7 @@ func EnabledListModels(c *gin.Context) {
 func RetrieveModel(c *gin.Context, modelType int) {
 	modelId := c.Param("model")
 	if aiModel, ok := openAIModelsMap[modelId]; ok {
+		applyCatalogToOpenAIModel(&aiModel)
 		switch modelType {
 		case constant.ChannelTypeAnthropic:
 			c.JSON(200, dto.AnthropicModel{

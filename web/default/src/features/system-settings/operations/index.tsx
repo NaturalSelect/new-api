@@ -89,6 +89,11 @@ const defaultOperationsSettings: OperationsSettings = {
   'intelligence_setting.refresh_interval': 60,
   'intelligence_setting.auto_effort_enabled': false,
   'intelligence_setting.disabled_auto_efforts': [],
+  'openrouter_catalog_setting.enabled': true,
+  'openrouter_catalog_setting.refresh_interval': 360,
+  'openrouter_catalog_setting.models_url':
+    'https://openrouter.ai/api/v1/models',
+  'openrouter_catalog_setting.proxy': '',
 }
 
 export function OperationsSettings() {

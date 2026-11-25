@@ -131,6 +131,11 @@ func main() {
 	// runs on every node since it maintains a per-process in-memory cache)
 	service.StartIntelligenceSyncTask()
 
+	// OpenRouter model catalog sync task (fetches context length, modalities, knowledge
+	// cutoff etc. for the pricing page and /v1/models; runs on every node since it
+	// maintains a per-process in-memory cache)
+	service.StartOpenRouterCatalogSyncTask()
+
 	// CPA auth-file usage sync task (fetches usage snapshots from the
 	// configured CPA service; runs on every node since it maintains a
 	// per-process in-memory cache)

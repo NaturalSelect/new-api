@@ -127,3 +127,75 @@ func TestShouldPoeResponsesUseChatWithEmptyCache(t *testing.T) {
 		t.Fatalf("empty cache must keep the client's endpoint")
 	}
 }
+
+const poeImageModelsSample = `{"data":[
+{"id":"seedream-5.0-pro","supported_endpoints":[],"parameters":[
+  {"name":"aspect_ratio","schema":{"enum":["1:1","16:9","9:16","4:3","3:4","3:2","2:3","21:9"]}},
+  {"name":"quality","schema":{"enum":["1K","1.5K","2K"]}}]},
+{"id":"seedream-5.0-lite","parameters":[{"name":"aspect","schema":{"enum":["16:9","4:3","1:1","3:4","9:16"]}}]},
+{"id":"gpt-image-2","parameters":[
+  {"name":"size","schema":{"enum":["auto","1024x1024","1536x1024","1024x1536"]}},
+  {"name":"quality","schema":{"enum":["low","medium","high"]}},
+  {"name":"use_mask","schema":{"type":"boolean"}}]}
+]}`
+
+func loadPoeImageModelsSample(t *testing.T) {
+	t.Helper()
+	catalog, err := parsePoeModelCatalog([]byte(poeImageModelsSample))
+	if err != nil {
+		t.Fatalf("parsePoeModelCatalog returned error: %v", err)
+	}
+	SetPoeModelCatalog(catalog)
+	t.Cleanup(func() { SetPoeModelCatalog(nil) })
+}
+
+func TestResolvePoeImageParams(t *testing.T) {
+	loadPoeImageModelsSample(t)
+
+	tests := []struct {
+		name    string
+		model   string
+		size    string
+		quality string
+		want    map[string]string
+	}{
+		{"portrait size maps to nearest aspect ratio", "seedream-5.0-pro", "1024x1792", "", map[string]string{"aspect_ratio": "9:16"}},
+		{"landscape size maps to nearest aspect ratio", "seedream-5.0-pro", "1792x1024", "", map[string]string{"aspect_ratio": "16:9"}},
+		{"model naming it aspect", "seedream-5.0-lite", "1024x1024", "", map[string]string{"aspect": "1:1"}},
+		{"model with size enum picks the closest listed size", "gpt-image-2", "1024x1792", "", map[string]string{"size": "1024x1536"}},
+		{"exact size is kept", "gpt-image-2", "1536x1024", "", map[string]string{"size": "1536x1024"}},
+		{"quality in enum passes with the client's spelling", "seedream-5.0-pro", "", "2K", map[string]string{"quality": "2K"}},
+		{"quality outside enum is dropped", "seedream-5.0-pro", "1024x1024", "high", map[string]string{"aspect_ratio": "1:1"}},
+		{"quality shared with OpenAI", "gpt-image-2", "", "high", map[string]string{"quality": "high"}},
+		{"auto size is not a ratio", "gpt-image-2", "auto", "", map[string]string{}},
+		{"malformed size is ignored", "seedream-5.0-pro", "wide", "", map[string]string{}},
+		{"unknown model", "dall-e-3", "1024x1024", "hd", nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ResolvePoeImageParams(tt.model, tt.size, tt.quality)
+			if len(got) != len(tt.want) {
+				t.Fatalf("ResolvePoeImageParams = %v, want %v", got, tt.want)
+			}
+			for name, value := range tt.want {
+				if got[name] != value {
+					t.Fatalf("ResolvePoeImageParams = %v, want %v", got, tt.want)
+				}
+			}
+		})
+	}
+}
+
+func TestPoeModelDeclaresParam(t *testing.T) {
+	loadPoeImageModelsSample(t)
+
+	if !PoeModelDeclaresParam("GPT-Image-2", "use_mask") {
+		t.Fatalf("gpt-image-2 declares use_mask")
+	}
+	if PoeModelDeclaresParam("seedream-5.0-pro", "use_mask") {
+		t.Fatalf("seedream-5.0-pro does not declare use_mask")
+	}
+	if PoeModelDeclaresParam("dall-e-3", "use_mask") {
+		t.Fatalf("unknown model declares nothing")
+	}
+}

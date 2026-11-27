@@ -40,6 +40,8 @@ type Adaptor struct {
 	ResponseFormat string
 	// responsesViaChat is set when a Responses request was converted to Chat Completions.
 	responsesViaChat bool
+	// imageViaChat is set when an image request was converted to Chat Completions.
+	imageViaChat bool
 }
 
 func extractPromptCacheKeyFromMetadata(metadata json.RawMessage) string {
@@ -141,7 +143,7 @@ func (a *Adaptor) Init(info *relaycommon.RelayInfo) {
 }
 
 func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
-	if a.responsesViaChat {
+	if a.responsesViaChat || a.imageViaChat {
 		return relaycommon.GetFullRequestURL(info.ChannelBaseUrl, "/v1/chat/completions", info.ChannelType), nil
 	}
 	if info.RelayMode == relayconstant.RelayModeRealtime {
@@ -223,6 +225,10 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 
 func (a *Adaptor) SetupRequestHeader(c *gin.Context, header *http.Header, info *relaycommon.RelayInfo) error {
 	channel.SetupApiRequestHeader(info, c, header)
+	if a.imageViaChat {
+		// NOTE: The client may have uploaded multipart form data, but the chat body is always JSON.
+		header.Set("Content-Type", "application/json")
+	}
 	if info.ChannelType == constant.ChannelTypeAzure {
 		header.Set("api-key", info.ApiKey)
 		return nil
@@ -498,6 +504,9 @@ func (a *Adaptor) ConvertAudioRequest(c *gin.Context, info *relaycommon.RelayInf
 }
 
 func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.ImageRequest) (any, error) {
+	if ShouldServeImageViaChat(info) {
+		return a.convertImageRequestToChat(c, info, request)
+	}
 	switch info.RelayMode {
 	case relayconstant.RelayModeImagesEdits:
 		if isJSONRequest(c) {
@@ -530,28 +539,9 @@ func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInf
 		}
 
 		if mf != nil && mf.File != nil {
-			// Check if "image" field exists in any form, including array notation
-			var imageFiles []*multipart.FileHeader
-			var exists bool
-
-			// First check for standard "image" field
-			if imageFiles, exists = mf.File["image"]; !exists || len(imageFiles) == 0 {
-				// If not found, check for "image[]" field
-				if imageFiles, exists = mf.File["image[]"]; !exists || len(imageFiles) == 0 {
-					// If still not found, iterate through all fields to find any that start with "image["
-					foundArrayImages := false
-					for fieldName, files := range mf.File {
-						if strings.HasPrefix(fieldName, "image[") && len(files) > 0 {
-							foundArrayImages = true
-							imageFiles = append(imageFiles, files...)
-						}
-					}
-
-					// If no image fields found at all
-					if !foundArrayImages && (len(imageFiles) == 0) {
-						return nil, errors.New("image is required")
-					}
-				}
+			imageFiles, err := editImageFiles(mf)
+			if err != nil {
+				return nil, err
 			}
 
 			// Process all image files
@@ -787,7 +777,7 @@ func mergePoeUnsupportedParamsToExtraBody(request *dto.GeneralOpenAIRequest) err
 func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, requestBody io.Reader) (any, error) {
 	if info.RelayMode == relayconstant.RelayModeAudioTranscription ||
 		info.RelayMode == relayconstant.RelayModeAudioTranslation ||
-		(info.RelayMode == relayconstant.RelayModeImagesEdits && !isJSONRequest(c)) {
+		(info.RelayMode == relayconstant.RelayModeImagesEdits && !isJSONRequest(c) && !a.imageViaChat) {
 		return channel.DoFormRequest(a, c, info, requestBody)
 	} else if info.RelayMode == relayconstant.RelayModeRealtime {
 		return channel.DoWssRequest(a, c, info, requestBody)
@@ -802,6 +792,9 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 			return OaiChatToResponsesStreamHandler(c, info, resp)
 		}
 		return OaiChatToResponsesHandler(c, info, resp)
+	}
+	if a.imageViaChat {
+		return OaiChatToImageHandler(c, info, resp)
 	}
 	switch info.RelayMode {
 	case relayconstant.RelayModeRealtime:

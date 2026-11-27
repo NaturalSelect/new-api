@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -28,6 +30,9 @@ const (
 
 	poeResponsesEndpoint = "/v1/responses"
 )
+
+// NOTE: Poe image models name their aspect parameter differently; the first one a model declares wins.
+var poeImageAspectParamNames = []string{"aspect_ratio", "aspect"}
 
 var (
 	poeModelCatalogSyncOnce sync.Once
@@ -310,4 +315,93 @@ func clampPoeEffort(effort string, enum []string) string {
 		return effort
 	}
 	return best
+}
+
+// PoeModelDeclaresParam reports whether Poe lists the parameter for the model.
+func PoeModelDeclaresParam(modelName, param string) bool {
+	info, found := lookupPoeModel(modelName)
+	if !found {
+		return false
+	}
+	_, declared := info.Params[param]
+	return declared
+}
+
+// ResolvePoeImageParams maps an OpenAI image size and quality onto the parameters the
+// Poe model declares, keyed by parameter name. A value the model has no matching
+// parameter or enum entry for is dropped, as is everything for an unknown model.
+func ResolvePoeImageParams(modelName, size, quality string) map[string]string {
+	info, found := lookupPoeModel(modelName)
+	if !found {
+		return nil
+	}
+	params := make(map[string]string)
+	if name, value, ok := resolvePoeImageSizeParam(info, size); ok {
+		params[name] = value
+	}
+	quality = strings.TrimSpace(quality)
+	if enum, declared := info.Params["quality"]; declared && quality != "" {
+		for _, v := range enum {
+			// NOTE: Enums are stored lowercased, so the client's own spelling is what gets sent.
+			if v == strings.ToLower(quality) {
+				params["quality"] = quality
+				break
+			}
+		}
+	}
+	return params
+}
+
+func resolvePoeImageSizeParam(info PoeModelInfo, size string) (name, value string, ok bool) {
+	target, ok := parseDimensionRatio(size, "x")
+	if !ok {
+		return "", "", false
+	}
+	if enum, declared := info.Params["size"]; declared {
+		if value, ok := closestDimensionRatio(enum, "x", target); ok {
+			return "size", value, true
+		}
+	}
+	for _, candidate := range poeImageAspectParamNames {
+		if enum, declared := info.Params[candidate]; declared {
+			if value, ok := closestDimensionRatio(enum, ":", target); ok {
+				return candidate, value, true
+			}
+		}
+	}
+	return "", "", false
+}
+
+// parseDimensionRatio turns "1024x1536" or "16:9" into width/height.
+func parseDimensionRatio(value, separator string) (float64, bool) {
+	left, right, found := strings.Cut(strings.TrimSpace(value), separator)
+	if !found {
+		return 0, false
+	}
+	width, err := strconv.ParseFloat(left, 64)
+	if err != nil || width <= 0 {
+		return 0, false
+	}
+	height, err := strconv.ParseFloat(right, 64)
+	if err != nil || height <= 0 {
+		return 0, false
+	}
+	return width / height, true
+}
+
+// closestDimensionRatio picks the enum entry whose ratio is nearest to target, skipping
+// entries such as "auto" that carry no ratio.
+func closestDimensionRatio(enum []string, separator string, target float64) (string, bool) {
+	best, bestDist, found := "", 0.0, false
+	for _, v := range enum {
+		ratio, ok := parseDimensionRatio(v, separator)
+		if !ok {
+			continue
+		}
+		dist := math.Abs(math.Log(ratio / target))
+		if !found || dist < bestDist {
+			best, bestDist, found = v, dist, true
+		}
+	}
+	return best, found
 }
